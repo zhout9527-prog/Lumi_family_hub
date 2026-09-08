@@ -1,0 +1,8 @@
+include ':app'
+include ':tauri-android'
+
+def tauriAndroidDir = System.getenv('TAURI_ANDROID_DIR')
+if (tauriAndroidDir == null || tauriAndroidDir.isBlank()) {
+    throw new GradleException('TAURI_ANDROID_DIR must point to the Tauri Android runtime module.')
+}
+project(':tauri-android').projectDir = new File(tauriAndroidDir)

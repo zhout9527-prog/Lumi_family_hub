@@ -1,0 +1,14 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_THE_CONTENT_OF_TAURI_PUBLIC_KEY",
+      "endpoints": [
+        "https://updates.example.com/api/v1/releases/tauri?target={{target}}&arch={{arch}}&current_version={{current_version}}&channel=stable"
+      ]
+    }
+  }
+}

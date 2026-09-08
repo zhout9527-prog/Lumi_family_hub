@@ -1,0 +1,52 @@
+{
+  "name": "family-platform",
+  "private": true,
+  "version": "0.2.2",
+  "type": "module",
+  "scripts": {
+    "dev": "node node_modules/vite/bin/vite.js --mode client",
+    "dev:client": "node node_modules/vite/bin/vite.js --mode client",
+    "dev:server": "node node_modules/vite/bin/vite.js --mode server",
+    "build": "npm run build:client",
+    "build:client": "node node_modules/typescript/lib/tsc.js -b --pretty false && node node_modules/vite/bin/vite.js build --mode client --configLoader runner",
+    "build:server": "node node_modules/typescript/lib/tsc.js -b --pretty false && node node_modules/vite/bin/vite.js build --mode server --configLoader runner",
+    "preview": "node node_modules/vite/bin/vite.js preview --mode client",
+    "preview:server": "node node_modules/vite/bin/vite.js preview --mode server",
+    "typecheck": "node node_modules/typescript/lib/tsc.js -b --pretty false",
+    "tauri": "node scripts/run-tauri.mjs",
+    "native:check": "node scripts/run-tauri.mjs info",
+    "native:init": "node scripts/run-tauri.mjs init --ci --app-name \"Lumi Family Hub\" --window-title \"Lumi 家庭探索馆\" --frontend-dist ../dist --before-build-command \"npm run build\" --before-dev-command \"npm run dev -- --host 127.0.0.1\"",
+    "native:icons": "node scripts/run-tauri.mjs icon public/lumi-icon.svg -o src-tauri/icons",
+    "native:dev": "node scripts/run-tauri.mjs dev",
+    "native:build": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition All",
+    "native:build:client": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition Client",
+    "native:build:server": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition Server",
+    "native:release:prepare": "node scripts/prepare-tauri-release-config.mjs",
+    "native:release": "node scripts/prepare-tauri-release-config.mjs && node scripts/run-tauri.mjs build --config src-tauri/tauri.release.generated.conf.json",
+    "android:init": "node scripts/run-tauri.mjs android init",
+    "android:dev": "node scripts/run-tauri.mjs android dev",
+    "android:apk": "node scripts/build-android.mjs --format apk --abi arm64",
+    "android:apk:arm": "node scripts/build-android.mjs --format apk --abi arm",
+    "android:apk:universal": "node scripts/build-android.mjs --format apk --abi universal",
+    "android:aab": "node scripts/build-android.mjs --format aab --abi universal",
+    "android:apk:tauri": "node scripts/run-tauri.mjs android build --apk",
+    "android:aab:tauri": "node scripts/run-tauri.mjs android build --aab"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-updater": "2.11.0",
+    "@tauri-apps/plugin-process": "2.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "playwright-core": "1.62.1",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  }
+}

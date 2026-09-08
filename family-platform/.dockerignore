@@ -1,0 +1,14 @@
+.git
+.venv
+node_modules
+dist
+runtime
+.tmp
+.test-tmp
+.edge-*
+*.log
+*.err
+preview-*.png
+backend/tests
+__pycache__
+*.pyc

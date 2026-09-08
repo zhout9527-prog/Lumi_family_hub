@@ -1,0 +1,125 @@
+name: lumi-family-hub
+
+x-familyhub-environment: &familyhub-environment
+  FAMILYHUB_ENVIRONMENT: production
+  FAMILYHUB_RUNTIME_ROOT: /data
+  FAMILYHUB_DATABASE_URL: postgresql+psycopg://familyhub:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/familyhub
+  FAMILYHUB_SEED_DEMO: ${FAMILYHUB_SEED_DEMO:-false}
+  FAMILYHUB_DIRECT_DOWNLOAD_ENABLED: ${FAMILYHUB_DIRECT_DOWNLOAD_ENABLED:-false}
+  FAMILYHUB_UPDATE_MANIFEST_PATH: ${FAMILYHUB_UPDATE_MANIFEST_PATH:-updates/manifest.json}
+  FAMILYHUB_DEFENDER_SCAN: "false"
+  FAMILYHUB_JELLYFIN_URL: http://jellyfin:8096
+  FAMILYHUB_KAVITA_URL: http://kavita:5000
+  FAMILYHUB_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
+
+x-familyhub-service: &familyhub-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: lumi-family-hub:local
+  environment: *familyhub-environment
+  volumes:
+    - ${FAMILYHUB_DATA_ROOT:-./runtime}:/data
+    - ./updates:/app/updates:ro
+  depends_on:
+    database:
+      condition: service_healthy
+  restart: unless-stopped
+  networks:
+    - familyhub
+
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: familyhub
+      POSTGRES_USER: familyhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familyhub -d familyhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    networks:
+      - familyhub
+
+  migrate:
+    <<: *familyhub-service
+    command: ["python", "-m", "alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *familyhub-service
+    ports:
+      - "${FAMILYHUB_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *familyhub-service
+    command: ["python", "-m", "backend.familyhub.worker"]
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    profiles: ["media"]
+    ports:
+      - "8096:8096"
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - ${FAMILYHUB_DATA_ROOT:-./runtime}/library/video:/media/video:ro
+    restart: unless-stopped
+    networks:
+      - familyhub
+
+  kavita:
+    image: jvmilazz0/kavita:latest
+    profiles: ["media"]
+    ports:
+      - "5000:5000"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - kavita-config:/kavita/config
+      - ${FAMILYHUB_DATA_ROOT:-./runtime}/library/books:/books:ro
+    restart: unless-stopped
+    networks:
+      - familyhub
+
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    profiles: ["media"]
+    ports:
+      - "13378:80"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - audiobookshelf-config:/config
+      - audiobookshelf-metadata:/metadata
+      - ${FAMILYHUB_DATA_ROOT:-./runtime}/library/audio:/audiobooks:ro
+    restart: unless-stopped
+    networks:
+      - familyhub
+
+volumes:
+  postgres-data:
+  jellyfin-config:
+  jellyfin-cache:
+  kavita-config:
+  audiobookshelf-config:
+  audiobookshelf-metadata:
+
+networks:
+  familyhub:
+    driver: bridge

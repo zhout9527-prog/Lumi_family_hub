@@ -1,0 +1,5 @@
+# 根目录临时文件
+/.tmp/
+/.test-run-*/
+.DS_Store
+Thumbs.db

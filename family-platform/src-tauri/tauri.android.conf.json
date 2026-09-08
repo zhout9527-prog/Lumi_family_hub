@@ -1,0 +1,23 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Lumi Client",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 320,
+        "minHeight": 240,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "android": {
+      "minSdkVersion": 24,
+      "versionCode": 200001
+    }
+  }
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
@@ -40,6 +41,8 @@ class OperatorSetupIn(BaseModel):
     username: str = Field(min_length=2, max_length=80)
     password: str = Field(min_length=10, max_length=256)
     display_name: str = Field(min_length=1, max_length=100)
+    recovery_question: str = Field(min_length=4, max_length=200)
+    recovery_answer: str = Field(min_length=2, max_length=256)
 
     @field_validator("username")
     @classmethod
@@ -56,6 +59,69 @@ class OperatorSetupIn(BaseModel):
         if not cleaned:
             raise ValueError("显示名称不能为空")
         return cleaned
+
+    @field_validator("recovery_question")
+    @classmethod
+    def clean_recovery_question(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 4 or any(ord(character) < 32 for character in cleaned):
+            raise ValueError("密保问题至少需要 4 个字符，且不能包含控制字符")
+        return cleaned
+
+    @field_validator("recovery_answer")
+    @classmethod
+    def clean_recovery_answer(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or any(ord(character) < 32 for character in cleaned):
+            raise ValueError("密保答案至少需要 2 个字符，且不能包含控制字符")
+        return cleaned
+
+
+class OperatorRecoveryQuestionIn(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+
+    @field_validator("username")
+    @classmethod
+    def clean_username(cls, value: str) -> str:
+        cleaned = value.strip()
+        if any(character.isspace() or ord(character) < 32 for character in cleaned):
+            raise ValueError("登录账号不能包含空格或控制字符")
+        return cleaned
+
+
+class OperatorRecoveryQuestionOut(ApiModel):
+    username: str
+    question: str | None = None
+    legacy_setup_required: bool = False
+
+
+class OperatorPasswordResetIn(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+    recovery_answer: str = Field(min_length=2, max_length=256)
+    new_password: str = Field(min_length=10, max_length=256)
+    recovery_question: str | None = Field(default=None, min_length=4, max_length=200)
+
+    @field_validator("username")
+    @classmethod
+    def clean_username(cls, value: str) -> str:
+        cleaned = value.strip()
+        if any(character.isspace() or ord(character) < 32 for character in cleaned):
+            raise ValueError("登录账号不能包含空格或控制字符")
+        return cleaned
+
+    @field_validator("recovery_question")
+    @classmethod
+    def clean_optional_question(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 4 or any(ord(character) < 32 for character in cleaned):
+            raise ValueError("密保问题至少需要 4 个字符，且不能包含控制字符")
+        return cleaned
+
+
+class OperationMessageOut(ApiModel):
+    message: str
 
 
 class RegistrationIn(BaseModel):
@@ -130,6 +196,10 @@ class ContentOut(ApiModel):
     favorite: bool = False
     completed: bool = False
     local_available: bool = False
+    playable: bool = False
+    playback_mode: str = "none"
+    launch_allowed: bool = False
+    provider: str = "local"
 
 
 class ContentRequestIn(BaseModel):
@@ -255,6 +325,7 @@ class BilibiliDownloadIn(BaseModel):
 
 class JobOut(ApiModel):
     id: str
+    external_id: str
     title: str
     content_kind: str
     source_id: str
@@ -286,9 +357,142 @@ class AssetOut(ApiModel):
 
 
 class PlaybackOut(BaseModel):
-    mode: Literal["local_asset"]
+    mode: Literal["local_asset", "embed", "direct_stream", "external_link", "local_service"]
+    url: str | None = None
+    service: str | None = None
+    expires_at: datetime | None = None
+
+
+class StoragePathsIn(BaseModel):
+    video: str = Field(min_length=2, max_length=1000)
+    book: str = Field(min_length=2, max_length=1000)
+    audio: str = Field(min_length=2, max_length=1000)
+    image: str = Field(min_length=2, max_length=1000)
+    cache: str = Field(min_length=2, max_length=1000)
+    inbox: str = Field(min_length=2, max_length=1000)
+    quarantine: str = Field(min_length=2, max_length=1000)
+
+
+class StoragePathsOut(StoragePathsIn):
+    pass
+
+
+class LocalLibraryImportIn(BaseModel):
+    source_path: str = Field(min_length=2, max_length=2000)
+    kind: Literal["video", "book", "audio"]
+    title: str | None = Field(default=None, max_length=240)
+    audience: Literal["child", "family", "adult"] = "family"
+    age_from: int = Field(default=0, ge=0, le=99)
+    age_to: int = Field(default=99, ge=0, le=99)
+    language: str = Field(default="中文", max_length=120)
+    description: str = Field(default="", max_length=4000)
+    copy_to_library: bool = True
+    publish: bool = False
+
+
+class LibraryItemUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=240)
+    subtitle: str | None = Field(default=None, max_length=300)
+    language: str | None = Field(default=None, max_length=120)
+    age_from: int | None = Field(default=None, ge=0, le=99)
+    age_to: int | None = Field(default=None, ge=0, le=99)
+    description: str | None = Field(default=None, max_length=4000)
+    audience: Literal["child", "family", "adult"] | None = None
+    featured: bool | None = None
+    publication_status: Literal["draft", "published", "archived"] | None = None
+
+
+class LibraryItemOut(ApiModel):
+    id: str
+    title: str
+    subtitle: str
+    kind: str
+    language: str
+    age_from: int
+    age_to: int
+    description: str
+    tags: list[str]
+    cover_ref: str | None
+    acquisition_mode: str
+    publication_status: str
+    audience: str
+    featured: bool
+    source_id: str | None
+    file_path: str | None
+    file_size: int
+    file_available: bool
+    external_url: str | None
+    updated_at: datetime
+
+
+class LibraryScanOut(BaseModel):
+    discovered: int
+    skipped: int
+    failed: int
+
+
+class ExternalItemIn(BaseModel):
+    url: HttpUrl
+    provider: Literal["auto", "bilibili", "douyin", "quark", "direct", "other"] = "auto"
+    title: str | None = Field(default=None, max_length=240)
+    kind: Literal["video", "book", "audio"] = "video"
+    cover_url: HttpUrl | None = None
+    audience: Literal["child", "family", "adult"] = "family"
+    age_from: int = Field(default=0, ge=0, le=99)
+    age_to: int = Field(default=99, ge=0, le=99)
+    language: str = Field(default="中文", max_length=120)
+    description: str = Field(default="", max_length=4000)
+
+    @field_validator("url")
+    @classmethod
+    def require_safe_https_url(cls, value: HttpUrl) -> HttpUrl:
+        parsed = urlparse(str(value))
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("在线资源必须使用 HTTPS 地址")
+        if parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("在线资源链接不能包含账号信息或片段")
+        return value
+
+    @field_validator("cover_url")
+    @classmethod
+    def require_safe_cover_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
+        parsed = urlparse(str(value))
+        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("封面地址必须是无账号信息的 HTTPS 链接")
+        return value
+
+
+class ExternalFeedIn(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    url: HttpUrl
+    cookie_file: str | None = Field(default=None, max_length=1000)
+    audience: Literal["child", "family", "adult"] = "child"
+    age_from: int = Field(default=3, ge=0, le=99)
+    age_to: int = Field(default=12, ge=0, le=99)
+    language: str = Field(default="中文", max_length=120)
+    max_items: int = Field(default=50, ge=1, le=200)
+    sync_interval_hours: int = Field(default=24, ge=1, le=168)
+
+
+class ExternalFeedOut(ApiModel):
+    id: str
+    name: str
+    provider: str
     url: str
-    expires_at: datetime
+    cookie_file: str | None = None
+    audience: str
+    age_from: int
+    age_to: int
+    language: str
+    max_items: int
+    sync_interval_hours: int
+    enabled: bool
+    item_count: int
+    last_synced_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    last_error: str | None = None
 
 
 class AssetReviewIn(BaseModel):
@@ -318,10 +522,11 @@ class HealthOut(ApiModel):
 
 
 class ReleaseArtifactOut(ApiModel):
-    """发布清单中声明的可安装产物。
+    """An installable artifact advertised by the release manifest.
 
-    URL 保持字符串类型而不使用 ``HttpUrl``：家庭主机可以使用相对路径或
-    私有局域网 HTTP 地址，正式发布则应使用 HTTPS。
+    URLs intentionally remain strings instead of ``HttpUrl``: a home server
+    may use a relative path or a private-LAN HTTP URL, while production
+    releases should use HTTPS.
     """
 
     url: str

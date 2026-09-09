@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Lumi Client",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "identifier": "cn.lumi.familyhub",
   "build": {
     "frontendDist": "../dist",
@@ -49,7 +49,7 @@
     },
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 200002
+      "versionCode": 300000
     }
   }
 }

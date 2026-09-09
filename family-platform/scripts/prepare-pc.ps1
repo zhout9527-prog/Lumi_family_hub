@@ -45,11 +45,20 @@ if ($nodeMajor -lt 20) { throw "Node.js 版本需要 20 或更高。" }
 
 $envPath = Join-Path $projectRoot ".env"
 if (-not (Test-Path -LiteralPath $envPath)) {
+  $randomBytes = New-Object byte[] 24
+  [System.Security.Cryptography.RandomNumberGenerator]::Fill($randomBytes)
+  $secretSuffix = [Convert]::ToBase64String($randomBytes).Replace('+', 'A').Replace('/', 'B').Replace('=', 'C')
+  $childPassword = "child-$($secretSuffix.Substring(0, 14))"
+  $guardianPassword = "guardian-$($secretSuffix.Substring(14, 14))"
+  $operatorPassword = "operator-$($secretSuffix.Substring(2, 18))"
   $runtimeForEnv = $dataPath.Replace('\', '/')
   $envText = @(
     "FAMILYHUB_ENVIRONMENT=production",
     "FAMILYHUB_RUNTIME_ROOT=$runtimeForEnv",
-    "FAMILYHUB_SEED_DEMO=false",
+    "FAMILYHUB_SEED_DEMO=true",
+    "FAMILYHUB_DEMO_CHILD_PASSWORD=$childPassword",
+    "FAMILYHUB_DEMO_GUARDIAN_PASSWORD=$guardianPassword",
+    "FAMILYHUB_DEMO_OPERATOR_PASSWORD=$operatorPassword",
     "FAMILYHUB_DIRECT_DOWNLOAD_ENABLED=false",
     "FAMILYHUB_DEFENDER_SCAN=true",
     "FAMILYHUB_NIGHTLY_START_HOUR=1",
@@ -58,7 +67,11 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     "FAMILYHUB_CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000"
   )
   Set-Content -LiteralPath $envPath -Value $envText -Encoding utf8NoBOM
-  Write-Host "已生成 .env。首次打开 Lumi Server 时，请创建运维账户。"
+  Write-Host "已生成 .env，并创建一次性演示账号密码："
+  Write-Host "  child-demo    $childPassword"
+  Write-Host "  guardian-demo $guardianPassword"
+  Write-Host "  operator-demo $operatorPassword"
+  Write-Host "请把这三行保存到密码管理器；脚本不会再次显示它们。"
 } else {
   Write-Host ".env 已存在，保留现有凭据。"
 }

@@ -1,3 +1,3 @@
-"""家庭平台控制面。"""
+"""Family Hub control plane."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

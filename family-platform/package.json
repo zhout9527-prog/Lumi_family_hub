@@ -1,7 +1,7 @@
 {
   "name": "family-platform",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js --mode client",
@@ -24,7 +24,7 @@
     "native:build:server": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition Server",
     "android:init": "node scripts/run-tauri.mjs android init",
     "android:dev": "node scripts/run-tauri.mjs android dev",
-    "android:apk": "node scripts/build-android.mjs --format apk --abi arm64",
+    "android:apk": "node scripts/build-android.mjs --format apk --abi universal",
     "android:apk:arm": "node scripts/build-android.mjs --format apk --abi arm",
     "android:apk:universal": "node scripts/build-android.mjs --format apk --abi universal",
     "android:aab": "node scripts/build-android.mjs --format aab --abi universal",

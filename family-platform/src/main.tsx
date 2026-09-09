@@ -14,7 +14,8 @@ createRoot(document.getElementById('root')!).render(
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     if (isNativeShell()) {
-      // 原生包已经包含应用外壳，清理浏览器缓存以免升级后继续使用旧资源。
+      // Native packages already bundle the shell. Remove browser caches so an
+      // app update cannot keep serving assets from the previous APK/EXE.
       Promise.all([
         navigator.serviceWorker.getRegistrations().then((registrations) =>
           Promise.all(registrations.map((registration) => registration.unregister())),
@@ -24,7 +25,7 @@ if ('serviceWorker' in navigator) {
       return
     }
     navigator.serviceWorker.register('/sw.js').catch(() => {
-      // 本地开发时允许不启用离线外壳。
+      // Offline shell is optional during local development.
     })
   })
 }

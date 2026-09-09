@@ -24,7 +24,7 @@ async function verifyViewport(browser, name, viewport) {
     check(body.includes('注册申请'), `${name}: missing Client registration entry`)
     check(!body.includes('锟斤拷'), `${name}: rendered GBK mojibake`)
     check(!body.includes('\uFFFD'), `${name}: rendered a Unicode replacement character`)
-    await page.screenshot({ path: `${artifactsPath}render-${name}-0.2.0.png`, fullPage: true })
+    await page.screenshot({ path: `${artifactsPath}render-${name}-0.3.0.png`, fullPage: true })
     console.log(`${name}-body-length`, body.length)
   } finally {
     await context.close()

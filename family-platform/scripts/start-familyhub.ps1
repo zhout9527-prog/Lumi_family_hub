@@ -79,7 +79,7 @@ for ($attempt = 0; $attempt -lt 20; $attempt++) {
     $apiReady = $true
     break
   } catch {
-    # API 可能仍在加载数据库和种子数据。
+    # The API may still be loading the database and seed data.
   }
 }
 if (-not $apiReady) {

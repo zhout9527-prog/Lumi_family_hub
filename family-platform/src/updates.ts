@@ -114,8 +114,10 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   let updaterFailed = false
   let updaterFailureReason = '桌面签名更新服务暂不可用，请检查发布端点'
 
-  // Tauri 签名更新器仅用于桌面端。优先调用它，以便插件选择匹配系统和架构的
-  // 安装包并校验签名。更新通道独立于家庭主机，主机离线时仍可获取安全更新。
+  // Tauri's signed updater is desktop-only. Calling it first lets the plugin
+  // select the exact OS/architecture artifact and verify its signature. It is
+  // intentionally independent from the family host, so a host outage does
+  // not prevent a client security update.
   if (isNativeShell() && !isAndroid()) {
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
@@ -216,11 +218,12 @@ export async function installDesktopUpdate(onProgress?: (percent: number) => voi
     if (event.event === 'Progress' && total > 0) onProgress?.(Math.min(99, Math.round((downloaded / total) * 100)))
     if (event.event === 'Finished') onProgress?.(100)
   })
-  // Windows 会由安装程序退出；macOS/Linux 安装签名包后需要显式重启。
+  // Windows exits through the installer. macOS/Linux reach this path and need
+  // an explicit relaunch after the signed package has been installed.
   try {
     const { relaunch } = await import('@tauri-apps/plugin-process')
     await relaunch()
   } catch {
-    // Windows 更新器通常会先结束当前进程。
+    // The Windows updater normally terminates the current process first.
   }
 }

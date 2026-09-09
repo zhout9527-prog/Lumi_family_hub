@@ -76,9 +76,14 @@ def test_child_request_guardian_decision_and_launch(client: TestClient) -> None:
         json={"decision": "approved", "scope": "once"},
     )
     assert decision.status_code == 200
-    launch = client.post("/api/v1/catalog/bluey/launch", headers=child, follow_redirects=False)
-    assert launch.status_code == 307
-    assert launch.headers["location"] == "https://www.bluey.tv/"
+    launch = client.post("/api/v1/catalog/bluey/launch", headers=child)
+    assert launch.status_code == 200
+    assert launch.json() == {
+        "mode": "external_link",
+        "url": "https://www.bluey.tv/",
+        "service": None,
+        "expires_at": None,
+    }
 
 
 def test_registration_requires_operator_approval_and_respects_app_edition(client: TestClient) -> None:
@@ -149,7 +154,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         },
     )
     assert wrong_server.status_code == 403
-    wrong_client = client.post(
+    operator_client = client.post(
         "/api/v1/auth/login",
         json={
             "username": "operator-demo",
@@ -158,7 +163,11 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
             "app_edition": "client",
         },
     )
-    assert wrong_client.status_code == 403
+    assert operator_client.status_code == 200
+    assert operator_client.json()["user"]["role"] == "guardian"
+    operator_guardian_headers = {"Authorization": f"Bearer {operator_client.json()['access_token']}"}
+    assert client.get("/api/v1/guardian/content-requests", headers=operator_guardian_headers).status_code == 200
+    assert client.get("/api/v1/ops/users", headers=operator_guardian_headers).status_code == 403
 
     managed_users = client.get("/api/v1/ops/users", headers=operator)
     xiaodou = next(item for item in managed_users.json() if item["username"] == "xiaodou")
@@ -204,6 +213,8 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
                 "username": "home-admin",
                 "password": "Strong-Home-Password",
                 "display_name": "家庭管理员",
+                "recovery_question": "我的结婚纪念日是什么时候？",
+                "recovery_answer": "2020-05-20",
             },
         )
         assert setup.status_code == 201, setup.text
@@ -215,6 +226,8 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
                 "username": "another-admin",
                 "password": "Another-Strong-Password",
                 "display_name": "另一个管理员",
+                "recovery_question": "我最喜欢的城市是哪里？",
+                "recovery_answer": "杭州",
             },
         )
         assert repeated.status_code == 409
@@ -228,3 +241,131 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
             },
         )
         assert login_response.status_code == 200
+
+
+def test_local_operator_registration_and_password_recovery(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/auth/operators",
+        json={
+            "username": "second-admin",
+            "password": "Second-Admin-Password",
+            "display_name": "备用管理员",
+            "recovery_question": "我的结婚纪念日是什么时候？",
+            "recovery_answer": "2020年05月20日",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    question = client.post(
+        "/api/v1/auth/operator-recovery/question",
+        json={"username": "second-admin"},
+    )
+    assert question.status_code == 200
+    assert question.json() == {
+        "username": "second-admin",
+        "question": "我的结婚纪念日是什么时候？",
+        "legacy_setup_required": False,
+    }
+    assert "2020" not in question.text
+
+    wrong = client.post(
+        "/api/v1/auth/operator-recovery/reset",
+        json={
+            "username": "second-admin",
+            "recovery_answer": "错误答案",
+            "new_password": "Changed-Admin-Password",
+        },
+    )
+    assert wrong.status_code == 401
+
+    recovered = client.post(
+        "/api/v1/auth/operator-recovery/reset",
+        json={
+            "username": "second-admin",
+            "recovery_answer": "2020/05/20",
+            "new_password": "Changed-Admin-Password",
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+    assert "已重置" in recovered.json()["message"]
+
+    old_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "second-admin",
+            "password": "Second-Admin-Password",
+            "device_name": "pytest-server",
+            "app_edition": "server",
+        },
+    )
+    assert old_login.status_code == 401
+    new_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "second-admin",
+            "password": "Changed-Admin-Password",
+            "device_name": "pytest-server",
+            "app_edition": "server",
+        },
+    )
+    assert new_login.status_code == 200
+
+
+def test_legacy_operator_can_initialize_recovery_and_legacy_hash_upgrades(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from familyhub.models import OperatorRecovery, User
+    from familyhub.security import hash_password
+
+    with client.app.state.session_factory() as db:
+        operator = db.scalar(select(User).where(User.username == "operator-demo"))
+        assert operator is not None
+        legacy_salt, versioned_hash = hash_password("operator-demo", 200_000)
+        operator.password_salt = legacy_salt
+        operator.password_hash = versioned_hash.rsplit("$", 1)[-1]
+        db.commit()
+
+    legacy_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "operator-demo",
+            "password": "operator-demo",
+            "device_name": "pytest-server",
+            "app_edition": "server",
+        },
+    )
+    assert legacy_login.status_code == 200, legacy_login.text
+    with client.app.state.session_factory() as db:
+        operator = db.scalar(select(User).where(User.username == "operator-demo"))
+        assert operator is not None
+        assert operator.password_hash.startswith("pbkdf2_sha256$1000$")
+        assert db.get(OperatorRecovery, operator.id) is None
+
+    question = client.post(
+        "/api/v1/auth/operator-recovery/question",
+        json={"username": "operator-demo"},
+    )
+    assert question.status_code == 200
+    assert question.json()["legacy_setup_required"] is True
+    assert question.json()["question"] is None
+
+    reset = client.post(
+        "/api/v1/auth/operator-recovery/reset",
+        json={
+            "username": "operator-demo",
+            "recovery_question": "我小时候居住的城市是哪里？",
+            "recovery_answer": "南京",
+            "new_password": "Recovered-Operator-Password",
+        },
+    )
+    assert reset.status_code == 200, reset.text
+    relogin = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "operator-demo",
+            "password": "Recovered-Operator-Password",
+            "device_name": "pytest-server",
+            "app_edition": "server",
+        },
+    )
+    assert relogin.status_code == 200

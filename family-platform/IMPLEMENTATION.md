@@ -41,13 +41,13 @@ flowchart LR
   CORE --> MEDIA[Jellyfin / Kavita / Audiobookshelf]
 ```
 
-客户端与主机职责必须分离：Client 只封装儿童/家长界面、会话和播放入口；Server 的 Windows 包同时携带运维界面和 Python Core。下载、隔离、入库、定时 Worker、账号数据库和媒体服务只在家庭 PC。后端登录接口还会校验 `app_edition`：运维账号不能登录 Client，儿童/家长账号不能登录 Server，因此修改前端菜单也无法越权。
+客户端与主机职责必须分离：Client 只封装儿童/家长界面、会话和播放入口；Server 的 Windows 包同时携带运维界面和 Python Core。下载、隔离、入库、定时 Worker、账号数据库和媒体服务只在家庭 PC。后端登录接口会校验 `app_edition`：儿童/家长账号不能登录 Server；运维账号登录 Client 时只签发 `guardian` 有效角色，会话无法访问运维接口，因此修改前端菜单也无法越权。
 
 ### 平台支持基线
 
 | 平台 | 正式交付 | 最低支持 | 构建前置 |
 | --- | --- | --- | --- |
-| Windows Server x64 | 含 Core 的 NSIS `setup.exe`、双文件便携目录 | Windows 10 1803+（WebView2） | Rust、Python/PyInstaller、NSIS（仅构建机） |
+| Windows Server x64 | 含 Core 的 NSIS `setup.exe`、带 Core 运行库目录的便携包 | Windows 10 1803+（WebView2） | Rust、Python/PyInstaller、NSIS（仅构建机） |
 | Windows Client x64 | 独立 EXE、NSIS `setup.exe` | Windows 10 1803+（WebView2） | Rust stable-msvc、VS C++ Build Tools（仅构建机） |
 | Android 手机 Client | ARM64/通用 APK、AAB | Android 7.0 / API 24 | Android Studio、SDK、NDK、JDK 17（仅构建机） |
 | Android TV Client | 同一 Client APK/AAB，Leanback 类别 | API 24；建议 Android TV 9/API 28+ | 同 Android 手机 |
@@ -69,7 +69,7 @@ sequenceDiagram
   Owner->>Server: 首次启动
   Server->>Core: GET /health
   Core-->>Server: setup_required = true
-  Owner->>Server: 创建首位运维账户
+  Owner->>Server: 创建首位运维账户、密保问题与答案
   Server->>Core: POST /auth/operator-setup
   Member->>Client: 打开登录/注册页
   opt Android 尚无主机地址
@@ -86,6 +86,33 @@ sequenceDiagram
 ```
 
 Client 的首屏始终是登录和注册，不再先显示一个独立的连接向导。网络认证必然需要知道 Server 地址，因此 Android 首次连接保留一个默认收起的应急入口；登录后“连接设置”才是常规功能子菜单。儿童端不需要知道下载路径或网盘链接；电视端只显示审核后的播放/阅读内容。运维人员只能在 Windows Server 处理账户、队列和系统设置。
+
+### 运维密码恢复时序
+
+```mermaid
+sequenceDiagram
+  participant Owner as 家庭运维人员
+  participant Server as Windows Lumi Server
+  participant Core as Server Core
+  participant DB as SQLite
+
+  Owner->>Server: 登录页选择“找回密码”并输入账号
+  Server->>Core: POST /auth/operator-recovery/question
+  Core->>Core: 校验请求来自本机回环地址
+  Core->>DB: 查询密保问题
+  alt 已设置密保
+    Core-->>Server: 返回密保问题
+    Owner->>Server: 输入答案和新密码
+  else 升级前的旧账户
+    Core-->>Server: 返回 legacy_setup_required
+    Owner->>Server: 补设问题、答案和新密码
+  end
+  Server->>Core: POST /auth/operator-recovery/reset
+  Core->>DB: 校验答案摘要、更新密码摘要、撤销旧会话
+  Core-->>Server: 返回登录页
+```
+
+密保管理接口只接受 Server 本机请求，不对 Client 和局域网设备开放。密保问题用于展示，可以明文存储；密码和密保答案分别使用独立随机盐生成 PBKDF2-HMAC-SHA256 摘要，摘要中携带算法与迭代次数版本，未来升级参数时仍能验证旧数据并在成功登录后自动升级。
 
 ## 3. 三种角色在两类应用中的操作
 
@@ -108,6 +135,8 @@ Client 的首屏始终是登录和注册，不再先显示一个独立的连接�
 2. 设置夜间时间窗、并发数、磁盘下限和暂停开关，观察 Worker 的校验、隔离、元数据匹配和入库状态。
 3. 处理异常文件、重试或暂停任务，确认后才移动到 `library`。
 4. 查看审计记录、系统健康状态和备份结果。管理员账号与儿童/家长账号分开。
+
+运维账户可用于登录 Lumi Client，但会话有效角色固定为家长，只显示家长界面且不能调用任何运维账户、下载或审计接口。
 
 ## 4. 请求审批时序
 
@@ -181,6 +210,8 @@ sequenceDiagram
 | --- | --- | --- |
 | 登录与当前会话 | `/api/v1/auth/login`、`/api/v1/auth/me` | 公开/已登录；登录校验应用版本 |
 | 首位运维建号 | `/api/v1/auth/operator-setup` | 仅本机、仅一次 |
+| 后续运维建号 | `/api/v1/auth/operators` | 仅 Server 本机 |
+| 运维密保查询/重置 | `/api/v1/auth/operator-recovery/question`、`/api/v1/auth/operator-recovery/reset` | 仅 Server 本机；限流；重置后撤销旧会话 |
 | 家庭账户申请 | `/api/v1/auth/registrations` | Client 公开提交，初始为 pending |
 | 账户审批与停用 | `/api/v1/ops/account-registrations`、`/api/v1/ops/users/{id}/status` | 运维管理员 |
 | 儿童目录 | `/api/v1/catalog/today`、`/api/v1/catalog/{id}` | 儿童及以上 |
@@ -191,6 +222,10 @@ sequenceDiagram
 | 文件入口 | `inbox`、`quarantine`、`library` | Worker/管理员 |
 | Bilibili 下载队列 | `POST /api/v1/ops/downloads/bilibili` | 运维；公开链接、权利确认 |
 | Bilibili 任务状态 | `/api/v1/ops/jobs` | 运维 |
+| 资源目录设置 | `GET/PUT /api/v1/ops/storage-paths` | 运维；Server 本机路径 |
+| 本地资源管理 | `/api/v1/ops/library`、`/scan`、`/import`、`/{id}` | 运维 |
+| 在线播放入口 | `POST /api/v1/ops/library/external` | 运维；只保存 HTTPS 入口与元数据 |
+| B站订阅同步 | `/api/v1/ops/external-feeds`、`/{id}/sync` | 运维；Worker 定期执行 |
 | 本地播放凭证 | `POST /api/v1/catalog/{id}/launch`、`GET /api/v1/media/{id}` | 已登录 Client；短时 ticket |
 
 前端入口在 `src/App.tsx`，API 客户端在 `src/api.ts`，角色状态和缓存逻辑在 `src/store.ts`。后端入口是 `backend/familyhub/main.py`，策略与文件安全分别位于 `policy.py`、`file_safety.py`，后台任务在 `worker.py`。
@@ -220,12 +255,16 @@ runtime\
   quarantine\         下载完成但尚未人工批准的文件
   manifests\          Worker 任务清单
   works\              临时工作区
+  cache\              可清理缓存与可选的 B站 Cookie 文件
   library\video\      已审核视频
   library\books\      已审核图书
   library\audio\      已审核音频
+  library\images\     封面和图片
 ```
 
-账户创建接口 `/auth/operator-setup` 只接受本机回环请求且只允许执行一次。密码用随机盐和 PBKDF2-HMAC-SHA256（310,000 次迭代）保存摘要，SQLite 中没有明文密码；登录会话也只保存 SHA-256 令牌摘要。生产部署应使用独立 Windows 账户、NTFS 权限和 BitLocker，并把 `data`、`quarantine`、`library` 纳入备份。Client 不携带数据库，也不会暴露这些路径。
+首位账户接口 `/auth/operator-setup` 只接受本机回环请求且只允许执行一次；后续运维建号和密保恢复接口也只接受 Server 本机请求。密码和密保答案使用不同随机盐和 PBKDF2-HMAC-SHA256 保存不可逆摘要，摘要格式同时记录算法及当前 310,000 次迭代参数；SQLite 中没有明文密码或密保答案。登录会话只保存 SHA-256 令牌摘要，并在独立的 `session_scopes` 表记录本次会话的有效角色。运维账户登录 Client 时有效角色为 `guardian`，登录 Server 时才是 `operator`。
+
+旧版摘要没有携带迭代参数，新版验证器兼容已知历史参数，验证成功后自动升级为带版本格式。升级前没有密保记录的运维账户，可以在 Server 本机完成一次密保初始化和密码重置；完成后恢复必须校验答案。生产部署应使用独立 Windows 账户、NTFS 权限和 BitLocker，并把 `data`、`quarantine`、`library` 纳入备份。Client 不携带数据库，也不会暴露这些路径。
 
 ### 10.2 Bilibili 单视频下载
 
@@ -260,20 +299,63 @@ sequenceDiagram
 
 百度网盘、夸克网盘和 UP 主整理包走另一条合规路径：家长用官方客户端完成转存/下载，放入 `inbox\cloud`；Worker 只负责扫描、隔离和生成待审核记录。平台不保存网盘密码、提取码或 Cookie。
 
-### 10.3 同机验收结果
+### 10.3 本地馆藏、在线播放与自动同步
 
-在独立运行时（`127.0.0.1:8011`）使用打包的 `Lumi-Server_0.3.0` Core 验证了完整链路：
+```mermaid
+flowchart LR
+  SETTINGS[Server 主机设置] --> PATHS[视频 / 图书 / 音乐 / 图片\n缓存 / 投递箱 / 隔离区]
+  FILES[已有本机文件] --> IMPORT[扫描或单文件导入]
+  IMPORT --> DRAFT[资源草稿]
+  PATHS --> IMPORT
+  DRAFT -->|运维发布| CATALOG[(家庭目录)]
+  URL[B站 / 抖音 / 夸克 / 开放直链] --> META[保存 URL、标题、封面和适龄信息]
+  META --> CATALOG
+  FEED[B站空间 / 收藏夹 / 合集] --> WORKER[Worker 定时同步元数据]
+  CACHE[cache 内可选 Cookie 文件] --> WORKER
+  WORKER --> CATALOG
+  CATALOG --> CLIENT[Windows / Android / TV Client]
+```
+
+```mermaid
+sequenceDiagram
+  participant Owner as 运维（Server）
+  participant API as Server API
+  participant Worker as Worker
+  participant Bili as B站公开页面
+  participant Client as Lumi Client
+
+  Owner->>API: 配置七类目录并导入/扫描本机文件
+  API-->>Owner: 返回草稿、文件状态与实际路径
+  Owner->>API: 编辑适龄信息并发布
+  Owner->>API: 添加单个在线 URL 或 B站同步源
+  opt 收藏夹需要登录态
+    Owner->>Worker: 把 Netscape Cookie 文件放入 cache
+  end
+  Worker->>Bili: 按间隔读取最近项目的公开元数据
+  Bili-->>Worker: 标题、封面、BV 与时长
+  Worker->>API: 去重更新家庭目录，不下载媒体
+  Client->>API: 获取已发布且符合角色/年龄的目录
+  Client->>API: 请求 launch
+  API-->>Client: 本地短时 ticket / B站播放器 / 直链 / 官方页面
+```
+
+相对 Cookie 路径只相对于当前 `cache` 目录解析，绝对路径也必须位于该目录内且扩展名为 `.txt`。数据库只保存路径；内容不通过 API 返回。B站单条资源即使临时读不到元数据也会保留规范化 BV 入口和占位标题，之后可编辑；收藏夹同步失败会记录错误并在下一周期重试。抖音、夸克等站点可能禁止 iframe、要求登录或启用 DRM，因此 Client 同时保留官方页面入口，不承诺绕过站点限制。
+
+### 10.4 同机验收结果
+
+在独立运行时使用 `Lumi Server 0.4.0` Core 和 Client 0.3.0 验证完整链路：
 
 ```text
-首次创建 operator -> operator 登录
+首次创建带密保的 operator -> 查询密保 -> 重置密码 -> operator 登录 Server
 -> Client 注册 guardian -> operator 批准 -> guardian 登录
+-> 同一 operator 登录 Client -> 有效角色为 guardian -> 运维接口返回 403
 -> inbox/cloud 同步 -> quarantine 扫描 -> operator 审核发布
 -> Client 目录 local_available=true
 -> launch 获取 local_asset ticket -> GET media 返回 200
 -> 1751 字节文件 SHA-256 与原文件一致
 ```
 
-验证还包括应用边界：operator 使用 `app_edition=client` 被拒绝，child/guardian 使用 `app_edition=server` 被拒绝。该测试使用隔离运行目录，没有占用或修改正式 `8000` 服务。
+验证还包括应用边界：child/guardian 使用 `app_edition=server` 被拒绝；operator 的 Client 会话只能使用家长接口。另对已安装数据库的只读备份副本执行了新表迁移、旧运维账户一次性密保初始化以及两类登录验证，正式数据库没有被修改。
 
 ## 9. 客户端 OTA 与主机版本协商
 

@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "min_supported_version": "0.1.0",
-  "host_api_min_version": "0.1.0",
+  "host_api_min_version": "0.4.0",
   "published_at": "2026-09-08T00:00:00Z",
-  "notes": "初始开发版本：拆分 Server 与 Client，加入账户审批、本地资源播放和运维下载队列。",
+  "notes": "增加本地资源目录管理、在线播放入口与 B 站收藏夹定时同步。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

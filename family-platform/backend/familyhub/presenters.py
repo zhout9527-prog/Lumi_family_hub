@@ -26,7 +26,32 @@ def present_content(
     favorites: set[str] | None = None,
     completed: set[str] | None = None,
     local_ids: set[str] | None = None,
+    launch_allowed_ids: set[str] | None = None,
 ) -> ContentOut:
+    local_available = item.id in (local_ids or set())
+    provider = (
+        "local"
+        if local_available
+        else "bilibili"
+        if item.acquisition_mode == "external_bilibili"
+        else "direct"
+        if item.acquisition_mode == "direct_stream"
+        else "external"
+        if item.launch_url
+        else "service"
+    )
+    playback_mode = (
+        "local_asset"
+        if local_available
+        else "embed"
+        if provider == "bilibili"
+        else "direct_stream"
+        if provider == "direct"
+        else "external_link"
+        if item.launch_url
+        else "local_service"
+    )
+    playable = local_available or bool(item.launch_url)
     return ContentOut(
         id=item.id,
         kind=item.kind,
@@ -48,7 +73,11 @@ def present_content(
         featured=item.featured,
         favorite=item.id in (favorites or set()),
         completed=item.id in (completed or set()),
-        local_available=item.id in (local_ids or set()),
+        local_available=local_available,
+        playable=playable,
+        playback_mode=playback_mode,
+        launch_allowed=playable and item.id in (launch_allowed_ids or set()),
+        provider=provider,
     )
 
 

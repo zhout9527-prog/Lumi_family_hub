@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from familyhub.config import Settings
 from familyhub.file_safety import scan_file
+from familyhub.models import DownloadJob, utcnow
 from familyhub.worker import FamilyWorker
 
 from .conftest import login
@@ -106,3 +108,38 @@ def test_malicious_epub_path_is_blocked(tmp_path: Path) -> None:
     result = scan_file(epub, max_bytes=1024 * 1024, use_defender=False)
     assert result.status == "blocked"
     assert "路径穿越" in result.reason
+
+
+def test_worker_recovers_job_interrupted_by_server_restart(client: TestClient, settings: Settings) -> None:
+    with client.app.state.session_factory() as db:
+        job = DownloadJob(
+            household_id="home",
+            source_id="bilibili-public",
+            external_id="BV18T3G6jEVM",
+            title="重启恢复测试",
+            content_kind="video",
+            stage="downloading",
+            progress=64,
+            bytes_done=4096,
+            expected_bytes=8192,
+            scheduled_at=utcnow() + timedelta(days=1),
+            idempotency_key="worker-restart-test",
+            manifest_ref="missing-manifest.json",
+            rights_note="家庭运维管理员确认拥有离线观看权利",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    worker = FamilyWorker(settings, client.app.state.session_factory)
+    with client.app.state.session_factory() as db:
+        worker._recover_interrupted_jobs(db)
+
+    with client.app.state.session_factory() as db:
+        recovered = db.get(DownloadJob, job_id)
+        assert recovered is not None
+        assert recovered.stage == "queued"
+        assert recovered.progress == 0
+        assert recovered.bytes_done == 0
+        assert recovered.expected_bytes is None
+        assert recovered.error_code == "worker_restarted"

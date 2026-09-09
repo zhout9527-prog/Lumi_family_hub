@@ -36,7 +36,7 @@ class BilibiliDownloadResult:
 
 
 def normalize_bilibili_url(value: str) -> BilibiliReference:
-    """只接受 Bilibili 公开视频页面，并移除跟踪参数。"""
+    """Accept only public Bilibili video pages and discard tracking parameters."""
 
     parsed = urlparse(value.strip())
     hostname = (parsed.hostname or "").rstrip(".").lower()
@@ -61,14 +61,34 @@ def normalize_bilibili_url(value: str) -> BilibiliReference:
 
 
 class _QuietLogger:
+    def __init__(self) -> None:
+        self.last_error = ""
+
     def debug(self, _message: str) -> None:
         pass
 
     def warning(self, _message: str) -> None:
         pass
 
-    def error(self, _message: str) -> None:
-        pass
+    def error(self, message: str) -> None:
+        self.last_error = message
+
+
+def _download_error_code(message: str) -> str:
+    normalized = message.casefold()
+    if any(value in normalized for value in ("403", "412", "429", "risk", "captcha", "风控", "验证")):
+        return "bilibili_access_limited"
+    if any(value in normalized for value in ("login", "sign in", "registered user", "cookie", "会员", "登录")):
+        return "bilibili_login_required"
+    if any(value in normalized for value in ("geo", "region", "地区", "区域")):
+        return "bilibili_region_restricted"
+    if any(value in normalized for value in ("copyright", "private", "unavailable", "已失效", "不可用", "版权")):
+        return "bilibili_video_unavailable"
+    if any(value in normalized for value in ("timed out", "timeout", "connection", "network", "winerror", "网络", "连接")):
+        return "bilibili_network_error"
+    if "requested format" in normalized or "format is not available" in normalized:
+        return "bilibili_format_unavailable"
+    return "bilibili_download_failed"
 
 
 def _ffmpeg_executable() -> str:
@@ -92,7 +112,7 @@ def download_bilibili_to_quarantine(
     max_height: int,
     progress: Callable[[int, int | None], None] | None = None,
 ) -> BilibiliDownloadResult:
-    """下载单个公开视频，不使用 Cookie、账户数据或 DRM 绕过手段。"""
+    """Download one public video without cookies, account data, or DRM bypasses."""
 
     reference = normalize_bilibili_url(url)
     if max_height not in {480, 720, 1080}:
@@ -124,6 +144,7 @@ def download_bilibili_to_quarantine(
         total = int(total_value) if total_value else None
         progress(downloaded, total)
 
+    logger = _QuietLogger()
     options = {
         "format": (
             f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
@@ -144,7 +165,15 @@ def download_bilibili_to_quarantine(
         "max_filesize": max_bytes,
         "quiet": True,
         "no_warnings": True,
-        "logger": _QuietLogger(),
+        "logger": logger,
+        "http_headers": {
+            "Referer": "https://www.bilibili.com/",
+            "Origin": "https://www.bilibili.com",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+        },
         "progress_hooks": [progress_hook],
     }
 
@@ -153,7 +182,7 @@ def download_bilibili_to_quarantine(
             info = downloader.extract_info(reference.url, download=True)
     except DownloadError as exc:
         shutil.rmtree(work_dir, ignore_errors=True)
-        raise DownloadRejected("bilibili_download_failed") from exc
+        raise DownloadRejected(_download_error_code(logger.last_error or str(exc))) from exc
     except (OSError, RuntimeError, ValueError) as exc:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise DownloadRejected("bilibili_download_failed") from exc

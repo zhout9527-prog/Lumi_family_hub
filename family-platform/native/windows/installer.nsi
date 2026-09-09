@@ -101,8 +101,10 @@ Section "Install"
 
   SetOutPath "$INSTDIR"
   File "/oname=${MAIN_BINARY}" "${APP_BINARY}"
-  !ifdef SERVER_CORE
-    File "/oname=${SERVER_CORE_BINARY}" "${SERVER_CORE}"
+  !ifdef SERVER_CORE_DIR
+    SetOutPath "$INSTDIR\lumi-server-core"
+    File /r "${SERVER_CORE_DIR}\*"
+    SetOutPath "$INSTDIR"
   !endif
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
@@ -141,8 +143,8 @@ Section "Uninstall"
   !endif
 
   Delete "$INSTDIR\${MAIN_BINARY}"
-  !ifdef SERVER_CORE_BINARY
-    Delete "$INSTDIR\${SERVER_CORE_BINARY}"
+  !ifdef SERVER_CORE_DIR
+    RMDir /r "$INSTDIR\lumi-server-core"
   !endif
   Delete "$INSTDIR\uninstall.exe"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"

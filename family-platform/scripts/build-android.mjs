@@ -388,6 +388,18 @@ function variantsFor(abi) {
   return abi === 'universal' ? Object.values(abiVariants) : [abiVariants[abi]]
 }
 
+function removeOldAndroidArtifacts(keepVersion) {
+  if (!existsSync(artifactRoot)) return
+  const escapedVersion = keepVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const keepPattern = new RegExp(`^lumi-client-${escapedVersion}-`, 'i')
+  const managedPattern = /^lumi-(?:client|family-hub)-\d+\.\d+\.\d+-.*\.(?:apk|aab)$/i
+  for (const entry of readdirSync(artifactRoot, { withFileTypes: true })) {
+    if (!entry.isFile() || !managedPattern.test(entry.name) || keepPattern.test(entry.name)) continue
+    rmSync(join(artifactRoot, entry.name), { force: true })
+    console.log(`Removed old Android artifact: ${entry.name}`)
+  }
+}
+
 async function buildRustLibraries(buildType, abi, environment) {
   const cargo = cargoExecutable()
   const libraries = []
@@ -505,6 +517,7 @@ async function main() {
     if (options.buildType === 'release') {
       console.warn('Release artifacts require an independent Android release signing key before distribution or OTA use.')
     }
+    removeOldAndroidArtifacts(release.versionName)
     succeeded = true
   } finally {
     if (succeeded) {

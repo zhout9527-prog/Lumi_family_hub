@@ -13,10 +13,10 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from . import __version__
@@ -25,7 +25,27 @@ from .bilibili import BILIBILI_SOURCE_ID, normalize_bilibili_url
 from .config import Settings
 from .database import Base, build_engine, build_session_factory, get_db
 from .download import write_manifest
-from .file_safety import is_within
+from .external import (
+    ExternalCatalogError,
+    extract_bilibili_entries,
+    load_external_feeds,
+    new_external_feed,
+    normalize_bilibili_catalog_url,
+    provider_for_url,
+    save_external_feeds,
+    sync_external_feed,
+    upsert_bilibili_entries,
+    upsert_external_item,
+)
+from .library import (
+    load_storage_paths,
+    managed_item_payload,
+    register_local_file,
+    resolve_asset_path,
+    save_storage_paths,
+    scan_managed_library,
+    storage_paths_payload,
+)
 from .models import (
     AccountRegistration,
     AuditEvent,
@@ -38,6 +58,7 @@ from .models import (
     ContentSource,
     DownloadJob,
     Favorite,
+    OperatorRecovery,
     SessionToken,
     SystemSetting,
     User,
@@ -58,11 +79,22 @@ from .schemas import (
     ContentRequestOut,
     DecisionIn,
     DirectDownloadIn,
+    ExternalFeedIn,
+    ExternalFeedOut,
+    ExternalItemIn,
     HealthOut,
     JobOut,
     LoginIn,
     LoginOut,
+    LibraryItemOut,
+    LibraryItemUpdateIn,
+    LibraryScanOut,
+    LocalLibraryImportIn,
     ManagedUserOut,
+    OperationMessageOut,
+    OperatorPasswordResetIn,
+    OperatorRecoveryQuestionIn,
+    OperatorRecoveryQuestionOut,
     OperatorSetupIn,
     PlaybackOut,
     RegistrationDecisionIn,
@@ -71,6 +103,8 @@ from .schemas import (
     SourceIn,
     SourceOut,
     SourceValidateIn,
+    StoragePathsIn,
+    StoragePathsOut,
     SubmissionIn,
     SubmissionOut,
     TransferConfirmIn,
@@ -78,17 +112,29 @@ from .schemas import (
     UserOut,
     ReleaseManifestOut,
 )
-from .security import LoginLimiter, bearer, create_session_token, get_current_user, hash_password, require_roles, token_digest, verify_password
+from .security import (
+    LoginLimiter,
+    SessionPrincipal,
+    bearer,
+    create_session_token,
+    get_current_user,
+    hash_password,
+    normalize_recovery_answer,
+    password_hash_needs_upgrade,
+    require_roles,
+    token_digest,
+    verify_password,
+)
 from .seed import seed_database
 from .services import apply_asset_review, system_status
 from .worker import FamilyWorker
 
 
 Db = Annotated[Session, Depends(get_db)]
-CurrentUser = Annotated[User, Depends(get_current_user)]
-Guardian = Annotated[User, Depends(require_roles("guardian"))]
-Operator = Annotated[User, Depends(require_roles("operator"))]
-GuardianOrOperator = Annotated[User, Depends(require_roles("guardian", "operator"))]
+CurrentUser = Annotated[SessionPrincipal, Depends(get_current_user)]
+Guardian = Annotated[SessionPrincipal, Depends(require_roles("guardian"))]
+Operator = Annotated[SessionPrincipal, Depends(require_roles("operator"))]
+GuardianOrOperator = Annotated[SessionPrincipal, Depends(require_roles("guardian", "operator"))]
 
 
 def get_settings(request: Request) -> Settings:
@@ -96,6 +142,52 @@ def get_settings(request: Request) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+def _require_server_loopback(request: Request, settings: Settings) -> None:
+    client_host = request.client.host if request.client else ""
+    try:
+        is_loopback = ipaddress.ip_address(client_host).is_loopback
+    except ValueError:
+        is_loopback = settings.environment == "test" and client_host == "testclient"
+    if not is_loopback:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="运维账户只能在 Lumi Server 本机管理")
+
+
+def _normalized_recovery_answer(answer: str, password: str | None = None) -> str:
+    normalized = normalize_recovery_answer(answer)
+    if len(normalized) < 2:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="密保答案至少需要 2 个有效字符")
+    if password is not None and normalize_recovery_answer(password) == normalized:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="密保答案不能与登录密码相同")
+    return normalized
+
+
+def _create_operator(db: Session, payload: OperatorSetupIn, settings: Settings) -> User:
+    if db.scalar(select(User.id).where(User.username == payload.username)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这个登录账号已存在")
+    normalized_answer = _normalized_recovery_answer(payload.recovery_answer, payload.password)
+    password_salt, password_hash = hash_password(payload.password, settings.password_iterations)
+    answer_salt, answer_hash = hash_password(normalized_answer, settings.password_iterations)
+    user = User(
+        username=payload.username,
+        role="operator",
+        display_name=payload.display_name,
+        password_salt=password_salt,
+        password_hash=password_hash,
+        status="active",
+    )
+    db.add(user)
+    db.flush()
+    db.add(
+        OperatorRecovery(
+            user_id=user.id,
+            question=payload.recovery_question,
+            answer_salt=answer_salt,
+            answer_hash=answer_hash,
+        )
+    )
+    return user
 
 
 def _naive_utc(value: datetime) -> datetime:
@@ -127,7 +219,29 @@ def _content_list(db: Session, user: User, query: str | None = None) -> list[Con
             )
         ).all()
     ) if item_ids else set()
-    return [present_content(item, favorites=favorites, completed=completed, local_ids=local_ids) for item in items]
+    if user.role == "child" and item_ids:
+        launch_allowed_ids = set(
+            db.scalars(
+                select(ContentRequest.item_id).where(
+                    ContentRequest.requester_id == user.id,
+                    ContentRequest.item_id.in_(item_ids),
+                    ContentRequest.status == "approved",
+                    ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow()),
+                )
+            ).all()
+        )
+    else:
+        launch_allowed_ids = set(item_ids)
+    return [
+        present_content(
+            item,
+            favorites=favorites,
+            completed=completed,
+            local_ids=local_ids,
+            launch_allowed_ids=launch_allowed_ids,
+        )
+        for item in items
+    ]
 
 
 def _requests_for_household(db: Session, household_id: str) -> list[ContentRequest]:
@@ -181,11 +295,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Base.metadata.create_all(engine)
         with session_factory() as db:
             seed_database(db, active_settings)
+            load_storage_paths(db, active_settings, ensure=True)
         app.state.settings = active_settings
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.login_limiter = LoginLimiter()
         app.state.registration_limiter = LoginLimiter(max_attempts=5, window_seconds=600)
+        app.state.recovery_limiter = LoginLimiter(max_attempts=8, window_seconds=600)
         app.state.playback_tickets = PlaybackTickets()
         yield
         engine.dispose()
@@ -202,7 +318,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=active_settings.allowed_origins,
         allow_origin_regex=active_settings.cors_lan_regex,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
     )
@@ -215,8 +331,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        # API 响应可能包含会话或家庭范围的数据，因此对浏览器、反向代理以及
-        # 未使用内置 Service Worker 防护的客户端显式禁止缓存。
+        # API 响应可能包含会话或家庭范围的数据，明确禁止缓存，避免浏览器、
+        # 反向代理或未使用内置 Service Worker 防护的客户端复用响应。
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -247,10 +363,12 @@ def health(db: Db) -> HealthOut:
 @router.get("/updates/manifest", response_model=ReleaseManifestOut, tags=["updates"])
 @router.get("/releases/latest", response_model=ReleaseManifestOut, tags=["updates"])
 def update_manifest(settings: SettingsDep, response: Response) -> dict[str, Any]:
-    """返回手机、电视和桌面客户端使用的公开发布清单。
+    """Return the public release manifest for phone, TV and desktop clients.
 
-    此端点有意不要求认证，让已安装的客户端可以在用户登录前检查更新。
-    它只暴露元数据，实际产物地址仍受发布服务器自身的访问控制约束。
+    This endpoint is intentionally unauthenticated so an installed client can
+    check for updates before a user signs in.  It exposes metadata only; the
+    actual artifact URL remains subject to the release server's own access
+    controls.
     """
 
     response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -268,10 +386,11 @@ def tauri_update(
     current_version: str = Query(default=__version__, max_length=80),
     channel: str | None = Query(default=None, max_length=40),
 ) -> dict[str, Any] | Response:
-    """提供 Tauri v2 更新插件所需的 JSON 结构。
+    """Expose the JSON shape expected by the Tauri v2 updater plugin.
 
-    ``204`` 表示没有适用更新。必须提供目标平台和架构，避免把签名产物
-    错误返回给不匹配的客户端。
+    ``204`` means there is no applicable update.  A target and architecture
+    are required to prevent accidentally returning a signed artifact to an
+    unrelated client.
     """
 
     no_cache_headers = {
@@ -319,45 +438,41 @@ def login(payload: LoginIn, request: Request, db: Db, settings: SettingsDep) -> 
         detail = "账号正在等待运维管理员审批" if pending else "用户名或密码错误"
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
     if payload.app_edition == "client" and user.role == "operator":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="运维账号只能登录 Lumi Server")
+        effective_role = "guardian"
+    else:
+        effective_role = user.role
     if payload.app_edition == "server" and user.role != "operator":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="儿童和家长账号请使用 Lumi Client")
+    if password_hash_needs_upgrade(user.password_hash, settings.password_iterations):
+        user.password_salt, user.password_hash = hash_password(payload.password, settings.password_iterations)
     limiter.clear(limiter_key)
     raw_token, session = create_session_token(
         db,
         user,
         device_name=payload.device_name,
         session_hours=settings.session_hours,
+        effective_role=effective_role,
     )
-    add_audit(db, request=request, actor=user, action="auth.login", resource_type="session", resource_id=session.id)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="auth.login",
+        resource_type="session",
+        resource_id=session.id,
+        metadata={"app_edition": payload.app_edition, "effective_role": effective_role},
+    )
     db.commit()
-    return LoginOut(access_token=raw_token, expires_at=session.expires_at, user=UserOut.model_validate(user))
+    principal = SessionPrincipal.from_user(user, effective_role)
+    return LoginOut(access_token=raw_token, expires_at=session.expires_at, user=UserOut.model_validate(principal))
 
 
 @router.post("/auth/operator-setup", response_model=UserOut, status_code=status.HTTP_201_CREATED, tags=["auth"])
 def setup_operator(payload: OperatorSetupIn, request: Request, db: Db, settings: SettingsDep) -> UserOut:
-    client_host = request.client.host if request.client else ""
-    try:
-        is_loopback = ipaddress.ip_address(client_host).is_loopback
-    except ValueError:
-        is_loopback = settings.environment == "test" and client_host == "testclient"
-    if not is_loopback:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="首次运维账户只能在 Server 本机创建")
+    _require_server_loopback(request, settings)
     if db.scalar(select(User.id).where(User.role == "operator")):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="运维账户已经初始化")
-    if db.scalar(select(User.id).where(User.username == payload.username)):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这个登录账号已存在")
-    password_salt, password_hash = hash_password(payload.password, settings.password_iterations)
-    user = User(
-        username=payload.username,
-        role="operator",
-        display_name=payload.display_name,
-        password_salt=password_salt,
-        password_hash=password_hash,
-        status="active",
-    )
-    db.add(user)
-    db.flush()
+    user = _create_operator(db, payload, settings)
     add_audit(
         db,
         request=request,
@@ -368,6 +483,119 @@ def setup_operator(payload: OperatorSetupIn, request: Request, db: Db, settings:
     )
     db.commit()
     return UserOut.model_validate(user)
+
+
+@router.post("/auth/operators", response_model=UserOut, status_code=status.HTTP_201_CREATED, tags=["auth"])
+def register_operator(payload: OperatorSetupIn, request: Request, db: Db, settings: SettingsDep) -> UserOut:
+    _require_server_loopback(request, settings)
+    if not db.scalar(select(User.id).where(User.role == "operator")):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="请先完成首次运维账户设置")
+    user = _create_operator(db, payload, settings)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="account.operator_registered_local",
+        resource_type="user",
+        resource_id=user.id,
+    )
+    db.commit()
+    return UserOut.model_validate(user)
+
+
+@router.post(
+    "/auth/operator-recovery/question",
+    response_model=OperatorRecoveryQuestionOut,
+    tags=["auth"],
+)
+def operator_recovery_question(
+    payload: OperatorRecoveryQuestionIn,
+    request: Request,
+    db: Db,
+    settings: SettingsDep,
+) -> OperatorRecoveryQuestionOut:
+    _require_server_loopback(request, settings)
+    limiter: LoginLimiter = request.app.state.recovery_limiter
+    client = request.client.host if request.client else "unknown"
+    if not limiter.allow(f"question:{client}", time.monotonic()):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="密保查询过于频繁，请稍后再试")
+    user = db.scalar(select(User).where(User.username == payload.username, User.role == "operator"))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到这个运维账号")
+    recovery = db.get(OperatorRecovery, user.id)
+    return OperatorRecoveryQuestionOut(
+        username=user.username,
+        question=recovery.question if recovery else None,
+        legacy_setup_required=recovery is None,
+    )
+
+
+@router.post(
+    "/auth/operator-recovery/reset",
+    response_model=OperationMessageOut,
+    tags=["auth"],
+)
+def reset_operator_password(
+    payload: OperatorPasswordResetIn,
+    request: Request,
+    db: Db,
+    settings: SettingsDep,
+) -> OperationMessageOut:
+    _require_server_loopback(request, settings)
+    client = request.client.host if request.client else "unknown"
+    limiter_key = f"reset:{client}:{payload.username.casefold()}"
+    limiter: LoginLimiter = request.app.state.recovery_limiter
+    if not limiter.allow(limiter_key, time.monotonic()):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="密码恢复尝试过多，请稍后再试")
+    user = db.scalar(select(User).where(User.username == payload.username, User.role == "operator"))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="运维账号或密保答案不正确")
+
+    normalized_answer = _normalized_recovery_answer(payload.recovery_answer, payload.new_password)
+    recovery = db.get(OperatorRecovery, user.id)
+    if recovery is None:
+        if payload.recovery_question is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="旧版账户需要先补设密保问题")
+        answer_salt, answer_hash = hash_password(normalized_answer, settings.password_iterations)
+        recovery = OperatorRecovery(
+            user_id=user.id,
+            question=payload.recovery_question,
+            answer_salt=answer_salt,
+            answer_hash=answer_hash,
+        )
+        db.add(recovery)
+        action = "account.operator_recovery_initialized"
+    else:
+        if not verify_password(
+            normalized_answer,
+            recovery.answer_salt,
+            recovery.answer_hash,
+            settings.password_iterations,
+        ):
+            add_audit(
+                db,
+                request=request,
+                actor=None,
+                action="account.operator_recovery_failed",
+                resource_type="user",
+                resource_id=user.id,
+            )
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="运维账号或密保答案不正确")
+        if password_hash_needs_upgrade(recovery.answer_hash, settings.password_iterations):
+            recovery.answer_salt, recovery.answer_hash = hash_password(normalized_answer, settings.password_iterations)
+        action = "account.operator_password_reset"
+
+    user.password_salt, user.password_hash = hash_password(payload.new_password, settings.password_iterations)
+    db.execute(
+        update(SessionToken)
+        .where(SessionToken.user_id == user.id, SessionToken.revoked_at.is_(None))
+        .values(revoked_at=utcnow())
+    )
+    add_audit(db, request=request, actor=user, action=action, resource_type="user", resource_id=user.id)
+    db.commit()
+    limiter.clear(limiter_key)
+    return OperationMessageOut(message="密码已重置，请使用新密码登录")
 
 
 @router.post("/auth/registrations", response_model=RegistrationOut, status_code=status.HTTP_201_CREATED, tags=["auth"])
@@ -477,6 +705,16 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
                 .order_by(User.created_at.desc())
             ).all()
         ]
+        result["library_items"] = [
+            managed_item_payload(db, settings, item)
+            for item in db.scalars(
+                select(ContentItem)
+                .where(ContentItem.household_id == user.household_id)
+                .order_by(ContentItem.updated_at.desc())
+            ).all()
+        ]
+        result["storage_paths"] = storage_paths_payload(load_storage_paths(db, settings, ensure=True))
+        result["external_feeds"] = load_external_feeds(db)
     return result
 
 
@@ -498,7 +736,23 @@ def content_detail(item_id: str, user: CurrentUser, db: Db) -> ContentOut:
             )
         ).all()
     )
-    return present_content(item, favorites=favorites, completed=completed, local_ids=local_ids)
+    launch_allowed = user.role != "child" or bool(
+        db.scalar(
+            select(ContentRequest.id).where(
+                ContentRequest.requester_id == user.id,
+                ContentRequest.item_id == item.id,
+                ContentRequest.status == "approved",
+                ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow()),
+            )
+        )
+    )
+    return present_content(
+        item,
+        favorites=favorites,
+        completed=completed,
+        local_ids=local_ids,
+        launch_allowed_ids={item.id} if launch_allowed else set(),
+    )
 
 
 @router.post("/catalog/{item_id}/launch", tags=["catalog"])
@@ -525,8 +779,8 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
     )
     if asset is not None:
         settings: Settings = request.app.state.settings
-        asset_path = (settings.library_dir / asset.storage_ref).resolve()
-        if not is_within(asset_path, settings.library_dir) or not asset_path.is_file():
+        asset_path = resolve_asset_path(db, settings, asset)
+        if asset_path is None or not asset_path.is_file():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地资源文件不可用")
         raw_ticket, grant = request.app.state.playback_tickets.issue(user_id=user.id, content_id=item.id)
         return PlaybackOut(
@@ -538,9 +792,22 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
         parsed = urlparse(item.launch_url)
         if parsed.scheme != "https" or not parsed.hostname:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="官方入口配置无效")
-        return RedirectResponse(item.launch_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        if item.acquisition_mode == "external_bilibili":
+            try:
+                reference = normalize_bilibili_url(item.launch_url)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="B站播放入口已失效") from exc
+            if not reference.external_id.upper().startswith("BV"):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="B站播放入口缺少视频编号")
+            return PlaybackOut(
+                mode="embed",
+                url=f"https://player.bilibili.com/player.html?bvid={reference.external_id}&autoplay=1&high_quality=1",
+            )
+        if item.acquisition_mode == "direct_stream":
+            return PlaybackOut(mode="direct_stream", url=item.launch_url)
+        return PlaybackOut(mode="external_link", url=item.launch_url)
     service = "jellyfin" if item.kind == "video" else "kavita" if item.kind == "book" else "audiobookshelf" if item.kind == "audio" else "device"
-    return {"mode": "local_service", "service": service, "content_id": item.id}
+    return PlaybackOut(mode="local_service", service=service)
 
 
 @router.get("/media/{item_id}", tags=["catalog"])
@@ -566,8 +833,8 @@ def stream_local_asset(
     )
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="本地资源不存在")
-    asset_path = (settings.library_dir / asset.storage_ref).resolve()
-    if not is_within(asset_path, settings.library_dir) or not asset_path.is_file():
+    asset_path = resolve_asset_path(db, settings, asset)
+    if asset_path is None or not asset_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="本地资源文件不存在")
     return FileResponse(
         asset_path,
@@ -862,6 +1129,303 @@ def update_user_status(
     return ManagedUserOut.model_validate(managed)
 
 
+@router.get("/ops/storage-paths", response_model=StoragePathsOut, tags=["ops"])
+def get_storage_paths(user: Operator, db: Db, settings: SettingsDep) -> StoragePathsOut:
+    return StoragePathsOut.model_validate(storage_paths_payload(load_storage_paths(db, settings, ensure=True)))
+
+
+@router.put("/ops/storage-paths", response_model=StoragePathsOut, tags=["ops"])
+def update_storage_paths(
+    payload: StoragePathsIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> StoragePathsOut:
+    _require_server_loopback(request, settings)
+    paths = save_storage_paths(db, settings, payload.model_dump(), updated_by=user.id)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="storage.paths_updated",
+        resource_type="system_setting",
+        resource_id="storage_paths",
+        metadata={"paths": storage_paths_payload(paths)},
+    )
+    db.commit()
+    return StoragePathsOut.model_validate(storage_paths_payload(paths))
+
+
+@router.get("/ops/library", response_model=list[LibraryItemOut], tags=["ops"])
+def list_managed_library(user: Operator, db: Db, settings: SettingsDep) -> list[LibraryItemOut]:
+    items = db.scalars(
+        select(ContentItem)
+        .where(ContentItem.household_id == user.household_id)
+        .order_by(ContentItem.updated_at.desc())
+    ).all()
+    return [LibraryItemOut.model_validate(managed_item_payload(db, settings, item)) for item in items]
+
+
+@router.post("/ops/library/scan", response_model=LibraryScanOut, tags=["ops"])
+def scan_local_library(request: Request, user: Operator, db: Db, settings: SettingsDep) -> LibraryScanOut:
+    _require_server_loopback(request, settings)
+    result = scan_managed_library(db, settings, user=user)
+    add_audit(db, request=request, actor=user, action="library.scanned", resource_type="library", metadata=result)
+    db.commit()
+    return LibraryScanOut.model_validate(result)
+
+
+@router.post("/ops/library/import", response_model=LibraryItemOut, status_code=status.HTTP_201_CREATED, tags=["ops"])
+def import_local_library_item(
+    payload: LocalLibraryImportIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> LibraryItemOut:
+    _require_server_loopback(request, settings)
+    item = register_local_file(
+        db,
+        settings,
+        user=user,
+        source_path=Path(payload.source_path),
+        kind=payload.kind,
+        title=payload.title,
+        audience=payload.audience,
+        age_from=payload.age_from,
+        age_to=payload.age_to,
+        language=payload.language,
+        description=payload.description,
+        copy_to_library=payload.copy_to_library,
+        publish=payload.publish,
+    )
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.local_imported",
+        resource_type="content",
+        resource_id=item.id,
+        metadata={"kind": item.kind, "published": item.publication_status == "published"},
+    )
+    db.commit()
+    db.refresh(item)
+    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.patch("/ops/library/{item_id}", response_model=LibraryItemOut, tags=["ops"])
+def update_library_item(
+    item_id: str,
+    payload: LibraryItemUpdateIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> LibraryItemOut:
+    item = db.scalar(select(ContentItem).where(ContentItem.id == item_id, ContentItem.household_id == user.household_id))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
+    changes = payload.model_dump(exclude_unset=True)
+    age_from = changes.get("age_from", item.age_from)
+    age_to = changes.get("age_to", item.age_to)
+    if age_to < age_from:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="适龄范围无效")
+    asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
+    next_status = changes.get("publication_status", item.publication_status)
+    if next_status == "published" and asset is not None:
+        path = resolve_asset_path(db, settings, asset)
+        if path is None or not path.is_file():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地文件不可用，不能发布")
+    if next_status == "published" and asset is None and not item.launch_url:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="资源没有可用的播放入口")
+    for field in ("title", "subtitle", "language", "age_from", "age_to", "description", "audience", "featured", "publication_status"):
+        if field in changes and changes[field] is not None:
+            setattr(item, field, changes[field].strip() if isinstance(changes[field], str) else changes[field])
+    item.updated_at = utcnow()
+    if asset is not None:
+        asset.audience = item.audience
+        asset.publication_status = item.publication_status
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.item_updated",
+        resource_type="content",
+        resource_id=item.id,
+        metadata={"fields": sorted(changes)},
+    )
+    db.commit()
+    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.delete("/ops/library/{item_id}", response_model=LibraryItemOut, tags=["ops"])
+def archive_library_item(
+    item_id: str,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> LibraryItemOut:
+    item = db.scalar(select(ContentItem).where(ContentItem.id == item_id, ContentItem.household_id == user.household_id))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
+    item.publication_status = "archived"
+    item.updated_at = utcnow()
+    asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
+    if asset is not None:
+        asset.publication_status = "archived"
+    add_audit(db, request=request, actor=user, action="library.item_archived", resource_type="content", resource_id=item.id)
+    db.commit()
+    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.post("/ops/library/external", response_model=LibraryItemOut, status_code=status.HTTP_201_CREATED, tags=["ops"])
+def add_external_library_item(
+    payload: ExternalItemIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> LibraryItemOut:
+    if payload.age_to < payload.age_from:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="适龄范围无效")
+    raw_url = str(payload.url)
+    provider = provider_for_url(raw_url) if payload.provider == "auto" else payload.provider
+    title = payload.title.strip() if payload.title else ""
+    cover_url = str(payload.cover_url) if payload.cover_url else None
+    description = payload.description
+    duration_minutes = 10
+    external_id = None
+    if provider == "bilibili":
+        try:
+            reference = normalize_bilibili_url(raw_url)
+            canonical = reference.url
+            entry = extract_bilibili_entries(canonical, max_items=1)[0]
+            raw_url = entry.url
+            title = title or entry.title
+            cover_url = cover_url or entry.cover_url
+            description = description or entry.description
+            duration_minutes = entry.duration_minutes
+            external_id = entry.external_id
+        except (ExternalCatalogError, ValueError):
+            try:
+                reference = normalize_bilibili_url(raw_url)
+            except ValueError as invalid:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(invalid)) from invalid
+            raw_url = reference.url
+            external_id = reference.external_id
+            title = title or f"B站视频 {reference.external_id}"
+            description = description or "已保存在线播放入口；Server 暂时未能读取标题和封面，可稍后编辑或重新同步。"
+    elif not title:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="非 B 站在线资源需要填写标题")
+    item = upsert_external_item(
+        db,
+        user=user,
+        url=raw_url,
+        provider=provider,
+        title=title,
+        kind=payload.kind,
+        cover_url=cover_url,
+        audience=payload.audience,
+        age_from=payload.age_from,
+        age_to=payload.age_to,
+        language=payload.language,
+        description=description,
+        duration_minutes=duration_minutes,
+        external_id=external_id,
+    )
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.external_added",
+        resource_type="content",
+        resource_id=item.id,
+        metadata={"provider": provider},
+    )
+    db.commit()
+    db.refresh(item)
+    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.get("/ops/external-feeds", response_model=list[ExternalFeedOut], tags=["ops"])
+def list_external_feeds(user: Operator, db: Db) -> list[ExternalFeedOut]:
+    return [ExternalFeedOut.model_validate(feed) for feed in load_external_feeds(db)]
+
+
+@router.post("/ops/external-feeds", response_model=ExternalFeedOut, status_code=status.HTTP_201_CREATED, tags=["ops"])
+def create_external_feed(
+    payload: ExternalFeedIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> ExternalFeedOut:
+    _require_server_loopback(request, settings)
+    if payload.age_to < payload.age_from:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="适龄范围无效")
+    try:
+        feed = new_external_feed(payload.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    feeds = load_external_feeds(db)
+    feeds.append(feed)
+    try:
+        sync_external_feed(db, settings, user=user, feed=feed)
+    except (ExternalCatalogError, OSError, ValueError) as exc:
+        feed["last_attempt_at"] = utcnow().isoformat()
+        feed["last_error"] = str(exc)[:200]
+    save_external_feeds(db, feeds, updated_by=user.id)
+    add_audit(db, request=request, actor=user, action="external_feed.created", resource_type="external_feed", resource_id=feed["id"])
+    db.commit()
+    return ExternalFeedOut.model_validate(feed)
+
+
+@router.post("/ops/external-feeds/{feed_id}/sync", response_model=ExternalFeedOut, tags=["ops"])
+def sync_one_external_feed(
+    feed_id: str,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> ExternalFeedOut:
+    _require_server_loopback(request, settings)
+    feeds = load_external_feeds(db)
+    feed = next((candidate for candidate in feeds if candidate.get("id") == feed_id), None)
+    if feed is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="同步源不存在")
+    feed["last_attempt_at"] = utcnow().isoformat()
+    try:
+        sync_external_feed(db, settings, user=user, feed=feed)
+    except (ExternalCatalogError, OSError, ValueError) as exc:
+        feed["last_error"] = str(exc)[:200]
+    save_external_feeds(db, feeds, updated_by=user.id)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="external_feed.synced",
+        resource_type="external_feed",
+        resource_id=feed_id,
+        metadata={"item_count": feed.get("item_count", 0), "error": feed.get("last_error")},
+    )
+    db.commit()
+    return ExternalFeedOut.model_validate(feed)
+
+
+@router.delete("/ops/external-feeds/{feed_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["ops"])
+def delete_external_feed(feed_id: str, request: Request, user: Operator, db: Db, settings: SettingsDep) -> None:
+    _require_server_loopback(request, settings)
+    feeds = load_external_feeds(db)
+    remaining = [feed for feed in feeds if feed.get("id") != feed_id]
+    if len(remaining) == len(feeds):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="同步源不存在")
+    save_external_feeds(db, remaining, updated_by=user.id)
+    add_audit(db, request=request, actor=user, action="external_feed.deleted", resource_type="external_feed", resource_id=feed_id)
+    db.commit()
+
+
 @router.post("/ops/sources", response_model=SourceOut, status_code=status.HTTP_201_CREATED, tags=["ops"])
 def create_source(payload: SourceIn, request: Request, user: Operator, db: Db) -> SourceOut:
     source_id = payload.id or new_id()
@@ -992,6 +1556,41 @@ def queue_bilibili_download(
     idempotency_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
     existing = db.scalar(select(DownloadJob).where(DownloadJob.idempotency_key == idempotency_key))
     if existing:
+        if existing.stage in {"failed", "paused"}:
+            existing.stage = "queued"
+            existing.progress = 0
+            existing.bytes_done = 0
+            existing.expected_bytes = None
+            existing.error_code = None
+            existing.scheduled_at = utcnow()
+            existing.rights_note = payload.rights_note.strip()
+            existing.proof_url = reference.url
+            if payload.title and payload.title.strip():
+                existing.title = payload.title.strip()
+            existing.manifest_ref = write_manifest(
+                settings.manifest_dir,
+                existing.id,
+                {
+                    "version": 1,
+                    "job_id": existing.id,
+                    "source_id": source.id,
+                    "connector": "bilibili",
+                    "url": reference.url,
+                    "max_height": payload.max_height,
+                    "run_outside_window": payload.start_now,
+                    "created_at": utcnow().isoformat(),
+                },
+            )
+            add_audit(
+                db,
+                request=request,
+                actor=user,
+                action="bilibili_download.requeued",
+                resource_type="download_job",
+                resource_id=existing.id,
+                metadata={"max_height": payload.max_height, "start_now": payload.start_now},
+            )
+            db.commit()
         return JobOut.model_validate(existing)
     scheduled = _naive_utc(payload.scheduled_at) if payload.scheduled_at else utcnow()
     job = DownloadJob(
@@ -1092,9 +1691,24 @@ def resume_all_downloads(request: Request, user: Operator, db: Db) -> dict[str, 
     setting.value_json = {"paused": False, "reason": None, "at": utcnow().isoformat()}
     setting.updated_by = user.id
     db.add(setting)
-    add_audit(db, request=request, actor=user, action="download.resume_all", resource_type="system_setting", resource_id="downloads")
+    resumed = 0
+    for job in _jobs_for_household(db, user.household_id):
+        if job.stage == "paused" and job.manifest_ref:
+            job.stage = "queued"
+            job.error_code = None
+            job.scheduled_at = utcnow()
+            resumed += 1
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="download.resume_all",
+        resource_type="system_setting",
+        resource_id="downloads",
+        metadata={"resumed_jobs": resumed},
+    )
     db.commit()
-    return {"paused": False}
+    return {"paused": False, "resumed_jobs": resumed}
 
 
 @router.get("/ops/nightly-summary", tags=["ops"])
@@ -1134,8 +1748,8 @@ def review_cloud_asset(asset_id: str, payload: AssetReviewIn, request: Request, 
 
 
 @router.get("/ops/system-status", tags=["ops"])
-def get_system_status(user: GuardianOrOperator, settings: SettingsDep) -> dict[str, Any]:
-    return system_status(settings)
+def get_system_status(user: GuardianOrOperator, db: Db, settings: SettingsDep) -> dict[str, Any]:
+    return system_status(db, settings)
 
 
 @router.get("/ops/audit", tags=["ops"])

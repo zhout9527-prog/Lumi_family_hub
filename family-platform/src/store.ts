@@ -3,6 +3,7 @@ import {
   ApiError,
   bootstrapApi,
   completeItemApi,
+  addExternalItemApi,
   confirmTransferApi,
   createRequestApi,
   createSubmissionApi,
@@ -16,27 +17,44 @@ import {
   logoutApi,
   mapAsset,
   mapContent,
+  mapExternalFeed,
   mapJob,
+  mapLibraryItem,
   mapManagedUser,
   mapRegistration,
   mapRequest,
   mapSource,
+  mapStoragePaths,
   mapSubmission,
   mapUser,
+  operatorRecoveryQuestionApi,
   pauseAllApi,
   pauseJobApi,
   queueBilibiliApi,
   queueWatchlistApi,
+  createExternalFeedApi,
+  deleteExternalFeedApi,
+  externalFeedsApi,
+  importLocalLibraryApi,
+  libraryItemsApi,
   registerAccountApi,
+  registerOperatorApi,
+  resetOperatorPasswordApi,
+  resumeAllApi,
   retryJobApi,
   reviewAssetApi,
   setAuthToken,
   setApiBase,
+  saveStoragePathsApi,
+  scanLibraryApi,
   setupOperatorApi,
   syncInboxApi,
   systemStatusApi,
+  syncExternalFeedApi,
   toggleFavoriteApi,
   updateManagedUserStatusApi,
+  archiveLibraryItemApi,
+  updateLibraryItemApi,
   type BootstrapPayload,
 } from './api'
 import { APP_EDITION, isRoleAllowed } from './edition'
@@ -51,10 +69,20 @@ import type {
   ContentItem,
   ContentRequest,
   DownloadJob,
+  ExternalFeed,
+  ExternalFeedDraft,
+  ExternalItemDraft,
+  LibraryItemRecord,
+  LibraryScanResult,
+  LocalImportDraft,
   ManagedUser,
+  OperatorAccountDraft,
+  OperatorPasswordResetDraft,
+  OperatorRecoveryQuestion,
   RegistrationDraft,
   SessionUser,
   SourceRecord,
+  StoragePaths,
   SystemStatus,
 } from './types'
 
@@ -90,6 +118,9 @@ export function useFamilyStore() {
   const [downloadsPaused, setDownloadsPaused] = useState(false)
   const [registrations, setRegistrations] = useState<AccountRegistration[]>([])
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
+  const [libraryItems, setLibraryItems] = useState<LibraryItemRecord[]>([])
+  const [storagePaths, setStoragePaths] = useState<StoragePaths | null>(null)
+  const [externalFeeds, setExternalFeeds] = useState<ExternalFeed[]>([])
   const authTransition = useRef<Promise<void>>(Promise.resolve())
 
   const clearSessionState = () => {
@@ -101,6 +132,9 @@ export function useFamilyStore() {
     setSystemStatus(null)
     setRegistrations([])
     setManagedUsers([])
+    setLibraryItems([])
+    setStoragePaths(null)
+    setExternalFeeds([])
     setState(defaultState)
   }
 
@@ -119,6 +153,9 @@ export function useFamilyStore() {
     setAssets((payload.assets ?? []).map(mapAsset))
     setRegistrations((payload.registrations ?? []).map(mapRegistration))
     setManagedUsers((payload.managed_users ?? []).map(mapManagedUser))
+    setLibraryItems((payload.library_items ?? []).map(mapLibraryItem))
+    setStoragePaths(payload.storage_paths ? mapStoragePaths(payload.storage_paths) : null)
+    setExternalFeeds((payload.external_feeds ?? []).map(mapExternalFeed))
     setDownloadsPaused(payload.downloads_paused)
     setState({
       role: mappedUser.role,
@@ -175,7 +212,7 @@ export function useFamilyStore() {
     return () => {
       active = false
     }
-    // 主机地址和已保存令牌只在启动时读取一次。
+    // 启动时只读取一次主机地址和已保存的会话令牌。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -190,7 +227,7 @@ export function useFamilyStore() {
         const payload = await bootstrapApi()
         if (active) await applyBootstrap(payload, false)
       } catch {
-        // 短暂的轮询失败不应清除当前会话。
+        // 短暂的轮询失败不应清掉当前有效会话。
       } finally {
         running = false
       }
@@ -200,8 +237,31 @@ export function useFamilyStore() {
       active = false
       window.clearInterval(timer)
     }
-    // 轮询跟随已认证的运维账户，不随每次状态刷新重建。
+    // 轮询绑定当前运维会话，而不是绑定每次状态刷新。
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role])
+
+  useEffect(() => {
+    if (!user || user.role === 'operator') return
+    let active = true
+    let running = false
+    const poll = async () => {
+      if (running || document.visibilityState !== 'visible') return
+      running = true
+      try {
+        const payload = await bootstrapApi()
+        if (active) await applyBootstrap(payload, false)
+      } catch {
+        // Client 只在后台静默刷新，不能因为一次网络抖动打断正在播放的内容。
+      } finally {
+        running = false
+      }
+    }
+    const timer = window.setInterval(() => { void poll() }, 30000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [user?.id, user?.role])
 
   const login = async (username: string, password: string) => {
@@ -230,7 +290,7 @@ export function useFamilyStore() {
     clearSessionState()
     setAuthError('')
     const transition = request.catch(() => {
-      // 即使主机不可用，也要清除本地凭据。
+      // 即使主机暂时不可用，也先清除本地会话凭据。
     })
     authTransition.current = transition
     await transition
@@ -251,13 +311,53 @@ export function useFamilyStore() {
     }
   }
 
-  const setupOperator = async (payload: { username: string; password: string; displayName: string }) => {
+  const setupOperator = async (payload: OperatorAccountDraft) => {
     setBusy(true)
     setAuthError('')
     try {
       await setupOperatorApi(payload)
       setSetupRequired(false)
       setConnection('backend')
+    } catch (error) {
+      setAuthError(messageFrom(error))
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const registerOperator = async (payload: OperatorAccountDraft) => {
+    setBusy(true)
+    setAuthError('')
+    try {
+      await registerOperatorApi(payload)
+      setConnection('backend')
+    } catch (error) {
+      setAuthError(messageFrom(error))
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const lookupOperatorRecovery = async (username: string): Promise<OperatorRecoveryQuestion> => {
+    setBusy(true)
+    setAuthError('')
+    try {
+      return await operatorRecoveryQuestionApi(username)
+    } catch (error) {
+      setAuthError(messageFrom(error))
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const recoverOperator = async (payload: OperatorPasswordResetDraft): Promise<string> => {
+    setBusy(true)
+    setAuthError('')
+    try {
+      return await resetOperatorPasswordApi(payload)
     } catch (error) {
       setAuthError(messageFrom(error))
       throw error
@@ -397,6 +497,17 @@ export function useFamilyStore() {
     }))
   }
 
+  const resumeAll = async () => {
+    await resumeAllApi()
+    setDownloadsPaused(false)
+    setState((current) => ({
+      ...current,
+      jobs: current.jobs.map((job) =>
+        job.status === 'paused' ? { ...job, status: 'queued', progress: 0, eta: '即将开始' } : job,
+      ),
+    }))
+  }
+
   const addSubmission = async (payload: {
     title: string
     provider: NonNullable<CloudSubmission['provider']>
@@ -432,6 +543,96 @@ export function useFamilyStore() {
     setManagedUsers((current) => current.map((item) => item.id === id ? updated : item))
   }
 
+  const saveStoragePaths = async (paths: StoragePaths) => {
+    setBusy(true)
+    try {
+      const updated = await saveStoragePathsApi(paths)
+      setStoragePaths(updated)
+      return updated
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const scanLibrary = async (): Promise<LibraryScanResult> => {
+    setBusy(true)
+    try {
+      const result = await scanLibraryApi()
+      setLibraryItems(await libraryItemsApi())
+      await refreshBackend()
+      return result
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importLocalLibrary = async (payload: LocalImportDraft) => {
+    setBusy(true)
+    try {
+      const item = await importLocalLibraryApi(payload)
+      setLibraryItems((current) => [item, ...current.filter((candidate) => candidate.id !== item.id)])
+      await refreshBackend()
+      return item
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const updateLibraryItem = async (id: string, changes: Record<string, unknown>) => {
+    const item = await updateLibraryItemApi(id, changes)
+    setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
+    await refreshBackend()
+    return item
+  }
+
+  const archiveLibraryItem = async (id: string) => {
+    const item = await archiveLibraryItemApi(id)
+    setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
+    await refreshBackend()
+    return item
+  }
+
+  const addExternalItem = async (payload: ExternalItemDraft) => {
+    setBusy(true)
+    try {
+      const item = await addExternalItemApi(payload)
+      setLibraryItems((current) => [item, ...current.filter((candidate) => candidate.id !== item.id)])
+      await refreshBackend()
+      return item
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createExternalFeed = async (payload: ExternalFeedDraft) => {
+    setBusy(true)
+    try {
+      const feed = await createExternalFeedApi(payload)
+      setExternalFeeds((current) => [feed, ...current.filter((candidate) => candidate.id !== feed.id)])
+      await refreshBackend()
+      return feed
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const syncExternalFeed = async (id: string) => {
+    setBusy(true)
+    try {
+      const feed = await syncExternalFeedApi(id)
+      setExternalFeeds((current) => current.map((candidate) => candidate.id === id ? feed : candidate))
+      await refreshBackend()
+      return feed
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteExternalFeed = async (id: string) => {
+    await deleteExternalFeedApi(id)
+    setExternalFeeds((current) => current.filter((candidate) => candidate.id !== id))
+  }
+
   return {
     state,
     catalog,
@@ -447,10 +648,16 @@ export function useFamilyStore() {
     downloadsPaused,
     registrations,
     managedUsers,
+    libraryItems,
+    storagePaths,
+    externalFeeds,
     login,
     logout,
     registerAccount,
     setupOperator,
+    registerOperator,
+    lookupOperatorRecovery,
+    recoverOperator,
     retryConnection,
     configureHost,
     refreshBackend,
@@ -464,11 +671,21 @@ export function useFamilyStore() {
     reviewAsset,
     launchContent,
     pauseAll,
+    resumeAll,
     addSubmission,
     updateSubmission,
     syncNow,
     decideRegistration,
     updateManagedUser,
+    saveStoragePaths,
+    scanLibrary,
+    importLocalLibrary,
+    updateLibraryItem,
+    archiveLibraryItem,
+    addExternalItem,
+    createExternalFeed,
+    syncExternalFeed,
+    deleteExternalFeed,
     clearAuthError: () => setAuthError(''),
   }
 }

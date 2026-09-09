@@ -25,11 +25,16 @@ fn server_core_path() -> io::Result<PathBuf> {
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "application directory is unavailable"))?
         .to_path_buf();
-    Ok(directory.join(if cfg!(target_os = "windows") {
+    let core_name = if cfg!(target_os = "windows") {
         "lumi-server-core.exe"
     } else {
         "lumi-server-core"
-    }))
+    };
+    let bundled_directory = directory.join("lumi-server-core").join(core_name);
+    if bundled_directory.is_file() {
+        return Ok(bundled_directory);
+    }
+    Ok(directory.join(core_name))
 }
 
 #[cfg(desktop)]

@@ -17,7 +17,7 @@ class PlaybackGrant:
 
 
 class PlaybackTickets:
-    """为无法设置认证请求头的媒体元素签发内存中的短期凭据。"""
+    """In-memory, short-lived grants for media elements that cannot set auth headers."""
 
     def __init__(self, lifetime: timedelta = timedelta(hours=2)) -> None:
         self.lifetime = lifetime

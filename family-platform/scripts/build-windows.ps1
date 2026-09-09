@@ -30,6 +30,21 @@ $productSlug = if ($isServer) { "Lumi-Server" } else { "Lumi-Client" }
 $binaryName = if ($isServer) { "lumi-server.exe" } else { "lumi-client.exe" }
 $installSubdir = if ($isServer) { "LumiServer" } else { "LumiClient" }
 
+function Remove-OldWindowsArtifacts([string]$KeepVersion, [string]$CurrentProductSlug) {
+  if (-not (Test-Path -LiteralPath $artifactRoot)) { return }
+  $escapedVersion = [regex]::Escape($KeepVersion)
+  $escapedProduct = [regex]::Escape($CurrentProductSlug)
+  Get-ChildItem -LiteralPath $artifactRoot -Force |
+    Where-Object {
+      $_.Name -match '^(?i)(Lumi-Family-Hub|lumi-family-hub)[_-]\d+\.\d+\.\d+_' -or
+      ($_.Name -match "^(?i)${escapedProduct}[_-]\d+\.\d+\.\d+_" -and $_.Name -notmatch "[_-]${escapedVersion}_")
+    } |
+    ForEach-Object {
+      Remove-Item -LiteralPath $_.FullName -Recurse -Force
+      Write-Host "Removed old Windows artifact: $($_.Name)"
+    }
+}
+
 function Invoke-CheckedExternalCommand {
   param(
     [string]$Description,
@@ -125,7 +140,7 @@ try {
       & $pythonPath -m PyInstaller `
         --noconfirm `
         --noupx `
-        --onefile `
+        --onedir `
         --name lumi-server-core `
         --paths $backendSource `
         --distpath $pyinstallerDist `
@@ -140,7 +155,8 @@ try {
         --collect-all imageio_ffmpeg `
         (Join-Path $backendSource "server_entry.py")
     }
-    $serverCore = Join-Path $pyinstallerDist "lumi-server-core.exe"
+    $serverCoreDir = Join-Path $pyinstallerDist "lumi-server-core"
+    $serverCore = Join-Path $serverCoreDir "lumi-server-core.exe"
     if (-not (Test-Path -LiteralPath $serverCore)) { throw "Lumi Server core executable was not produced." }
   }
 
@@ -156,7 +172,7 @@ try {
   )
   if ($serverCore) {
     $nsisArguments += @(
-      "/DSERVER_CORE=$serverCore",
+      "/DSERVER_CORE_DIR=$serverCoreDir",
       "/DSERVER_CORE_BINARY=lumi-server-core.exe"
     )
   }
@@ -169,7 +185,7 @@ try {
     $portableDir = Join-Path $artifactRoot "${productSlug}_${version}_x64-portable"
     New-Item -ItemType Directory -Path $portableDir -Force | Out-Null
     Copy-Item -LiteralPath $appBinary -Destination (Join-Path $portableDir $binaryName) -Force
-    Copy-Item -LiteralPath $serverCore -Destination (Join-Path $portableDir "lumi-server-core.exe") -Force
+    Copy-Item -LiteralPath $serverCoreDir -Destination (Join-Path $portableDir "lumi-server-core") -Recurse -Force
   }
 } finally {
   if ((Test-Path -LiteralPath $stageRoot) -and $stageRoot.StartsWith($stageParent, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -178,7 +194,6 @@ try {
 }
 
 foreach ($artifact in @($artifactInstaller, $artifactBinary)) {
-  Ensure-PlainGeneratedFile $artifact
   $bytes = [System.IO.File]::ReadAllBytes($artifact)
   if ($bytes.Length -lt 2 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
     throw "Windows artifact is not a valid PE executable: $artifact"
@@ -186,6 +201,8 @@ foreach ($artifact in @($artifactInstaller, $artifactBinary)) {
   $hash = Get-Sha256 $artifact
   Write-Host "$artifact SHA256=$hash"
 }
+
+Remove-OldWindowsArtifacts $version $productSlug
 
 if ($SignUpdater) {
   if (-not $env:TAURI_SIGNING_PRIVATE_KEY -and -not $env:TAURI_SIGNING_PRIVATE_KEY_PATH) {

@@ -7,11 +7,21 @@ import type {
   ContentItem,
   ContentRequest,
   DownloadJob,
+  ExternalFeed,
+  ExternalFeedDraft,
+  ExternalItemDraft,
+  LibraryItemRecord,
+  LibraryScanResult,
+  LocalImportDraft,
   ManagedUser,
+  OperatorAccountDraft,
+  OperatorPasswordResetDraft,
+  OperatorRecoveryQuestion,
   RegistrationDraft,
   Role,
   SessionUser,
   SourceRecord,
+  StoragePaths,
   SystemStatus,
 } from './types'
 import { APP_EDITION } from './edition'
@@ -58,7 +68,7 @@ export function setApiBase(value: string): string {
     if (API_BASE) window.localStorage.setItem(API_BASE_KEY, API_BASE)
     else window.localStorage.removeItem(API_BASE_KEY)
   } catch {
-    // 隐私 WebView 可能禁用存储，此时仍使用内存中的地址。
+    // 隐私 WebView 可能禁用存储，但内存中的地址仍然立即生效。
   }
   return API_BASE
 }
@@ -118,8 +128,7 @@ async function apiRequest<T>(
   }
   try {
     if (!API_BASE) throw new ApiError(0, '请先设置家庭主机地址')
-    // API 响应与用户和会话绑定，禁止浏览器或离线 Service Worker
-    // 在角色切换后复用其他角色的响应。
+    // API 响应绑定账户和会话，不能让浏览器或离线壳层复用其他角色的响应。
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
       headers,
@@ -192,6 +201,10 @@ interface ApiContent {
   favorite: boolean
   completed: boolean
   local_available: boolean
+  playable?: boolean
+  playback_mode?: string
+  launch_allowed?: boolean
+  provider?: string
 }
 
 interface ApiContentRequest {
@@ -216,6 +229,7 @@ interface ApiSubmission {
 
 interface ApiJob {
   id: string
+  external_id: string
   title: string
   content_kind: ContentItem['kind']
   source_id: string
@@ -223,7 +237,10 @@ interface ApiJob {
   progress: number
   bytes_done: number
   expected_bytes?: number | null
+  retry_count: number
   scheduled_at: string
+  created_at: string
+  updated_at: string
   error_code?: string | null
   proof_url?: string | null
 }
@@ -268,7 +285,64 @@ interface ApiSystemStatus {
     inbox: string
     quarantine: string
     library: string
+    video?: string
+    book?: string
+    audio?: string
+    image?: string
+    cache?: string
   }
+}
+
+interface ApiStoragePaths {
+  video: string
+  book: string
+  audio: string
+  image: string
+  cache: string
+  inbox: string
+  quarantine: string
+}
+
+interface ApiLibraryItem {
+  id: string
+  title: string
+  subtitle: string
+  kind: 'video' | 'book' | 'audio'
+  language: string
+  age_from: number
+  age_to: number
+  description: string
+  tags: string[]
+  cover_ref?: string | null
+  acquisition_mode: string
+  publication_status: string
+  audience: string
+  featured: boolean
+  source_id?: string | null
+  file_path?: string | null
+  file_size: number
+  file_available: boolean
+  external_url?: string | null
+  updated_at: string
+}
+
+interface ApiExternalFeed {
+  id: string
+  name: string
+  provider: string
+  url: string
+  cookie_file?: string | null
+  audience: string
+  age_from: number
+  age_to: number
+  language: string
+  max_items: number
+  sync_interval_hours: number
+  enabled: boolean
+  item_count: number
+  last_synced_at?: string | null
+  last_attempt_at?: string | null
+  last_error?: string | null
 }
 
 export interface BootstrapPayload {
@@ -283,6 +357,9 @@ export interface BootstrapPayload {
   assets?: ApiAsset[]
   registrations?: ApiRegistration[]
   managed_users?: ApiManagedUser[]
+  library_items?: ApiLibraryItem[]
+  storage_paths?: ApiStoragePaths
+  external_feeds?: ApiExternalFeed[]
 }
 
 export interface HealthPayload {
@@ -295,6 +372,12 @@ export interface HealthPayload {
 interface LoginPayload {
   access_token: string
   user: ApiUser
+}
+
+interface ApiOperatorRecoveryQuestion {
+  username: string
+  question?: string | null
+  legacy_setup_required: boolean
 }
 
 function shortDate(value: string): string {
@@ -354,6 +437,10 @@ export function mapContent(item: ApiContent): ContentItem {
     owned_or_official: '家庭馆藏 / 官方来源',
     cloud_inbox: '家庭审核馆藏',
     direct_http: '开放授权来源',
+    local_library: '家庭本地馆藏',
+    external_bilibili: 'B站在线收藏',
+    direct_stream: '开放媒体直链',
+    external_link: '第三方官方页面',
   }
   return {
     id: item.id,
@@ -372,6 +459,68 @@ export function mapContent(item: ApiContent): ContentItem {
     source: sourceLabels[item.acquisition_mode] ?? '家庭已审核来源',
     offlineActivity: item.offline_activity,
     localAvailable: item.local_available,
+    playable: item.playable ?? item.local_available,
+    playbackMode: (item.playback_mode ?? (item.local_available ? 'local_asset' : 'none')) as ContentItem['playbackMode'],
+    launchAllowed: item.launch_allowed ?? false,
+    provider: item.provider ?? 'local',
+  }
+}
+
+export function mapStoragePaths(item: ApiStoragePaths): StoragePaths {
+  return {
+    video: item.video,
+    book: item.book,
+    audio: item.audio,
+    image: item.image,
+    cache: item.cache,
+    inbox: item.inbox,
+    quarantine: item.quarantine,
+  }
+}
+
+export function mapLibraryItem(item: ApiLibraryItem): LibraryItemRecord {
+  return {
+    id: item.id,
+    title: item.title,
+    subtitle: item.subtitle,
+    kind: item.kind,
+    language: item.language,
+    ageFrom: item.age_from,
+    ageTo: item.age_to,
+    description: item.description,
+    tags: item.tags ?? [],
+    coverRef: item.cover_ref ?? undefined,
+    acquisitionMode: item.acquisition_mode,
+    publicationStatus: item.publication_status,
+    audience: item.audience,
+    featured: item.featured,
+    sourceId: item.source_id ?? undefined,
+    filePath: item.file_path ?? undefined,
+    fileSize: item.file_size,
+    fileAvailable: item.file_available,
+    externalUrl: item.external_url ?? undefined,
+    updatedAt: item.updated_at,
+  }
+}
+
+export function mapExternalFeed(item: ApiExternalFeed): ExternalFeed {
+  return {
+    id: item.id,
+    name: item.name,
+    provider: item.provider,
+    url: item.url,
+    cookieFile: item.cookie_file ?? undefined,
+    audience: item.audience,
+    ageFrom: item.age_from,
+    ageTo: item.age_to,
+    language: item.language,
+    maxItems: item.max_items,
+    syncIntervalHours: item.sync_interval_hours,
+    enabled: item.enabled,
+    itemCount: item.item_count,
+    lastSyncedAt: item.last_synced_at ?? undefined,
+    lastAttemptAt: item.last_attempt_at ?? undefined,
+    lastError: item.last_error ?? undefined,
   }
 }
 
@@ -419,6 +568,7 @@ export function mapJob(item: ApiJob): DownloadJob {
   const status = (known.includes(item.stage) ? item.stage : 'review') as DownloadJob['status']
   return {
     id: item.id,
+    externalId: item.external_id,
     title: item.title,
     kind: item.content_kind,
     status,
@@ -426,6 +576,12 @@ export function mapJob(item: ApiJob): DownloadJob {
     size: formatBytes(item.expected_bytes ?? item.bytes_done),
     source: item.source_id,
     eta: status === 'queued' ? shortDate(item.scheduled_at) : status === 'paused' ? '已暂停' : status === 'failed' ? (item.error_code ?? '下载失败') : status === 'blocked' ? '文件已冻结' : '等待复核',
+    bytesDone: item.bytes_done,
+    expectedBytes: item.expected_bytes ?? undefined,
+    retryCount: item.retry_count,
+    scheduledAt: item.scheduled_at,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
     errorCode: item.error_code ?? undefined,
     proofUrl: item.proof_url ?? undefined,
   }
@@ -521,24 +677,65 @@ export async function registerAccountApi(payload: RegistrationDraft): Promise<Ac
   return mapRegistration(result)
 }
 
-export async function setupOperatorApi(payload: {
-  username: string
-  password: string
-  displayName: string
-}): Promise<SessionUser> {
+function operatorAccountBody(payload: OperatorAccountDraft) {
+  return {
+    username: payload.username,
+    password: payload.password,
+    display_name: payload.displayName,
+    recovery_question: payload.recoveryQuestion,
+    recovery_answer: payload.recoveryAnswer,
+  }
+}
+
+export async function setupOperatorApi(payload: OperatorAccountDraft): Promise<SessionUser> {
   const result = await apiRequest<ApiUser>(
     '/auth/operator-setup',
     {
       method: 'POST',
-      body: JSON.stringify({
-        username: payload.username,
-        password: payload.password,
-        display_name: payload.displayName,
-      }),
+      body: JSON.stringify(operatorAccountBody(payload)),
     },
     { authenticated: false },
   )
   return mapUser(result)
+}
+
+export async function registerOperatorApi(payload: OperatorAccountDraft): Promise<SessionUser> {
+  const result = await apiRequest<ApiUser>(
+    '/auth/operators',
+    { method: 'POST', body: JSON.stringify(operatorAccountBody(payload)) },
+    { authenticated: false },
+  )
+  return mapUser(result)
+}
+
+export async function operatorRecoveryQuestionApi(username: string): Promise<OperatorRecoveryQuestion> {
+  const result = await apiRequest<ApiOperatorRecoveryQuestion>(
+    '/auth/operator-recovery/question',
+    { method: 'POST', body: JSON.stringify({ username }) },
+    { authenticated: false },
+  )
+  return {
+    username: result.username,
+    question: result.question ?? undefined,
+    legacySetupRequired: result.legacy_setup_required,
+  }
+}
+
+export async function resetOperatorPasswordApi(payload: OperatorPasswordResetDraft): Promise<string> {
+  const result = await apiRequest<{ message: string }>(
+    '/auth/operator-recovery/reset',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        username: payload.username,
+        recovery_answer: payload.recoveryAnswer,
+        new_password: payload.newPassword,
+        recovery_question: payload.recoveryQuestion ?? null,
+      }),
+    },
+    { authenticated: false },
+  )
+  return result.message
 }
 
 export async function logoutApi(): Promise<void> {
@@ -620,8 +817,8 @@ export async function queueBilibiliApi(payload: BilibiliDownloadDraft): Promise<
       title: payload.title || null,
       max_height: payload.maxHeight,
       start_now: payload.startNow,
-      rights_confirmed: payload.rightsConfirmed,
-      rights_note: payload.rightsNote,
+      rights_confirmed: payload.rightsConfirmed ?? true,
+      rights_note: payload.rightsNote?.trim() || '由家庭运维管理员提交，仅用于有权保存的家庭离线观看内容',
     }),
   })
 }
@@ -645,10 +842,10 @@ export async function reviewAssetApi(id: string, payload: AssetReviewDraft): Pro
   })
 }
 
-export async function launchContentApi(id: string): Promise<{ mode: string; url?: string; service?: string }> {
-  const result = await apiRequest<{ mode: string; url?: string; service?: string }>(
+export async function launchContentApi(id: string): Promise<{ mode: string; url?: string; service?: string; expires_at?: string }> {
+  const result = await apiRequest<{ mode: string; url?: string; service?: string; expires_at?: string }>(
     `/catalog/${encodeURIComponent(id)}/launch`,
-    { method: 'POST', redirect: 'manual' },
+    { method: 'POST' },
   )
   if (result.url?.startsWith('/')) result.url = apiBaseOrigin() + result.url
   return result
@@ -656,6 +853,10 @@ export async function launchContentApi(id: string): Promise<{ mode: string; url?
 
 export async function pauseAllApi(): Promise<void> {
   await apiRequest('/ops/downloads/pause-all', { method: 'POST' })
+}
+
+export async function resumeAllApi(): Promise<void> {
+  await apiRequest('/ops/downloads/resume-all', { method: 'POST' })
 }
 
 export async function syncInboxApi(): Promise<void> {
@@ -687,4 +888,101 @@ export async function updateManagedUserStatusApi(
     { method: 'POST', body: JSON.stringify({ status }) },
   )
   return mapManagedUser(result)
+}
+
+export async function storagePathsApi(): Promise<StoragePaths> {
+  return mapStoragePaths(await apiRequest<ApiStoragePaths>('/ops/storage-paths'))
+}
+
+export async function saveStoragePathsApi(paths: StoragePaths): Promise<StoragePaths> {
+  return mapStoragePaths(await apiRequest<ApiStoragePaths>('/ops/storage-paths', {
+    method: 'PUT',
+    body: JSON.stringify(paths),
+  }))
+}
+
+export async function libraryItemsApi(): Promise<LibraryItemRecord[]> {
+  return (await apiRequest<ApiLibraryItem[]>('/ops/library')).map(mapLibraryItem)
+}
+
+export async function scanLibraryApi(): Promise<LibraryScanResult> {
+  return apiRequest<LibraryScanResult>('/ops/library/scan', { method: 'POST' })
+}
+
+export async function importLocalLibraryApi(payload: LocalImportDraft): Promise<LibraryItemRecord> {
+  return mapLibraryItem(await apiRequest<ApiLibraryItem>('/ops/library/import', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_path: payload.sourcePath,
+      kind: payload.kind,
+      title: payload.title?.trim() || null,
+      audience: payload.audience,
+      age_from: payload.ageFrom,
+      age_to: payload.ageTo,
+      language: payload.language,
+      description: payload.description,
+      copy_to_library: payload.copyToLibrary,
+      publish: payload.publish,
+    }),
+  }))
+}
+
+export async function updateLibraryItemApi(id: string, changes: Record<string, unknown>): Promise<LibraryItemRecord> {
+  return mapLibraryItem(await apiRequest<ApiLibraryItem>(`/ops/library/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(changes),
+  }))
+}
+
+export async function archiveLibraryItemApi(id: string): Promise<LibraryItemRecord> {
+  return mapLibraryItem(await apiRequest<ApiLibraryItem>(`/ops/library/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+}
+
+export async function addExternalItemApi(payload: ExternalItemDraft): Promise<LibraryItemRecord> {
+  return mapLibraryItem(await apiRequest<ApiLibraryItem>('/ops/library/external', {
+    method: 'POST',
+    body: JSON.stringify({
+      url: payload.url,
+      provider: payload.provider,
+      title: payload.title?.trim() || null,
+      kind: payload.kind,
+      cover_url: payload.coverUrl?.trim() || null,
+      audience: payload.audience,
+      age_from: payload.ageFrom,
+      age_to: payload.ageTo,
+      language: payload.language,
+      description: payload.description,
+    }),
+  }, { timeoutMs: 60000 }))
+}
+
+export async function externalFeedsApi(): Promise<ExternalFeed[]> {
+  return (await apiRequest<ApiExternalFeed[]>('/ops/external-feeds')).map(mapExternalFeed)
+}
+
+export async function createExternalFeedApi(payload: ExternalFeedDraft): Promise<ExternalFeed> {
+  return mapExternalFeed(await apiRequest<ApiExternalFeed>('/ops/external-feeds', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.name,
+      url: payload.url,
+      cookie_file: payload.cookieFile?.trim() || null,
+      audience: payload.audience,
+      age_from: payload.ageFrom,
+      age_to: payload.ageTo,
+      language: payload.language,
+      max_items: payload.maxItems,
+      sync_interval_hours: payload.syncIntervalHours,
+    }),
+  }, { timeoutMs: 60000 }))
+}
+
+export async function syncExternalFeedApi(id: string): Promise<ExternalFeed> {
+  return mapExternalFeed(await apiRequest<ApiExternalFeed>(`/ops/external-feeds/${encodeURIComponent(id)}/sync`, {
+    method: 'POST',
+  }, { timeoutMs: 60000 }))
+}
+
+export async function deleteExternalFeedApi(id: string): Promise<void> {
+  await apiRequest<void>(`/ops/external-feeds/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

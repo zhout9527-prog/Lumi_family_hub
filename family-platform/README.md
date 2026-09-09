@@ -1,19 +1,22 @@
 # 家庭探索馆
 
-家庭媒体与学习平台的初始开发实现，目前尚未正式发布，接口、目录和交互仍可能调整。应用拆成两个独立产品：`Lumi Server` 只在 Windows 家庭主机上运行，负责运维界面、账号、数据库、API 和后台任务；`Lumi Client` 安装在 Windows、Android 手机或 Android TV，只提供儿童和家长功能。播放、阅读和音频服务可以按需接入 Jellyfin、Kavita、Audiobookshelf 等专用服务。
+家庭媒体与学习平台的第一阶段可运行实现。正式应用拆成两个独立产品：`Lumi Server` 只在 Windows 家庭主机上运行，负责运维界面、账号、数据库、API 和后台任务；`Lumi Client` 安装在 Windows、Android 手机或 Android TV，只提供儿童和家长功能。播放、阅读和音频服务可以按需接入 Jellyfin、Kavita、Audiobookshelf 等专用服务。
 
 | 应用 | 安装位置 | 可登录角色 | 是否携带服务端 |
 | --- | --- | --- | --- |
 | Lumi Server | Windows 10/11 家庭主机 | `operator` | 是，自动启动 API、Worker 和 SQLite |
 | Lumi Client | Windows 10/11、Android 手机、Android TV | `child`、`guardian` | 否，连接家庭主机 |
 
-`IMPLEMENTATION.md` 记录本目录当前的代码结构、角色流程和运行边界。
+本仓库只发布源码；家庭平台的阶段设计文档保留在开发工作区，不随源码仓库发布。`IMPLEMENTATION.md` 是随源码维护的实现边界、角色流程和接口说明。
 
-## 当前原型能力
+## 已交付
 
-- Server 首次创建运维账户，Client 提交儿童/家长注册申请，运维审批后登录
+- Server 首次创建运维账户并设置密保，之后可在 Server 本机新增运维或找回密码；Client 提交儿童/家长注册申请，运维审批后登录
 - Client 与 Server 在编译、包名、导航和后端权限上隔离，不能靠切换菜单越权
 - 动画、图书、音频、益智游戏、创作和户外发现的统一目录
+- Server 可配置视频、图书、音乐、图片、缓存、投递箱和隔离区目录，并扫描、导入、编辑、发布或归档本机资源
+- 支持开放媒体直链、B站官方播放器以及抖音/夸克等官方页面入口；在线项目只保存链接与元数据，不占用家庭硬盘
+- B站空间、收藏夹和合集可保存为同步源，由 Worker 定时更新标题、封面和播放入口
 - 儿童请求、家长审批、候选资源登记、管理员处理队列
 - 来源白名单、许可/条款确认、私网 URL 防护、文件签名和压缩包路径检查
 - 隔离区、人工确认入库、暂停/恢复/重试、审计日志、夜间摘要
@@ -40,25 +43,29 @@ Windows Server（家庭 PC）
 Windows/Android/Android TV Client（儿童、家长）
 ```
 
-首次启动只允许从 Server 本机创建一个运维账户。密码不以明文保存：数据库只保存随机盐和 PBKDF2-HMAC-SHA256（310,000 次迭代）摘要；会话只保存令牌摘要。数据库默认在 Windows `%LOCALAPPDATA%\cn.lumi.familyhub.server\runtime\data\familyhub.db`，由当前 Windows 用户的文件权限保护。建议使用独立 Windows 账户、BitLocker，并定期执行备份。
+首次启动只能从 Server 本机创建首个运维账户，创建时必须同时设置密保问题和答案。后续登录页保留“新增运维”和“找回密码”入口，这两项接口同样只接受本机回环请求，局域网或互联网客户端不能调用。密码和密保答案均不以明文保存：数据库只保存独立随机盐和带算法、迭代次数版本的 PBKDF2-HMAC-SHA256 摘要；密保问题以明文保存，用于恢复时展示；会话只保存令牌摘要。数据库固定默认位于 Windows `%LOCALAPPDATA%\cn.lumi.familyhub.server\runtime\data\familyhub.db`，由当前 Windows 用户的文件权限保护。建议使用独立 Windows 账户、BitLocker，并定期执行备份。
+
+从旧版升级且尚未设置密保的运维账户，会在首次进入“找回密码”时显示一次性本机迁移流程：设置密保问题、答案和新密码。完成后，后续恢复必须正确回答密保问题。这个兼容入口以“能登录 Server 所在 Windows 电脑”为可信边界，因此不应让儿童使用该 Windows 账户。
 
 ## PC 快速安装
 
 日常使用不要求安装 Python、Node.js 或编译工具。优先运行：
 
 ```text
-artifacts\windows\Lumi-Server_0.3.0_x64-setup.exe
+artifacts\windows\Lumi-Server_0.4.0_x64-setup.exe
 ```
 
 不想安装时，完整保留并运行便携目录；其中两个 EXE 缺一不可：
 
 ```text
-artifacts\windows\Lumi-Server_0.3.0_x64-portable\
+artifacts\windows\Lumi-Server_0.4.0_x64-portable\
   lumi-server.exe
-  lumi-server-core.exe
+  lumi-server-core\
+    lumi-server-core.exe
+    （Server Core 运行库文件）
 ```
 
-首次打开 Server 会在本机创建数据目录并显示“创建运维账户”。密码至少 10 位；按钮只在提交期间禁用，输入不符合要求时会显示明确提示。创建后，用该账户登录 Server。家庭成员在 Client 的“注册申请”页提交儿童或家长账户，运维人员在 Server 的“账户管理”中批准，获批账户随后才能登录 Client。界面中的称呼始终取服务器账户的显示名称，不写死某个孩子名字。
+首次打开 Server 会在本机创建数据目录并显示“创建首个运维账户”。密码至少 10 位，并且必须填写密保问题和答案；按钮只在提交期间禁用，输入不符合要求时会显示明确提示。创建后，用该账户登录 Server。已有账户可从登录页进入“找回密码”，也可创建另一个运维账户作为备用。家庭成员在 Client 的“注册申请”页提交儿童或家长账户，运维人员在 Server 的“账户管理”中批准，获批账户随后才能登录 Client。运维账户也可以登录 Client，但服务端只签发 `guardian` 范围的会话，不能从 Client 调用运维接口。界面中的称呼始终取服务器账户的显示名称，不写死某个孩子名字。
 
 同一台 PC 上的 Client 默认访问 `127.0.0.1:8000`。Android 首次还不知道家庭主机地址时，可在登录页展开次级的“首次连接或更换家庭主机”，填写例如 `192.168.1.20:8000`；登录后主导航中始终有“连接设置”。登录页不再被单独的连接向导占据。
 
@@ -78,12 +85,12 @@ npm run build
 
 ## 原生客户端与跨平台发布
 
-前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:8000`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.3.0`、Client `0.2.2`。
+前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:8000`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.4.0`、Client `0.3.0`。
 
 | 目标 | 产物 | 最低系统 | 说明 |
 | --- | --- | --- | --- |
-| Windows Server x64 | 含核心的 NSIS `setup.exe`、双文件便携目录 | Windows 10 1803+ | 仅运维角色；自动监听家庭 API `8000` |
-| Windows Client x64 | 独立 EXE、NSIS `setup.exe` | Windows 10 1803+ | 仅儿童/家长；需要 WebView2 |
+| Windows Server x64 | 含核心的 NSIS `setup.exe`、带 Core 运行库目录的便携包 | Windows 10 1803+ | 仅运维角色；自动监听家庭 API `8000` |
+| Windows Client x64 | 独立 EXE、NSIS `setup.exe` | Windows 10 1803+ | 儿童/家长界面；运维账户进入时降为家长权限；需要 WebView2 |
 | Android 手机 Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 小米 15 使用 ARM64 APK；已适配状态栏安全区 |
 | Android TV Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 同一 Client 带 Leanback 启动类别 |
 
@@ -122,7 +129,7 @@ npm run android:apk:universal
 npm run android:aab -- --build-type release
 ```
 
-`npm run android:apk` 使用无符号链接权限依赖的复制 JNI 流程，默认生成 Android Studio debug keystore 签名的 ARM64 APK，适合当前家庭 PC 为手机和电视做内部安装与验证。`android:apk:arm` 用于仍是 32 位 ARM 的设备；`android:apk:universal` 会包含四种 ABI，体积较大。脚本直接调用 JDK 的 Gradle Wrapper JAR，不依赖 `gradlew.bat`；`build-android.ps1` 只是兼容旧命令的转发入口。要让后续 OTA 始终可升级，必须保留该构建机的 `%USERPROFILE%\.android\debug.keystore`；不要把它用于公开发布。所有 Android 产物都写入 `artifacts\android\`；Windows 产物写入 `artifacts\windows\`。Windows 构建使用 `native\windows\installer.nsi` 生成用户级 NSIS 安装器，安装器会检查并按需引导安装 WebView2；不依赖 WiX/MSI。正式发布前必须为 Windows 和 Android 配置独立代码签名；签名密钥不应提交到仓库。
+`npm run android:apk` 使用无符号链接权限依赖的复制 JNI 流程，默认生成 Android Studio debug keystore 签名的通用 APK，包含 ARM64、32 位 ARM、x86 与 x86_64，适合当前家庭 PC 为手机和电视做内部安装与验证。需要缩小包体时可直接运行 `node scripts/build-android.mjs --format apk --abi arm64`。脚本直接调用 JDK 的 Gradle Wrapper JAR，不依赖 `gradlew.bat`；`build-android.ps1` 只是兼容旧命令的转发入口。要让后续 OTA 始终可升级，必须保留该构建机的 `%USERPROFILE%\.android\debug.keystore`；不要把它用于公开发布。所有 Android 产物都写入 `artifacts\android\`；Windows 产物写入 `artifacts\windows\`。Server Core 使用目录模式随安装器和便携目录一起分发，避免部分 Windows 安全策略阻止单文件运行时解压 DLL。Windows 构建使用 `native\windows\installer.nsi` 生成用户级 NSIS 安装器，安装器会检查并按需引导安装 WebView2；不依赖 WiX/MSI。正式发布前必须为 Windows 和 Android 配置独立代码签名；签名密钥不应提交到仓库。
 
 当前构建产物命名约定：
 
@@ -196,7 +203,11 @@ D:\FamilyHub\
   data\        数据库和运行配置
   inbox\       手动转入、云盘客户端同步和待处理文件
   quarantine\  校验通过但尚未人工确认的文件
-  library\     已确认入库的媒体、图书、音频和游戏
+  library\video\   已确认入库的视频
+  library\books\   已确认入库的图书
+  library\audio\   已确认入库的音乐和有声内容
+  library\images\  封面和图片
+  cache\        B站 Cookie 文件与可清理缓存
   backups\     SQLite/配置备份
 ```
 
@@ -213,17 +224,24 @@ D:\FamilyHub\
   quarantine\              下载/扫描后的隔离文件
   manifests\               下载任务清单
   works\                   Worker 临时工作目录
+  cache\                   可清理缓存与可选的 B站 Cookie 文件
   library\video\          已审核视频
   library\books\          已审核图书
   library\audio\          已审核音频
   library\images\         图片与封面
 ```
 
-可通过 `FAMILYHUB_RUNTIME_ROOT` 改到容量更大的磁盘，例如 `D:\FamilyHub\runtime`。不要直接把文件复制进 `library` 绕过审核；手动资源应放进 `inbox\cloud`，再由 Server 同步、扫描和审核。
+在 Server 的“主机设置”中可以分别修改以上七类目录，保存时会自动创建不存在的文件夹；相对路径以 Server 运行时根目录为基准。也可通过 `FAMILYHUB_RUNTIME_ROOT` 一次性把默认根目录改到容量更大的磁盘，例如 `D:\FamilyHub\runtime`。已有本地成品可以放进对应资源目录后点击“扫描资源目录”，或在“资源管理”中填写文件路径并复制入库；新发现项目先成为草稿，由运维确认后发布给 Client。
+
+### 登录与密码排查
+
+Server 登录时使用的是“登录账号”，不是显示名称。密码采用不可逆摘要，程序和管理员都无法读取原密码，也不会因为源码文件状态而无法核对。若确认账号无误仍无法登录，从 Server 登录页选择“找回密码”：新账户回答创建时设置的密保问题；升级前的旧账户在 Server 本机补设一次密保后重置。重置会撤销该运维账户已有的全部会话。
+
+不要删除或移动 `familyhub.db` 来解决登录问题，否则账户、目录和任务会一并丢失。迁移数据盘时应停止 Server 后完整复制 `runtime`，或设置固定的 `FAMILYHUB_RUNTIME_ROOT`，不要在两个数据库之间交替启动。
 
 ### Bilibili 下载流程
 
-运维人员在 Server 的下载面板粘贴公开 `https://www.bilibili.com/video/BV...` 或 `b23.tv` 链接，选择 480/720/1080 清晰度并确认拥有相应使用权。Server 创建任务后，Worker 按以下顺序处理：
+运维人员在 Server 的“下载队列”粘贴公开 `https://www.bilibili.com/video/BV...` 或 `b23.tv` 链接，选择 480/720/1080 清晰度即可提交。提交代表运维人员确认内容可依法用于家庭离线观看；标题和视频编号由下载器自动读取。Server 创建任务后，Worker 按以下顺序处理：
 
 ```text
 公开链接 -> yt-dlp 获取单个视频 -> FFmpeg 合并 -> quarantine
@@ -231,13 +249,23 @@ D:\FamilyHub\
          -> library\video -> Client 获得短时播放凭证
 ```
 
-下载器不读取 Cookie，不支持登录态、付费内容、DRM、验证码绕过或播放列表批量抓取；网络限速、地区限制或站点策略导致的失败会留在任务队列中并显示失败原因。给定的 Bilibili 示例链接已通过元数据解析测试，最终媒体流是否能下载仍取决于 B 站当时的网络和访问策略。
+下载器不读取 Cookie，不支持登录态、付费内容、DRM、验证码绕过或播放列表批量抓取；网络限速、地区限制或站点策略导致的失败会留在任务队列中。点击每条任务右侧的详情按钮可查看失败原因、视频编号、已传输字节、计划时间和重试次数。同一链接失败后再次粘贴会重新排队，Server 重启时也会恢复中断任务；全局暂停后可从同一按钮恢复。给定的 Bilibili 示例链接已通过格式解析，最终媒体流能否下载仍取决于 B 站当时的网络和访问策略。
 
 Bilibili 官方页面和项目实现参考：[`Bili23-Downloader v2.11.0`](https://github.com/ScottSloan/Bili23-Downloader/releases/tag/v2.11.0)、[`yt-dlp`](https://github.com/yt-dlp/yt-dlp)。
 
+### 本地资源与在线播放
+
+Server 的“资源管理”分为三个入口：
+
+1. “本地资源”可导入 Server 电脑上的视频、PDF/EPUB/漫画和音乐文件，也可扫描已配置目录。导入默认复制文件，归档只让内容从 Client 消失，不删除原文件。
+2. “在线播放”可登记 B站视频、抖音/夸克官方分享页以及 HTTPS 视频、音频、PDF 等开放直链。B站在 Client 内使用官方播放器，开放直链使用内置播放器；受站点登录、禁止嵌入或 DRM 限制的页面会保留“在官方页面打开”入口。
+3. “自动同步”可保存 B站 UP 主空间、收藏夹或合集。Worker 按 1 至 168 小时的间隔更新，默认只取最近 50 条，可在 1 至 200 条之间调整。同步只保存标题、封面和播放链接，不下载媒体。
+
+公开内容无需账号。私有收藏夹需要时，可从已登录的浏览器导出 Netscape 格式 Cookie，命名为例如 `bilibili.cookies.txt` 并放入“主机设置”显示的缓存目录；同步源中只填文件名即可。Server 数据库只记录该文件路径，Cookie 不会返回给 Client，也不应提交到源码仓库。平台不接收 B站账号密码，不绕过会员、付费、DRM、验证码或地区限制；Cookie 失效后在浏览器重新导出即可。
+
 ### 本轮同机验收
 
-使用打包的 Server Core 在隔离运行时完成了：首次创建运维账户、运维登录、Client 注册申请、运维审批、Client 登录、文件同步、人工审核、Client 获取播放凭证和实际媒体读取。测试端口为 `127.0.0.1:8011`，读取文件大小 1751 字节，SHA-256 与原文件一致；不会修改你正在使用的 `8000` 服务。
+使用隔离运行时完成了：首次创建带密保的运维账户、密保查询和密码重置、运维登录、Client 注册申请、运维审批、Client 登录，以及运维账户在 Client 中降为家长权限。另对已安装 Server 的真实数据库只读备份副本执行了表迁移、旧账户密保补设、Server 登录与 Client 家长会话验证；原数据库未被修改。
 
 ## 安全和内容边界
 
@@ -245,4 +273,4 @@ Bilibili 官方页面和项目实现参考：[`Bili23-Downloader v2.11.0`](https
 - 百度网盘、夸克网盘、社区整理包可以登记为候选来源，但必须由家长人工确认权利并通过官方客户端转入隔离目录。
 - Worker 不执行用户输入的命令，不直接访问未经允许的 URL；文件入库前会检查扩展名、文件签名、压缩包路径和可选 Defender 扫描结果。
 - 下载任务有暂停开关、磁盘下限、每日配额和审计记录；系统异常时优先保持文件在隔离区。
-- 正式 Server 不生成演示账号；首次启动只能从本机创建一个运维账户，其余账户必须申请并经运维审批。
+- 正式 Server 不生成演示账号；运维账户只能从 Server 本机创建或恢复，儿童和家长账户必须申请并经运维审批。

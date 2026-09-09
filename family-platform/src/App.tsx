@@ -15,6 +15,7 @@ import {
   Compass,
   Download,
   ExternalLink,
+  FolderOpen,
   FileCheck2,
   Gamepad2,
   Gauge,
@@ -40,6 +41,7 @@ import {
   Sparkles,
   Star,
   Server,
+  Link2,
   Timer,
   UploadCloud,
   Users,
@@ -51,7 +53,7 @@ import {
 } from 'lucide-react'
 import { APP_EDITION, PRODUCT_NAME } from './edition'
 import { useFamilyStore } from './store'
-import type { AccountRegistration, AssetRecord, AssetReviewDraft, BilibiliDownloadDraft, CloudSubmission, ContentItem, ContentKind, DownloadJob, ManagedUser, NavKey, RegistrationDraft, Role, SessionUser, SourceRecord, SystemStatus } from './types'
+import type { AccountRegistration, AssetRecord, AssetReviewDraft, BilibiliDownloadDraft, CloudSubmission, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
 import { checkForAppUpdate, installDesktopUpdate } from './updates'
 import type { UpdateCheckResult } from './updates'
 import type { LucideIcon } from 'lucide-react'
@@ -97,7 +99,7 @@ const navByRole: Record<Role, NavItem[]> = {
   ],
   guardian: [
     { key: 'explore', label: '家庭概览', icon: Layers3 },
-    { key: 'approvals', label: '审批中心', icon: ListChecks, count: 3 },
+    { key: 'approvals', label: '审批中心', icon: ListChecks },
     { key: 'planning', label: '本周编排', icon: Clock3 },
     { key: 'library', label: '家庭书架', icon: Library },
     { key: 'connection', label: '连接设置', icon: Wifi },
@@ -105,9 +107,11 @@ const navByRole: Record<Role, NavItem[]> = {
   operator: [
     { key: 'ops', label: '运维概览', icon: Gauge },
     { key: 'accounts', label: '账户管理', icon: Users },
-    { key: 'queue', label: '下载队列', icon: Download, count: 2 },
+    { key: 'queue', label: '下载队列', icon: Download },
     { key: 'sources', label: '来源与隔离', icon: ShieldCheck },
     { key: 'library', label: '内容目录', icon: Library },
+    { key: 'ops-library', label: '资源管理', icon: FolderOpen },
+    { key: 'settings', label: '主机设置', icon: Settings2 },
   ],
 }
 
@@ -295,6 +299,7 @@ function Sidebar({
   onLogout,
   mobileOpen,
   onClose,
+  navCounts,
 }: {
   user: SessionUser
   connection: 'checking' | 'backend' | 'offline'
@@ -303,6 +308,7 @@ function Sidebar({
   onLogout: () => void
   mobileOpen: boolean
   onClose: () => void
+  navCounts: Partial<Record<NavKey, number>>
 }) {
   const role = user.role
   const meta = roleMeta[role]
@@ -388,6 +394,7 @@ function Sidebar({
         <span className="nav-caption">SPACE</span>
         {navByRole[role].map((item) => {
           const NavIcon = item.icon
+          const count = navCounts[item.key] ?? 0
           return (
             <button
               type="button"
@@ -400,7 +407,7 @@ function Sidebar({
             >
               <NavIcon size={18} strokeWidth={activeNav === item.key ? 2.4 : 1.9} />
               <span>{item.label}</span>
-              {item.count && <em>{item.count}</em>}
+              {count > 0 && <em>{count}</em>}
             </button>
           )
         })}
@@ -934,17 +941,39 @@ function formatFileSize(bytes: number): string {
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
 }
 
+const downloadErrorMessages: Record<string, string> = {
+  bilibili_network_error: '家庭主机无法连接 B 站，请检查网络、代理或防火墙后重试。',
+  bilibili_access_limited: 'B 站暂时限制了此次访问，请稍后重试；无需反复创建新任务。',
+  bilibili_login_required: '该视频需要登录或会员权限，当前公开下载模式无法处理。',
+  bilibili_region_restricted: '该视频存在地区限制，当前家庭主机所在网络无法获取。',
+  bilibili_video_unavailable: '视频已失效、设为私密或受版权限制。',
+  bilibili_format_unavailable: '所选清晰度没有可用媒体流，请降低清晰度后重试。',
+  bilibili_ffmpeg_unavailable: 'Server 缺少音视频合并组件，请重新安装完整的 Lumi Server。',
+  bilibili_engine_unavailable: 'Server 缺少 B 站下载组件，请重新安装完整的 Lumi Server。',
+  bilibili_output_size_rejected: '视频超过当前单文件大小限制。',
+  worker_restarted: 'Server 曾重启，任务已自动重新排队。',
+  worker_unexpected_error: '下载进程发生未预期错误，请重试；若再次失败请查看 Server 日志。',
+  bilibili_download_failed: 'B 站没有返回可下载媒体，可能是临时风控或站点规则变化。',
+}
+
+function downloadErrorMessage(code?: string): string {
+  if (!code) return '暂无错误'
+  return downloadErrorMessages[code] ?? `下载器返回：${code}`
+}
+
+function formatJobTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
 function BilibiliDownloadPanel({
   onQueue,
 }: {
   onQueue: (payload: BilibiliDownloadDraft) => Promise<void>
 }) {
   const [url, setUrl] = useState('')
-  const [title, setTitle] = useState('')
-  const [rightsNote, setRightsNote] = useState('')
   const [maxHeight, setMaxHeight] = useState<480 | 720 | 1080>(1080)
   const [startNow, setStartNow] = useState(true)
-  const [rightsConfirmed, setRightsConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -953,29 +982,15 @@ function BilibiliDownloadPanel({
       setFormError('请输入有效的 B 站 BV 视频链接或 b23.tv 短链接')
       return
     }
-    if (rightsNote.trim().length < 8) {
-      setFormError('请填写至少 8 个字符的下载与家庭使用权利依据')
-      return
-    }
-    if (!rightsConfirmed) {
-      setFormError('请先确认你有权下载并在家庭范围内使用该视频')
-      return
-    }
     setSubmitting(true)
     setFormError('')
     try {
       await onQueue({
         url: url.trim(),
-        title: title.trim() || undefined,
         maxHeight,
         startNow,
-        rightsConfirmed,
-        rightsNote: rightsNote.trim(),
       })
       setUrl('')
-      setTitle('')
-      setRightsNote('')
-      setRightsConfirmed(false)
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '任务创建失败')
     } finally {
@@ -986,21 +1001,13 @@ function BilibiliDownloadPanel({
   return (
     <section className="panel bilibili-panel">
       <div className="panel-heading">
-        <div><span className="eyebrow">BILIBILI INGEST</span><h2>B站视频下载</h2></div>
-        <span className="soft-badge">公开单视频</span>
+        <div><span className="eyebrow">QUICK DOWNLOAD</span><h2>粘贴 B 站链接</h2></div>
+        <span className="soft-badge">标题自动识别</span>
       </div>
       <form className="bilibili-form" noValidate onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <label className="ops-field bilibili-url">
-          <span>视频链接</span>
-          <div><Play size={16} /><input aria-label="B站视频链接" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.bilibili.com/video/BV..." required /></div>
-        </label>
-        <label className="ops-field">
-          <span>标题（可留空）</span>
-          <div><PenTool size={16} /><input aria-label="视频标题" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="下载后自动读取视频标题" maxLength={240} /></div>
-        </label>
-        <label className="ops-field bilibili-rights">
-          <span>权利依据</span>
-          <div><ShieldCheck size={16} /><input aria-label="下载权利依据" value={rightsNote} onChange={(event) => setRightsNote(event.target.value)} placeholder="例如：本人投稿，或 UP 主明确允许家庭离线观看" required minLength={8} maxLength={2000} /></div>
+          <span>视频链接或分享短链</span>
+          <div><Play size={16} /><input aria-label="B站视频链接" type="url" value={url} onChange={(event) => { setUrl(event.target.value); setFormError('') }} placeholder="粘贴 bilibili.com/video/BV... 或 b23.tv 链接" required autoFocus /></div>
         </label>
         <label className="ops-field compact-select">
           <span>最高画质</span>
@@ -1011,16 +1018,15 @@ function BilibiliDownloadPanel({
           </select>
         </label>
         <div className="bilibili-options">
-          <label className="rights-check"><input type="checkbox" checked={startNow} onChange={(event) => setStartNow(event.target.checked)} />立即处理；关闭后进入夜间队列</label>
-          <label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} />我确认拥有下载和家庭使用权限</label>
+          <label className="rights-check"><input type="checkbox" checked={startNow} onChange={(event) => setStartNow(event.target.checked)} />立即开始；关闭后在夜间处理</label>
         </div>
         <button type="submit" className="button button-primary bilibili-submit" disabled={submitting}>
           {submitting ? <RefreshCw className="spin" size={16} /> : <Download size={16} />}
-          {submitting ? '正在创建' : '加入下载队列'}
+          {submitting ? '正在加入' : '开始下载'}
         </button>
       </form>
       {formError && <div className="inline-error" role="alert"><AlertTriangle size={14} />{formError}</div>}
-      <p className="connector-boundary">不读取浏览器 Cookie，不处理会员、付费、登录专享或 DRM 内容；下载结果仍需在隔离区审核。</p>
+      <p className="connector-boundary">提交即表示你确认有权保存该内容并仅用于家庭范围。公开模式不读取 Cookie，不处理会员、付费、登录专享或 DRM 内容。</p>
     </section>
   )
 }
@@ -1149,6 +1155,7 @@ function OperatorDashboard({
   downloadsPaused,
   onJob,
   onPauseAll,
+  onResumeAll,
   onSync,
   onQueueBilibili,
   onReviewAsset,
@@ -1163,6 +1170,7 @@ function OperatorDashboard({
   downloadsPaused: boolean
   onJob: (id: string, status: DownloadJob['status']) => void
   onPauseAll: () => void
+  onResumeAll: () => void
   onSync: () => void
   onQueueBilibili: (payload: BilibiliDownloadDraft) => Promise<void>
   onReviewAsset: (id: string, payload: AssetReviewDraft) => Promise<void>
@@ -1178,27 +1186,32 @@ function OperatorDashboard({
   const healthyServices = systemStatus ? Object.values(systemStatus.services).filter(Boolean).length : 0
   const frozenAssets = assets.filter((asset) => asset.quarantineStatus === 'frozen').length
   const reviewedSources = sources.filter((source) => source.reviewedAt && !source.disabledAt).length
+  const failedJobs = jobs.filter((job) => job.status === 'failed').length
+  const completedJobs = jobs.filter((job) => job.status === 'review' || job.status === 'published').length
+  const isOverview = focus === 'ops'
+  const isQueue = focus === 'queue'
+  const isSources = focus === 'sources'
   return (
     <div className="dashboard operator-dashboard">
       <section className="page-intro ops-intro">
         <div>
           <span className="eyebrow">OPERATOR CONSOLE</span>
           <h1>{title}</h1>
-          <p>{downloadsPaused ? '自动处理已暂停，隔离扫描仍可手动触发。' : 'PC 节点在线，自动任务只在设定的夜间窗口执行。'}</p>
+          <p>{isQueue ? '粘贴链接即可创建任务，并在这里查看实时进度与失败详情。' : isSources ? '管理下载结果、隔离扫描和内容入库。' : '查看家庭主机运行状态；下载操作集中在“下载队列”。'}</p>
         </div>
         <div className="ops-actions">
           <button type="button" className="button button-quiet" onClick={onSync}>
             <RefreshCw size={16} />
             立即同步
           </button>
-          <button type="button" className="button button-danger" onClick={onPauseAll}>
-            <Pause size={15} />
-            暂停全部
+          <button type="button" className={downloadsPaused ? 'button button-primary' : 'button button-danger'} onClick={downloadsPaused ? onResumeAll : onPauseAll}>
+            {downloadsPaused ? <Play size={15} /> : <Pause size={15} />}
+            {downloadsPaused ? '恢复下载' : '暂停全部'}
           </button>
         </div>
       </section>
 
-      {(focus === 'ops' || focus === 'queue') && <BilibiliDownloadPanel onQueue={onQueueBilibili} />}
+      {isQueue && <BilibiliDownloadPanel onQueue={onQueueBilibili} />}
 
       <div className="health-strip">
         <div className="health-main">
@@ -1211,7 +1224,16 @@ function OperatorDashboard({
         <div className="health-stat"><ShieldCheck size={16} /><span>冻结</span><strong>{frozenAssets}</strong></div>
       </div>
 
-      <div className="ops-grid">
+      {isOverview && (
+        <section className="ops-overview-grid" aria-label="运维状态摘要">
+          <div className="panel overview-metric"><Download size={19} /><div><span>正在处理</span><strong>{activeJobs.length}</strong><small>排队或下载中的任务</small></div></div>
+          <div className="panel overview-metric"><CircleCheck size={19} /><div><span>等待入库</span><strong>{completedJobs}</strong><small>已下载并等待审核</small></div></div>
+          <div className="panel overview-metric"><AlertTriangle size={19} /><div><span>需要处理</span><strong>{failedJobs + frozenAssets}</strong><small>失败任务或冻结文件</small></div></div>
+          <div className="panel overview-metric"><HardDrive size={19} /><div><span>剩余空间</span><strong>{freeStorage}</strong><small>{systemStatus ? `总空间 ${totalStorage}` : '等待主机探测'}</small></div></div>
+        </section>
+      )}
+
+      {isQueue && <div className="ops-grid">
         <section className="panel jobs-panel">
           <div className="panel-heading">
             <div><span className="eyebrow">NIGHT WORKER</span><h2>任务队列</h2></div>
@@ -1219,41 +1241,16 @@ function OperatorDashboard({
           </div>
           <div className="jobs-table">
             <div className="jobs-head"><span>内容</span><span>来源</span><span>状态</span><span>进度</span><span /></div>
+            {jobs.length === 0 && <div className="empty-state compact jobs-empty"><Download size={22} /><strong>还没有下载任务</strong><span>从左侧进入“下载队列”并粘贴 B 站链接。</span></div>}
             {jobs.map((job) => (
               <JobRow key={job.id} job={job} onJob={onJob} />
             ))}
           </div>
-          <button type="button" className="panel-link">
-            打开完整任务日志
-            <ArrowRight size={15} />
-          </button>
         </section>
 
-        <section className="panel storage-panel">
-          <div className="panel-heading">
-            <div><span className="eyebrow">STORAGE GUARD</span><h2>空间与保护</h2></div>
-            <IconButton label="刷新空间"><RefreshCw size={16} /></IconButton>
-          </div>
-          <div className="storage-ring">
-            <div className="ring" style={storageUsed === null ? undefined : { background: `conic-gradient(var(--coral) ${storageUsed}%, #edf1ed 0)` }}><span>{storageUsed ?? '--'}<small>%</small></span></div>
-            <div><strong>{totalStorage} 总空间</strong><span>剩余 {freeStorage}</span></div>
-          </div>
-          <div className="storage-bars">
-            <StorageBar label="已使用" value={storageUsed === null ? '未探测' : storageUsed + '%'} percent={storageUsed ?? 0} tone="coral" />
-            <StorageBar label="隔离资产" value={assets.length + ' 项'} percent={Math.min(100, assets.length * 8)} tone="yellow" />
-            <StorageBar label="来源白名单" value={reviewedSources + ' 个'} percent={Math.min(100, reviewedSources * 20)} tone="blue" />
-          </div>
-          {systemStatus?.paths && (
-            <div className="storage-paths">
-              <div><span>正式资源库</span><code title={systemStatus.paths.library}>{systemStatus.paths.library}</code></div>
-              <div><span>账户数据库</span><code title={systemStatus.paths.database}>{systemStatus.paths.database}</code></div>
-            </div>
-          )}
-          <div className="storage-note"><AlertTriangle size={15} /><span>保留 300 GB 空间作为故障恢复缓冲。</span></div>
-        </section>
-      </div>
+      </div>}
 
-      <section className="panel source-panel">
+      {(isOverview || isSources) && <section className="panel source-panel">
         <div className="panel-heading">
           <div><span className="eyebrow">SOURCE HEALTH</span><h2>来源连接器</h2></div>
           <button type="button" className="text-button">管理白名单 <ArrowRight size={15} /></button>
@@ -1263,8 +1260,8 @@ function OperatorDashboard({
           <SourceCard icon={FileCheck2} name="授权来源" detail={`${reviewedSources} 个已复核 · 到期自动禁用`} status={reviewedSources ? '正常' : '待配置'} tone={reviewedSources ? 'green' : 'yellow'} />
           <SourceCard icon={Inbox} name="候选箱" detail={submissions.length + ' 条待处理记录'} status={reviewCount ? '需复核' : '干净'} tone={reviewCount ? 'yellow' : 'blue'} />
         </div>
-      </section>
-      {(focus === 'ops' || focus === 'sources') && <AssetReviewPanel assets={assets} jobs={jobs} onReview={onReviewAsset} />}
+      </section>}
+      {isSources && <AssetReviewPanel assets={assets} jobs={jobs} onReview={onReviewAsset} />}
     </div>
   )
 }
@@ -1276,6 +1273,7 @@ function JobRow({
   job: DownloadJob
   onJob: (id: string, status: DownloadJob['status']) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const JobIcon = kindMeta[job.kind].icon
   const statusLabel: Record<DownloadJob['status'], string> = {
     queued: '排队中',
@@ -1286,35 +1284,41 @@ function JobRow({
     paused: '已暂停',
     blocked: '已冻结',
   }
+  const errorMessage = job.status === 'failed' ? downloadErrorMessage(job.errorCode) : undefined
   return (
-    <div className="job-row">
-      <div className="job-title"><span className={'job-icon ' + kindMeta[job.kind].tone}><JobIcon size={15} /></span><div><strong>{job.title}</strong><small>{job.size}</small></div></div>
-      <span className="job-source">{job.source}</span>
-      <span className={'job-status ' + job.status}><i />{statusLabel[job.status]}</span>
-      <div className="job-progress"><div className="job-progress-track"><span style={{ width: job.progress + '%' }} /></div><small>{job.progress}%</small></div>
-      <div className="job-action">
-        {(job.status === 'downloading' || job.status === 'queued') && (
-          <IconButton label="暂停任务" onClick={() => onJob(job.id, 'paused')}><Pause size={15} /></IconButton>
-        )}
-        {job.status === 'paused' && (
-          <IconButton label="继续任务" onClick={() => onJob(job.id, 'downloading')}><Play size={15} /></IconButton>
-        )}
-        {job.status === 'failed' && (
-          <IconButton label="重试任务" onClick={() => onJob(job.id, 'queued')}><RefreshCw size={15} /></IconButton>
-        )}
-        {job.status === 'review' && <span className="job-eta">{job.eta}</span>}
-        {job.status === 'blocked' && <span className="job-eta">{job.eta}</span>}
-        <IconButton label="任务详情"><MoreHorizontal size={16} /></IconButton>
+    <div className={'job-item ' + (expanded ? 'expanded' : '')}>
+      <div className="job-row">
+        <div className="job-title"><span className={'job-icon ' + kindMeta[job.kind].tone}><JobIcon size={15} /></span><div><strong>{job.title}</strong><small>{job.size}</small></div></div>
+        <span className="job-source">{job.source === 'bilibili-public' ? 'B站' : job.source}</span>
+        <span className={'job-status ' + job.status}><i />{statusLabel[job.status]}</span>
+        <div className="job-progress"><div className="job-progress-track"><span style={{ width: job.progress + '%' }} /></div><small>{job.progress}%</small></div>
+        <div className="job-action">
+          {(job.status === 'downloading' || job.status === 'queued') && (
+            <IconButton label="暂停任务" onClick={() => onJob(job.id, 'paused')}><Pause size={15} /></IconButton>
+          )}
+          {job.status === 'paused' && (
+            <IconButton label="继续任务" onClick={() => onJob(job.id, 'downloading')}><Play size={15} /></IconButton>
+          )}
+          {job.status === 'failed' && (
+            <IconButton label="重试任务" onClick={() => onJob(job.id, 'queued')}><RefreshCw size={15} /></IconButton>
+          )}
+          {(job.status === 'review' || job.status === 'blocked') && <span className="job-eta">{job.eta}</span>}
+          <IconButton label={expanded ? '收起任务详情' : '查看任务详情'} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={16} /> : <MoreHorizontal size={16} />}</IconButton>
+        </div>
       </div>
-    </div>
-  )
-}
-
-function StorageBar({ label, value, percent, tone }: { label: string; value: string; percent: number; tone: string }) {
-  return (
-    <div className="storage-bar-row">
-      <div><span>{label}</span><strong>{value}</strong></div>
-      <div className="storage-track"><span className={tone} style={{ width: percent + '%' }} /></div>
+      {expanded && (
+        <div className="job-details" role="region" aria-label={`${job.title}任务详情`}>
+          {errorMessage && <div className="job-error"><AlertTriangle size={15} /><span><strong>失败原因</strong>{errorMessage}</span></div>}
+          <dl>
+            <div><dt>视频编号</dt><dd>{job.externalId}</dd></div>
+            <div><dt>已传输</dt><dd>{formatFileSize(job.bytesDone)}{job.expectedBytes ? ` / ${formatFileSize(job.expectedBytes)}` : ''}</dd></div>
+            <div><dt>重试次数</dt><dd>{job.retryCount}</dd></div>
+            <div><dt>创建时间</dt><dd>{formatJobTime(job.createdAt)}</dd></div>
+            <div><dt>计划时间</dt><dd>{formatJobTime(job.scheduledAt)}</dd></div>
+          </dl>
+          {job.proofUrl && <a className="job-source-link" href={job.proofUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} />打开原视频页面</a>}
+        </div>
+      )}
     </div>
   )
 }
@@ -1424,6 +1428,9 @@ function DetailModal({
   onLaunch: () => void
 }) {
   const MetaIcon = kindMeta[item.kind].icon
+  const canLaunch = item.playable && (role !== 'child' || item.launchAllowed)
+  const needsApproval = role === 'child' && !item.launchAllowed
+  const launchLabel = item.playbackMode === 'embed' ? '打开官方播放器' : item.playbackMode === 'external_link' ? '打开外部页面' : item.playbackMode === 'direct_stream' ? '在线播放' : item.playbackMode === 'local_asset' ? '播放本地资源' : '打开内容'
   const onCloseRef = useRef(onClose)
   useEffect(() => {
     onCloseRef.current = onClose
@@ -1475,11 +1482,11 @@ function DetailModal({
           <div className="modal-facts"><div><span>语言</span><strong>{item.language}</strong></div><div><span>时长</span><strong>{item.duration}</strong></div><div><span>来源</span><strong>{item.source}</strong></div></div>
           <div className="modal-activity"><Sparkles size={15} /><div><span>看完之后</span><strong>{item.offlineActivity}</strong></div></div>
           <div className="modal-actions">
-            <button type="button" className="button button-primary" onClick={item.localAvailable ? onLaunch : role === 'child' ? onRequest : role === 'guardian' ? onQueue : onComplete}>
-              {item.localAvailable ? <><Play size={16} fill="currentColor" />播放本地资源</> : role === 'child' ? <><Play size={16} fill="currentColor" />申请观看</> : role === 'guardian' ? <><Plus size={16} />加入本周计划</> : <><FileCheck2 size={16} />加入审核</>}
+            <button type="button" className="button button-primary" onClick={canLaunch ? onLaunch : needsApproval ? onRequest : role === 'guardian' ? onQueue : onComplete}>
+              {canLaunch ? <><Play size={16} fill="currentColor" />{launchLabel}</> : needsApproval ? <><ShieldCheck size={16} />申请观看</> : role === 'guardian' ? <><Plus size={16} />加入本周计划</> : <><FileCheck2 size={16} />加入审核</>}
             </button>
             <IconButton label={favorite ? '取消收藏' : '加入收藏'} className={'modal-favorite ' + (favorite ? 'is-favorite' : '')} onClick={onFavorite}><Heart size={18} fill={favorite ? 'currentColor' : 'none'} /></IconButton>
-            {role === 'child' && item.localAvailable && <button type="button" className="button button-quiet" onClick={onRequest}><ShieldCheck size={16} />申请授权</button>}
+            {role === 'child' && item.launchAllowed && item.playable && <button type="button" className="button button-quiet" onClick={onRequest}><ShieldCheck size={16} />申请再次授权</button>}
             {role === 'child' && <button type="button" className="button button-quiet" onClick={onComplete}><Check size={16} />标记完成</button>}
           </div>
         </div>
@@ -1491,10 +1498,14 @@ function DetailModal({
 function MediaPlayerModal({
   item,
   url,
+  mode,
+  service,
   onClose,
 }: {
   item: ContentItem
   url: string
+  mode: string
+  service?: string
   onClose: () => void
 }) {
   useEffect(() => {
@@ -1513,8 +1524,14 @@ function MediaPlayerModal({
   return (
     <div className="modal-backdrop player-backdrop" onMouseDown={onClose}>
       <section className="media-player" role="dialog" aria-modal="true" aria-label={`播放 ${item.title}`} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="player-heading"><div><span className="eyebrow">LOCAL LIBRARY</span><strong>{item.title}</strong></div><IconButton label="关闭播放器" onClick={onClose}><X size={18} /></IconButton></div>
-        {item.kind === 'video' ? (
+        <div className="player-heading"><div><span className="eyebrow">{mode === 'local_asset' ? 'LOCAL LIBRARY' : mode === 'embed' ? 'OFFICIAL PLAYER' : mode === 'direct_stream' ? 'DIRECT STREAM' : 'EXTERNAL PAGE'}</span><strong>{item.title}</strong></div><IconButton label="关闭播放器" onClick={onClose}><X size={18} /></IconButton></div>
+        {mode === 'local_service' ? (
+          <div className="player-placeholder"><Server size={30} /><strong>需要配置 {service ?? '媒体服务'}</strong><span>Server 已记录这个内容，但当前还没有可直接播放的文件或在线播放地址。</span></div>
+        ) : mode === 'external_link' ? (
+          <div className="external-player"><iframe src={url} title={item.title} allow="autoplay; fullscreen" /><a className="button button-primary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={15} />在官方页面打开</a></div>
+        ) : mode === 'embed' ? (
+          <iframe className="embed-player" src={url} title={item.title} allow="autoplay; fullscreen; picture-in-picture" />
+        ) : item.kind === 'video' ? (
           <video src={url} controls autoPlay playsInline preload="metadata" />
         ) : item.kind === 'audio' ? (
           <div className="audio-player"><Headphones size={32} /><audio src={url} controls autoPlay /></div>
@@ -1587,6 +1604,8 @@ function UpdateBanner({
   )
 }
 
+type LoginMode = 'login' | 'register' | 'setup' | 'operator-register' | 'recover'
+
 function LoginScreen({
   connection,
   serverAddress,
@@ -1596,6 +1615,9 @@ function LoginScreen({
   onLogin,
   onRegister,
   onSetupOperator,
+  onRegisterOperator,
+  onLookupOperatorRecovery,
+  onRecoverOperator,
   onConfigure,
   onRetry,
   onClearError,
@@ -1607,16 +1629,23 @@ function LoginScreen({
   error: string
   onLogin: (username: string, password: string) => Promise<void>
   onRegister: (payload: RegistrationDraft) => Promise<AccountRegistration>
-  onSetupOperator: (payload: { username: string; password: string; displayName: string }) => Promise<void>
+  onSetupOperator: (payload: OperatorAccountDraft) => Promise<void>
+  onRegisterOperator: (payload: OperatorAccountDraft) => Promise<void>
+  onLookupOperatorRecovery: (username: string) => Promise<OperatorRecoveryQuestion>
+  onRecoverOperator: (payload: OperatorPasswordResetDraft) => Promise<string>
   onConfigure: (host: string) => Promise<void>
   onRetry: () => Promise<void>
   onClearError: () => void
 }) {
-  const [mode, setMode] = useState<'login' | 'register' | 'setup'>(setupRequired && APP_EDITION === 'server' ? 'setup' : 'login')
+  const [mode, setMode] = useState<LoginMode>(setupRequired && APP_EDITION === 'server' ? 'setup' : 'login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [recoveryQuestion, setRecoveryQuestion] = useState('')
+  const [recoveryAnswer, setRecoveryAnswer] = useState('')
+  const [recoveryLookup, setRecoveryLookup] = useState<OperatorRecoveryQuestion | null>(null)
+  const [authSuccess, setAuthSuccess] = useState('')
   const [requestedRole, setRequestedRole] = useState<'child' | 'guardian'>('child')
   const [childAge, setChildAge] = useState('6')
   const [host, setHost] = useState(serverAddress)
@@ -1634,10 +1663,14 @@ function LoginScreen({
     else setMode((current) => current === 'setup' ? 'login' : current)
   }, [setupRequired])
 
-  const chooseMode = (nextMode: 'login' | 'register') => {
+  const chooseMode = (nextMode: LoginMode) => {
     setMode(nextMode)
     setFormError('')
     setRegistrationSent(null)
+    setRecoveryLookup(null)
+    setRecoveryQuestion('')
+    setRecoveryAnswer('')
+    setAuthSuccess('')
     onClearError()
     setPassword('')
     setConfirmPassword('')
@@ -1679,7 +1712,7 @@ function LoginScreen({
     }
   }
 
-  const submitSetup = async () => {
+  const submitOperatorAccount = async (initialSetup: boolean) => {
     if (!displayName.trim()) {
       setFormError('请输入运维账户的显示名称')
       return
@@ -1696,10 +1729,83 @@ function LoginScreen({
       setFormError('两次输入的密码不一致')
       return
     }
+    if (recoveryQuestion.trim().length < 4) {
+      setFormError('密保问题至少需要 4 个字符')
+      return
+    }
+    if (recoveryAnswer.trim().length < 2) {
+      setFormError('密保答案至少需要 2 个字符')
+      return
+    }
     setFormError('')
     try {
-      await onSetupOperator({ username: username.trim(), password, displayName: displayName.trim() })
+      const payload = {
+        username: username.trim(),
+        password,
+        displayName: displayName.trim(),
+        recoveryQuestion: recoveryQuestion.trim(),
+        recoveryAnswer: recoveryAnswer.trim(),
+      }
+      if (initialSetup) await onSetupOperator(payload)
+      else await onRegisterOperator(payload)
       setMode('login')
+      setAuthSuccess(initialSetup ? '运维账户已创建，请登录' : '新的运维账户已创建，请登录')
+      setPassword('')
+      setConfirmPassword('')
+      setRecoveryQuestion('')
+      setRecoveryAnswer('')
+    } catch {
+      // Store 会在表单下方显示服务端返回的错误。
+    }
+  }
+
+  const lookupRecovery = async () => {
+    if (username.trim().length < 2 || /\s/.test(username.trim())) {
+      setFormError('请输入正确的运维登录账号')
+      return
+    }
+    setFormError('')
+    try {
+      setRecoveryLookup(await onLookupOperatorRecovery(username.trim()))
+    } catch {
+      // Store 会在表单下方显示服务端返回的错误。
+    }
+  }
+
+  const submitRecovery = async () => {
+    if (!recoveryLookup) {
+      await lookupRecovery()
+      return
+    }
+    if (recoveryLookup.legacySetupRequired && recoveryQuestion.trim().length < 4) {
+      setFormError('旧版账户需要先设置至少 4 个字符的密保问题')
+      return
+    }
+    if (recoveryAnswer.trim().length < 2) {
+      setFormError('请输入密保答案')
+      return
+    }
+    if (password.length < 10) {
+      setFormError('新密码至少需要 10 位')
+      return
+    }
+    if (password !== confirmPassword) {
+      setFormError('两次输入的新密码不一致')
+      return
+    }
+    setFormError('')
+    try {
+      const message = await onRecoverOperator({
+        username: recoveryLookup.username,
+        recoveryAnswer: recoveryAnswer.trim(),
+        newPassword: password,
+        recoveryQuestion: recoveryLookup.legacySetupRequired ? recoveryQuestion.trim() : undefined,
+      })
+      setMode('login')
+      setAuthSuccess(message)
+      setRecoveryLookup(null)
+      setRecoveryQuestion('')
+      setRecoveryAnswer('')
       setPassword('')
       setConfirmPassword('')
     } catch {
@@ -1728,6 +1834,17 @@ function LoginScreen({
     ? connection === 'checking' ? '正在启动本机服务' : connection === 'backend' ? '本机服务已启动' : '本机服务未就绪'
     : connection === 'checking' ? '正在连接家庭主机' : connection === 'backend' ? '家庭主机已连接' : '家庭主机未连接'
   const visibleError = formError || error
+  const isOperatorAccountMode = mode === 'setup' || mode === 'operator-register'
+  const isRecoveryResolved = mode === 'recover' && recoveryLookup !== null
+  const heading = mode === 'register'
+    ? { eyebrow: 'REQUEST AN ACCOUNT', title: '申请家庭账户', description: '提交后由家庭运维管理员审批。' }
+    : mode === 'setup'
+      ? { eyebrow: 'INITIAL SETUP', title: '创建首个运维账户', description: '首次启动需要设置密保问题，之后可在本机恢复密码。' }
+      : mode === 'operator-register'
+        ? { eyebrow: 'OPERATOR ACCOUNT', title: '新增运维账户', description: '仅能在运行 Server 的这台电脑上创建。' }
+        : mode === 'recover'
+          ? { eyebrow: 'LOCAL RECOVERY', title: '找回运维密码', description: recoveryLookup ? '回答密保问题并设置新密码。' : '先输入运维账号，查询对应的密保问题。' }
+          : { eyebrow: 'SECURE ACCESS', title: `登录 ${PRODUCT_NAME}`, description: '使用你的账户名称和密码进入。' }
 
   return (
     <main className={'login-shell login-edition-' + APP_EDITION}>
@@ -1746,9 +1863,9 @@ function LoginScreen({
             {connection === 'checking' ? <RefreshCw className="spin" size={14} /> : <i />}
           </div>
           <div className="login-heading">
-            <span className="eyebrow">{mode === 'register' ? 'REQUEST AN ACCOUNT' : mode === 'setup' ? 'INITIAL SETUP' : 'SECURE ACCESS'}</span>
-            <h1>{mode === 'register' ? '申请家庭账户' : mode === 'setup' ? '创建运维账户' : `登录 ${PRODUCT_NAME}`}</h1>
-            <p>{mode === 'register' ? '提交后由家庭运维管理员审批。' : mode === 'setup' ? '这是本机首次启动，只能创建一次。' : '使用你的账户名称和密码进入。'}</p>
+            <span className="eyebrow">{heading.eyebrow}</span>
+            <h1>{heading.title}</h1>
+            <p>{heading.description}</p>
           </div>
           {APP_EDITION === 'client' && (
             <div className="auth-mode-tabs" role="tablist" aria-label="账户入口">
@@ -1756,6 +1873,15 @@ function LoginScreen({
               <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => chooseMode('register')}>注册申请</button>
             </div>
           )}
+          {APP_EDITION === 'server' && !setupRequired && (
+            <div className="auth-mode-tabs server-auth-tabs" role="tablist" aria-label="运维账户入口">
+              <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => chooseMode('login')}>登录</button>
+              <button type="button" role="tab" aria-selected={mode === 'operator-register'} className={mode === 'operator-register' ? 'active' : ''} onClick={() => chooseMode('operator-register')}>新增运维</button>
+              <button type="button" role="tab" aria-selected={mode === 'recover'} className={mode === 'recover' ? 'active' : ''} onClick={() => chooseMode('recover')}>找回密码</button>
+            </div>
+          )}
+
+          {authSuccess && <div className="login-success" role="status"><CircleCheck size={16} />{authSuccess}</div>}
 
           {registrationSent ? (
             <div className="registration-success" role="status">
@@ -1769,10 +1895,12 @@ function LoginScreen({
             <form noValidate onSubmit={(event) => {
               event.preventDefault()
               if (mode === 'register') void submitRegistration()
-              else if (mode === 'setup') void submitSetup()
+              else if (mode === 'setup') void submitOperatorAccount(true)
+              else if (mode === 'operator-register') void submitOperatorAccount(false)
+              else if (mode === 'recover') void submitRecovery()
               else void submitLogin()
             }}>
-              {(mode === 'register' || mode === 'setup') && (
+              {(mode === 'register' || isOperatorAccountMode) && (
                 <label className="login-field">
                   <span>显示名称</span>
                   <div><Users size={17} /><input aria-label="显示名称" value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" placeholder={mode === 'register' ? '例如：小豆（登录后显示）' : '例如：家庭管理员'} required maxLength={100} /></div>
@@ -1794,24 +1922,65 @@ function LoginScreen({
               )}
               <label className="login-field">
                 <span>登录账号</span>
-                <div><Users size={17} /><input aria-label="账号" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus={mode === 'login'} placeholder="至少 2 个字符，不能含空格" required minLength={2} maxLength={80} /></div>
-                {mode !== 'login' && <small className="field-hint">这是以后登录时使用的账号，不等同于显示名称。</small>}
+                <div><Users size={17} /><input aria-label="账号" value={username} onChange={(event) => { setUsername(event.target.value); if (mode === 'recover') setRecoveryLookup(null) }} autoComplete="username" autoFocus={mode === 'login' || mode === 'recover'} placeholder="至少 2 个字符，不能含空格" required minLength={2} maxLength={80} readOnly={isRecoveryResolved} /></div>
+                {mode !== 'login' && mode !== 'recover' && <small className="field-hint">这是以后登录时使用的账号，不等同于显示名称。</small>}
               </label>
-              <label className="login-field">
-                <span>密码</span>
-                <div><LockKeyhole size={17} /><input aria-label="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'setup' ? '至少 10 位' : mode === 'register' ? '至少 8 位' : '请输入账户密码'} required minLength={mode === 'setup' ? 10 : mode === 'register' ? 8 : 6} maxLength={256} /></div>
-                {mode !== 'login' && <small className="field-hint">建议同时使用字母、数字和符号，不要与常用网站相同。</small>}
-              </label>
-              {(mode === 'register' || mode === 'setup') && (
+              {mode === 'recover' && recoveryLookup && (
+                <div className="recovery-question" role="status">
+                  <ShieldCheck size={18} />
+                  <div>
+                    <span>{recoveryLookup.legacySetupRequired ? '旧版账户需要补设密保' : '密保问题'}</span>
+                    <strong>{recoveryLookup.question ?? '此账户创建于密保功能上线前，请设置新的密保问题。'}</strong>
+                  </div>
+                </div>
+              )}
+
+              {mode === 'recover' && recoveryLookup?.legacySetupRequired && (
                 <label className="login-field">
-                  <span>确认密码</span>
-                  <div><LockKeyhole size={17} /><input aria-label="确认密码" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" placeholder="再次输入同一密码" required minLength={mode === 'setup' ? 10 : 8} maxLength={256} /></div>
+                  <span>新的密保问题</span>
+                  <div><ShieldCheck size={17} /><input aria-label="新的密保问题" value={recoveryQuestion} onChange={(event) => setRecoveryQuestion(event.target.value)} placeholder="例如：我的结婚纪念日是什么时候？" required minLength={4} maxLength={200} /></div>
+                  <small className="field-hint">旧版账户仅可在 Server 本机完成这次补设。</small>
+                </label>
+              )}
+
+              {isOperatorAccountMode && (
+                <>
+                  <label className="login-field">
+                    <span>密保问题</span>
+                    <div><ShieldCheck size={17} /><input aria-label="密保问题" value={recoveryQuestion} onChange={(event) => setRecoveryQuestion(event.target.value)} placeholder="例如：我的结婚纪念日是什么时候？" required minLength={4} maxLength={200} /></div>
+                    <small className="field-hint">问题会保存在本机；答案只保存不可逆校验值。</small>
+                  </label>
+                  <label className="login-field">
+                    <span>密保答案</span>
+                    <div><LockKeyhole size={17} /><input aria-label="密保答案" type="password" value={recoveryAnswer} onChange={(event) => setRecoveryAnswer(event.target.value)} autoComplete="off" placeholder="至少 2 个字符" required minLength={2} maxLength={256} /></div>
+                  </label>
+                </>
+              )}
+
+              {isRecoveryResolved && (
+                <label className="login-field">
+                  <span>密保答案</span>
+                  <div><LockKeyhole size={17} /><input aria-label="密保答案" type="password" value={recoveryAnswer} onChange={(event) => setRecoveryAnswer(event.target.value)} autoComplete="off" placeholder="请输入密保答案" autoFocus required minLength={2} maxLength={256} /></div>
+                </label>
+              )}
+
+              {(mode !== 'recover' || isRecoveryResolved) && (
+                <label className="login-field">
+                  <span>{mode === 'recover' ? '新密码' : '密码'}</span>
+                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '新密码' : '密码'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={isOperatorAccountMode || mode === 'recover' ? '至少 10 位' : mode === 'register' ? '至少 8 位' : '请输入账户密码'} required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : mode === 'register' ? 8 : 6} maxLength={256} /></div>
+                  {mode !== 'login' && <small className="field-hint">建议同时使用字母、数字和符号，不要与常用网站相同。</small>}
+                </label>
+              )}
+              {(mode === 'register' || isOperatorAccountMode || isRecoveryResolved) && (
+                <label className="login-field">
+                  <span>{mode === 'recover' ? '确认新密码' : '确认密码'}</span>
+                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '确认新密码' : '确认密码'} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" placeholder="再次输入同一密码" required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : 8} maxLength={256} /></div>
                 </label>
               )}
               {visibleError && <div className="login-error" role="alert"><AlertTriangle size={15} />{visibleError}</div>}
               <button type="submit" className="button button-primary login-submit" disabled={busy}>
-                {busy ? <RefreshCw className="spin" size={17} /> : mode === 'register' ? <Plus size={17} /> : <ArrowRight size={17} />}
-                {busy ? '正在处理' : mode === 'register' ? '提交注册申请' : mode === 'setup' ? '创建运维账户' : '登录'}
+                {busy ? <RefreshCw className="spin" size={17} /> : mode === 'register' || mode === 'operator-register' ? <Plus size={17} /> : mode === 'recover' && !recoveryLookup ? <Search size={17} /> : mode === 'recover' ? <LockKeyhole size={17} /> : <ArrowRight size={17} />}
+                {busy ? '正在处理' : mode === 'register' ? '提交注册申请' : mode === 'setup' ? '创建运维账户' : mode === 'operator-register' ? '创建新的运维账户' : mode === 'recover' && !recoveryLookup ? '查看密保问题' : mode === 'recover' ? '重置密码' : '登录'}
               </button>
             </form>
           )}
@@ -1945,13 +2114,295 @@ function AccountManagementView({
   )
 }
 
+const libraryKindLabels: Record<LibraryItemRecord['kind'], string> = {
+  video: '视频',
+  book: '图书',
+  audio: '音乐 / 音频',
+}
+
+function ResourceManagerView({
+  items,
+  feeds,
+  busy,
+  onScan,
+  onImport,
+  onExternal,
+  onUpdate,
+  onArchive,
+  onCreateFeed,
+  onSyncFeed,
+  onDeleteFeed,
+}: {
+  items: LibraryItemRecord[]
+  feeds: ExternalFeed[]
+  busy: boolean
+  onScan: () => Promise<{ discovered: number; skipped: number; failed: number }>
+  onImport: (payload: LocalImportDraft) => Promise<LibraryItemRecord>
+  onExternal: (payload: ExternalItemDraft) => Promise<LibraryItemRecord>
+  onUpdate: (id: string, changes: Record<string, unknown>) => Promise<LibraryItemRecord>
+  onArchive: (id: string) => Promise<LibraryItemRecord>
+  onCreateFeed: (payload: ExternalFeedDraft) => Promise<ExternalFeed>
+  onSyncFeed: (id: string) => Promise<ExternalFeed>
+  onDeleteFeed: (id: string) => Promise<void>
+}) {
+  const [tab, setTab] = useState<'local' | 'online' | 'feeds'>('local')
+  const [scanMessage, setScanMessage] = useState('')
+  const [localPath, setLocalPath] = useState('')
+  const [localKind, setLocalKind] = useState<'video' | 'book' | 'audio'>('video')
+  const [localTitle, setLocalTitle] = useState('')
+  const [localAudience, setLocalAudience] = useState<'child' | 'family' | 'adult'>('family')
+  const [localAgeFrom, setLocalAgeFrom] = useState('3')
+  const [localAgeTo, setLocalAgeTo] = useState('12')
+  const [localLanguage, setLocalLanguage] = useState('中文')
+  const [localDescription, setLocalDescription] = useState('')
+  const [localCopy, setLocalCopy] = useState(true)
+  const [localPublish, setLocalPublish] = useState(false)
+  const [onlineUrl, setOnlineUrl] = useState('')
+  const [onlineProvider, setOnlineProvider] = useState<'auto' | 'bilibili' | 'douyin' | 'quark' | 'direct' | 'other'>('auto')
+  const [onlineTitle, setOnlineTitle] = useState('')
+  const [onlineKind, setOnlineKind] = useState<'video' | 'book' | 'audio'>('video')
+  const [onlineAudience, setOnlineAudience] = useState<'child' | 'family' | 'adult'>('child')
+  const [onlineAgeFrom, setOnlineAgeFrom] = useState('3')
+  const [onlineAgeTo, setOnlineAgeTo] = useState('12')
+  const [onlineLanguage, setOnlineLanguage] = useState('中文')
+  const [onlineCover, setOnlineCover] = useState('')
+  const [onlineDescription, setOnlineDescription] = useState('')
+  const [feedName, setFeedName] = useState('')
+  const [feedUrl, setFeedUrl] = useState('')
+  const [feedCookie, setFeedCookie] = useState('')
+  const [feedAudience, setFeedAudience] = useState<'child' | 'family' | 'adult'>('child')
+  const [feedAgeFrom, setFeedAgeFrom] = useState('3')
+  const [feedAgeTo, setFeedAgeTo] = useState('12')
+  const [feedLanguage, setFeedLanguage] = useState('中文 / English')
+  const [feedMaxItems, setFeedMaxItems] = useState('50')
+  const [feedInterval, setFeedInterval] = useState('24')
+  const [formError, setFormError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const [actionBusy, setActionBusy] = useState<'scan' | 'local' | 'online' | 'feed' | null>(null)
+
+  const submitLocal = async () => {
+    if (!localPath.trim()) { setFormError('请输入 Server 所在电脑上的文件路径'); return }
+    setFormError('')
+    setActionBusy('local')
+    try {
+      await onImport({
+        sourcePath: localPath.trim(),
+        kind: localKind,
+        title: localTitle.trim() || undefined,
+        audience: localAudience,
+        ageFrom: Number(localAgeFrom),
+        ageTo: Number(localAgeTo),
+        language: localLanguage.trim() || '中文',
+        description: localDescription.trim(),
+        copyToLibrary: localCopy,
+        publish: localPublish,
+      })
+      setLocalPath('')
+      setLocalTitle('')
+    } finally { setActionBusy(null) }
+  }
+
+  const submitOnline = async () => {
+    if (!/^https:\/\//i.test(onlineUrl.trim())) { setFormError('在线资源必须使用 HTTPS 地址'); return }
+    setFormError('')
+    setActionBusy('online')
+    try {
+      await onExternal({
+        url: onlineUrl.trim(),
+        provider: onlineProvider,
+        title: onlineTitle.trim() || undefined,
+        kind: onlineKind,
+        coverUrl: onlineCover.trim() || undefined,
+        audience: onlineAudience,
+        ageFrom: Number(onlineAgeFrom),
+        ageTo: Number(onlineAgeTo),
+        language: onlineLanguage.trim() || '中文',
+        description: onlineDescription.trim(),
+      })
+      setOnlineUrl('')
+      setOnlineTitle('')
+    } finally { setActionBusy(null) }
+  }
+
+  const submitFeed = async () => {
+    if (!feedName.trim() || !/^https:\/\//i.test(feedUrl.trim())) { setFormError('请填写同步源名称和 HTTPS 的 B 站空间 / 收藏夹地址'); return }
+    setFormError('')
+    setActionBusy('feed')
+    try {
+      await onCreateFeed({
+        name: feedName.trim(),
+        url: feedUrl.trim(),
+        cookieFile: feedCookie.trim() || undefined,
+        audience: feedAudience,
+        ageFrom: Number(feedAgeFrom),
+        ageTo: Number(feedAgeTo),
+        language: feedLanguage.trim() || '中文',
+        maxItems: Number(feedMaxItems),
+        syncIntervalHours: Number(feedInterval),
+      })
+      setFeedName('')
+      setFeedUrl('')
+    } finally { setActionBusy(null) }
+  }
+
+  const runScan = async () => {
+    setFormError('')
+    setActionBusy('scan')
+    try {
+      const result = await onScan()
+      setScanMessage(`扫描完成：发现 ${result.discovered} 项，跳过 ${result.skipped} 项，失败 ${result.failed} 项`)
+    } finally { setActionBusy(null) }
+  }
+
+  const statusLabel = (status: string) => status === 'published' ? '已发布' : status === 'archived' ? '已归档' : '草稿'
+  const providerLabel = (mode: string) => mode === 'external_bilibili' ? 'B站' : mode === 'direct_stream' ? '开放直链' : mode === 'external_link' ? '第三方页面' : mode === 'local_library' ? '本地文件' : '在线资源'
+
+  return (
+    <div className="dashboard resource-dashboard">
+      <section className="page-intro ops-intro">
+        <div><span className="eyebrow">LIBRARY CONTROL</span><h1>资源管理</h1><p>本地文件由 Server 扫描和保管；在线内容只保存入口与封面，按需播放。</p></div>
+        <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void runScan().catch((error) => setFormError(error instanceof Error ? error.message : '扫描失败')) }}><RefreshCw size={16} className={actionBusy === 'scan' ? 'spin' : ''} />{actionBusy === 'scan' ? '正在扫描' : '扫描资源目录'}</button>
+      </section>
+      <div className="resource-tabs" role="tablist" aria-label="资源管理分区">
+        <button type="button" role="tab" aria-selected={tab === 'local'} className={tab === 'local' ? 'active' : ''} onClick={() => setTab('local')}><FolderOpen size={16} />本地资源</button>
+        <button type="button" role="tab" aria-selected={tab === 'online'} className={tab === 'online' ? 'active' : ''} onClick={() => setTab('online')}><Link2 size={16} />在线播放</button>
+        <button type="button" role="tab" aria-selected={tab === 'feeds'} className={tab === 'feeds' ? 'active' : ''} onClick={() => setTab('feeds')}><RefreshCw size={16} />自动同步</button>
+      </div>
+      {scanMessage && <div className="connection-notice resource-notice"><CircleCheck size={16} /><span>{scanMessage}</span><button type="button" onClick={() => setScanMessage('')}>关闭</button></div>}
+      {formError && <div className="inline-error resource-error" role="alert"><AlertTriangle size={14} />{formError}<IconButton label="关闭错误" onClick={() => setFormError('')}><X size={14} /></IconButton></div>}
+
+      {tab === 'local' && <>
+        <section className="panel resource-form-panel">
+          <div className="panel-heading"><div><span className="eyebrow">IMPORT FROM THIS PC</span><h2>导入本地文件</h2></div><HardDrive size={19} /></div>
+          <p className="panel-hint">路径填写在 Server 运行的电脑上，例如 <code>D:\\家庭媒体\\动画\\bluey.mp4</code>。浏览器不会上传文件，Server 直接读取该路径。</p>
+          <div className="resource-form-grid">
+            <label className="ops-field resource-wide"><span>文件路径</span><div><FolderOpen size={15} /><input aria-label="本地文件路径" value={localPath} onChange={(event) => setLocalPath(event.target.value)} placeholder="D:\\家庭媒体\\动画\\example.mp4" /></div></label>
+            <label className="ops-field"><span>类型</span><select aria-label="本地资源类型" value={localKind} onChange={(event) => setLocalKind(event.target.value as typeof localKind)}><option value="video">视频</option><option value="book">图书</option><option value="audio">音乐 / 音频</option></select></label>
+            <label className="ops-field"><span>标题（可选）</span><div><input aria-label="本地资源标题" value={localTitle} onChange={(event) => setLocalTitle(event.target.value)} placeholder="默认使用文件名" /></div></label>
+            <label className="ops-field"><span>可见范围</span><select aria-label="本地资源可见范围" value={localAudience} onChange={(event) => setLocalAudience(event.target.value as typeof localAudience)}><option value="child">儿童</option><option value="family">全家</option><option value="adult">仅成人</option></select></label>
+            <label className="ops-field"><span>年龄下限</span><div><input aria-label="本地资源年龄下限" type="number" min="0" max="99" value={localAgeFrom} onChange={(event) => setLocalAgeFrom(event.target.value)} /></div></label>
+            <label className="ops-field"><span>年龄上限</span><div><input aria-label="本地资源年龄上限" type="number" min="0" max="99" value={localAgeTo} onChange={(event) => setLocalAgeTo(event.target.value)} /></div></label>
+            <label className="ops-field"><span>语言</span><div><input aria-label="本地资源语言" value={localLanguage} onChange={(event) => setLocalLanguage(event.target.value)} /></div></label>
+            <label className="ops-field resource-wide"><span>描述</span><div><input aria-label="本地资源描述" value={localDescription} onChange={(event) => setLocalDescription(event.target.value)} placeholder="给家人看的简短说明" /></div></label>
+          </div>
+          <div className="resource-options"><label className="rights-check"><input type="checkbox" checked={localCopy} onChange={(event) => setLocalCopy(event.target.checked)} />复制到已配置的资源目录（推荐）</label><label className="rights-check"><input type="checkbox" checked={localPublish} onChange={(event) => setLocalPublish(event.target.checked)} />导入后立即发布给 Client</label></div>
+          <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitLocal().catch((error) => setFormError(error instanceof Error ? error.message : '导入失败')) }}><UploadCloud size={16} />{actionBusy === 'local' ? '正在导入' : '导入资源'}</button>
+        </section>
+        <LibraryTable items={items} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
+      </>}
+
+      {tab === 'online' && <>
+        <section className="panel resource-form-panel">
+          <div className="panel-heading"><div><span className="eyebrow">PLAY WITHOUT DOWNLOADING</span><h2>添加在线播放入口</h2></div><Link2 size={19} /></div>
+          <p className="panel-hint">B 站视频优先使用官方播放器；抖音、夸克和其他站点保留官方页面入口，遇到站点限制时不会伪装成无感内嵌。</p>
+          <div className="resource-form-grid">
+            <label className="ops-field resource-wide"><span>视频 / 资源 URL</span><div><Link2 size={15} /><input aria-label="在线资源 URL" type="url" value={onlineUrl} onChange={(event) => setOnlineUrl(event.target.value)} placeholder="https://www.bilibili.com/video/BV..." /></div></label>
+            <label className="ops-field"><span>平台</span><select aria-label="在线资源平台" value={onlineProvider} onChange={(event) => setOnlineProvider(event.target.value as typeof onlineProvider)}><option value="auto">自动识别</option><option value="bilibili">B站</option><option value="douyin">抖音</option><option value="quark">夸克网盘</option><option value="direct">开放直链</option><option value="other">其他</option></select></label>
+            <label className="ops-field"><span>标题（B站可留空）</span><div><input aria-label="在线资源标题" value={onlineTitle} onChange={(event) => setOnlineTitle(event.target.value)} placeholder="B站会自动读取标题和封面" /></div></label>
+            <label className="ops-field"><span>类型</span><select aria-label="在线资源类型" value={onlineKind} onChange={(event) => setOnlineKind(event.target.value as typeof onlineKind)}><option value="video">视频</option><option value="book">图书</option><option value="audio">音频</option></select></label>
+            <label className="ops-field"><span>可见范围</span><select aria-label="在线资源可见范围" value={onlineAudience} onChange={(event) => setOnlineAudience(event.target.value as typeof onlineAudience)}><option value="child">儿童</option><option value="family">全家</option><option value="adult">仅成人</option></select></label>
+            <label className="ops-field"><span>年龄下限</span><div><input aria-label="在线资源年龄下限" type="number" min="0" max="99" value={onlineAgeFrom} onChange={(event) => setOnlineAgeFrom(event.target.value)} /></div></label>
+            <label className="ops-field"><span>年龄上限</span><div><input aria-label="在线资源年龄上限" type="number" min="0" max="99" value={onlineAgeTo} onChange={(event) => setOnlineAgeTo(event.target.value)} /></div></label>
+            <label className="ops-field"><span>封面 URL（可选）</span><div><input aria-label="在线资源封面 URL" type="url" value={onlineCover} onChange={(event) => setOnlineCover(event.target.value)} placeholder="留空使用平台封面" /></div></label>
+            <label className="ops-field"><span>语言</span><div><input aria-label="在线资源语言" value={onlineLanguage} onChange={(event) => setOnlineLanguage(event.target.value)} /></div></label>
+            <label className="ops-field resource-wide"><span>描述</span><div><input aria-label="在线资源描述" value={onlineDescription} onChange={(event) => setOnlineDescription(event.target.value)} /></div></label>
+          </div>
+          <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitOnline().catch((error) => setFormError(error instanceof Error ? error.message : '在线资源添加失败')) }}><Plus size={16} />{actionBusy === 'online' ? '正在读取元数据' : '保存在线播放入口'}</button>
+        </section>
+        <LibraryTable items={items.filter((item) => Boolean(item.externalUrl))} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
+      </>}
+
+      {tab === 'feeds' && <>
+        <section className="panel resource-form-panel">
+          <div className="panel-heading"><div><span className="eyebrow">PERIODIC SYNC</span><h2>订阅 B 站收藏 / 空间</h2></div><RefreshCw size={19} /></div>
+          <p className="panel-hint">可填 B 站个人空间、收藏夹或视频合集地址。Cookie 文件只放在 Server 的 cache 目录内，Client 永远不会接触。</p>
+          <div className="resource-form-grid">
+            <label className="ops-field"><span>同步源名称</span><div><input aria-label="同步源名称" value={feedName} onChange={(event) => setFeedName(event.target.value)} placeholder="儿童英语收藏夹" /></div></label>
+            <label className="ops-field resource-wide"><span>B站空间 / 收藏夹 URL</span><div><Link2 size={15} /><input aria-label="B站同步 URL" type="url" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} placeholder="https://space.bilibili.com/... 或收藏夹链接" /></div></label>
+            <label className="ops-field resource-wide"><span>Cookie 文件（可选）</span><div><LockKeyhole size={15} /><input aria-label="B站 Cookie 文件路径" value={feedCookie} onChange={(event) => setFeedCookie(event.target.value)} placeholder="bilibili.cookies.txt（相对于缓存目录）" /></div></label>
+            <label className="ops-field"><span>可见范围</span><select aria-label="同步内容可见范围" value={feedAudience} onChange={(event) => setFeedAudience(event.target.value as typeof feedAudience)}><option value="child">儿童</option><option value="family">全家</option><option value="adult">仅成人</option></select></label>
+            <label className="ops-field"><span>年龄下限</span><div><input aria-label="同步内容年龄下限" type="number" min="0" max="99" value={feedAgeFrom} onChange={(event) => setFeedAgeFrom(event.target.value)} /></div></label>
+            <label className="ops-field"><span>年龄上限</span><div><input aria-label="同步内容年龄上限" type="number" min="0" max="99" value={feedAgeTo} onChange={(event) => setFeedAgeTo(event.target.value)} /></div></label>
+            <label className="ops-field"><span>最多条数</span><div><input aria-label="同步最多条数" type="number" min="1" max="200" value={feedMaxItems} onChange={(event) => setFeedMaxItems(event.target.value)} /></div></label>
+            <label className="ops-field"><span>同步间隔（小时）</span><div><input aria-label="同步间隔小时" type="number" min="1" max="168" value={feedInterval} onChange={(event) => setFeedInterval(event.target.value)} /></div></label>
+            <label className="ops-field resource-wide"><span>语言标签</span><div><input aria-label="同步内容语言" value={feedLanguage} onChange={(event) => setFeedLanguage(event.target.value)} /></div></label>
+          </div>
+          <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitFeed().catch((error) => setFormError(error instanceof Error ? error.message : '同步源创建失败')) }}><Plus size={16} />{actionBusy === 'feed' ? '正在同步' : '保存并立即同步'}</button>
+        </section>
+        <section className="panel feed-panel"><div className="panel-heading"><div><span className="eyebrow">SAVED FEEDS</span><h2>已保存同步源</h2></div><span className="soft-badge">{feeds.length} 个</span></div>
+          {feeds.length === 0 ? <div className="empty-state compact"><RefreshCw size={22} /><strong>还没有自动同步源</strong><span>添加收藏夹后，Worker 会按间隔更新。</span></div> : <div className="feed-list">{feeds.map((feed) => <div className="feed-row" key={feed.id}><span className="feed-icon"><RefreshCw size={16} /></span><div className="feed-copy"><strong>{feed.name}</strong><span>{feed.url}</span><small>{feed.itemCount} 项 · 每 {feed.syncIntervalHours} 小时 · {feed.lastSyncedAt ? `上次 ${new Date(feed.lastSyncedAt).toLocaleString('zh-CN')}` : '尚未成功同步'}</small>{feed.lastError && <small className="feed-error">{feed.lastError}</small>}</div><div className="feed-actions"><button type="button" className="button button-quiet small" disabled={busy} onClick={() => { void onSyncFeed(feed.id).catch((error) => setFormError(error instanceof Error ? error.message : '同步失败')) }}><RefreshCw size={14} />同步</button><IconButton label="删除同步源" onClick={() => { void onDeleteFeed(feed.id).catch((error) => setFormError(error instanceof Error ? error.message : '删除失败')) }}><X size={15} /></IconButton></div></div>)}</div>}
+        </section>
+      </>}
+    </div>
+  )
+}
+
+function LibraryTable({
+  items,
+  busy,
+  statusLabel,
+  providerLabel,
+  onUpdate,
+  onArchive,
+  onBeginEdit,
+  editingId,
+  editingTitle,
+  onEditingTitle,
+  onSaveEdit,
+}: {
+  items: LibraryItemRecord[]
+  busy: boolean
+  statusLabel: (status: string) => string
+  providerLabel: (provider: string) => string
+  onUpdate: (id: string, changes: Record<string, unknown>) => Promise<LibraryItemRecord>
+  onArchive: (id: string) => Promise<LibraryItemRecord>
+  onBeginEdit: (item: LibraryItemRecord) => void
+  editingId: string | null
+  editingTitle: string
+  onEditingTitle: (value: string) => void
+  onSaveEdit: (id: string) => Promise<void>
+}) {
+  return <section className="panel library-management-panel"><div className="panel-heading"><div><span className="eyebrow">MANAGED RESOURCES</span><h2>已登记资源</h2></div><span className="soft-badge">{items.length} 项</span></div>{items.length === 0 ? <div className="empty-state compact"><FolderOpen size={22} /><strong>还没有资源</strong><span>扫描或导入后，资源会出现在这里。</span></div> : <div className="managed-library-list">{items.map((item) => <div className="managed-library-row" key={item.id}><div className={'managed-kind ' + kindMeta[item.kind].tone}>{(() => { const KindIcon = kindMeta[item.kind].icon; return <KindIcon size={16} /> })()}</div><div className="managed-library-copy">{editingId === item.id ? <input aria-label="编辑资源标题" value={editingTitle} onChange={(event) => onEditingTitle(event.target.value)} /> : <strong>{item.title}</strong>}<span>{libraryKindLabels[item.kind]} · {item.externalUrl ? providerLabel(item.acquisitionMode) : item.filePath ? formatFileSize(item.fileSize) : '文件不可用'} · {item.audience}</span><small>{item.filePath ?? item.externalUrl ?? '无入口'}</small></div><span className={'submission-status ' + (item.publicationStatus === 'published' ? 'transferred' : item.publicationStatus === 'archived' ? 'frozen' : 'review')}>{statusLabel(item.publicationStatus)}</span><div className="managed-library-actions">{editingId === item.id ? <button type="button" className="button button-primary small" disabled={busy} onClick={() => { void onSaveEdit(item.id) }}><Check size={14} />保存</button> : <button type="button" className="button button-quiet small" disabled={busy} onClick={() => onBeginEdit(item)}><PenTool size={14} />编辑</button>}{item.publicationStatus !== 'published' && item.publicationStatus !== 'archived' && <button type="button" className="button button-primary small" disabled={busy} onClick={() => { void onUpdate(item.id, { publication_status: 'published' }) }}><ShieldCheck size={14} />发布</button>}{item.publicationStatus !== 'archived' && <IconButton label="归档资源" onClick={() => { void onArchive(item.id) }}><X size={15} /></IconButton>}</div></div>)}</div>}</section>
+}
+
+function StorageSettingsView({
+  paths,
+  busy,
+  onSave,
+}: {
+  paths: StoragePaths | null
+  busy: boolean
+  onSave: (paths: StoragePaths) => Promise<StoragePaths>
+}) {
+  const defaults: StoragePaths = { video: '', book: '', audio: '', image: '', cache: '', inbox: '', quarantine: '' }
+  const [draft, setDraft] = useState<StoragePaths>(paths ?? defaults)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => { if (paths) setDraft(paths) }, [paths])
+  const labels: Array<[keyof StoragePaths, string, string]> = [
+    ['video', '视频目录', 'mp4 / mkv / webm 等本地视频'],
+    ['book', '图书目录', 'pdf / epub / cbz 等电子书'],
+    ['audio', '音乐目录', 'mp3 / m4a / flac 等音频'],
+    ['image', '图片与封面缓存', '封面、缩略图和图片素材'],
+    ['cache', '运行缓存目录', 'Cookie、元数据和临时文件'],
+    ['inbox', '投递箱目录', '外部转存文件的入口'],
+    ['quarantine', '隔离区目录', '安全扫描和人工审核区'],
+  ]
+  const submit = async () => {
+    setError('')
+    try { await onSave(draft); setMessage('目录已保存，Server 会自动创建不存在的文件夹') } catch (reason) { setError(reason instanceof Error ? reason.message : '目录保存失败') }
+  }
+  return <div className="dashboard settings-dashboard"><section className="page-intro ops-intro"><div><span className="eyebrow">SERVER STORAGE</span><h1>主机设置</h1><p>这些目录只在 Server 所在电脑生效。建议把视频、图书和音频放在容量最大的磁盘。</p></div><HardDrive size={22} /></section><section className="panel storage-settings-panel"><div className="panel-heading"><div><span className="eyebrow">FOLDERS</span><h2>资源存放路径</h2></div><span className="soft-badge">Server 本机</span></div><div className="storage-settings-grid">{labels.map(([key, label, hint]) => <label className="ops-field" key={key}><span>{label}</span><div><FolderOpen size={15} /><input aria-label={label} value={draft[key]} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} placeholder={hint} /></div><small>{hint}</small></label>)}</div>{error && <div className="inline-error" role="alert"><AlertTriangle size={14} />{error}</div>}{message && <div className="success-note"><CircleCheck size={15} />{message}</div>}<button type="button" className="button button-primary" disabled={busy} onClick={() => { void submit() }}>{busy ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}保存目录设置</button></section></div>
+}
+
 export default function App() {
   const store = useFamilyStore()
   const { state } = store
   const [activeNav, setActiveNav] = useState<NavKey>('explore')
   const [query, setQuery] = useState('')
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
-  const [playback, setPlayback] = useState<{ item: ContentItem; url: string } | null>(null)
+  const [playback, setPlayback] = useState<{ item: ContentItem; url: string; mode: string; service?: string } | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: NoticeTone } | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
@@ -2022,7 +2473,7 @@ export default function App() {
     if (store.connection !== 'backend' || (state.role !== 'guardian' && state.role !== 'operator')) return
     const timer = window.setTimeout(() => { void handleCheckUpdate(true) }, 1200)
     return () => window.clearTimeout(timer)
-    // 首次连接主机后自动检查一次，家长和运维仍可在顶部手动检查。
+    // 启动时只自动检查一次主机连接，家长和运维可在顶部手动重试。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.connection, state.role])
 
@@ -2073,10 +2524,20 @@ export default function App() {
     void store.launchContent(item.id).then((result) => {
       if (result.mode === 'local_asset' && result.url) {
         setSelectedItem(null)
-        setPlayback({ item, url: result.url })
+        setPlayback({ item, url: result.url, mode: result.mode })
         return
       }
-      notify('该内容需要在已配置的家庭媒体服务中打开', 'info')
+      if ((result.mode === 'embed' || result.mode === 'direct_stream' || result.mode === 'external_link') && result.url) {
+        setSelectedItem(null)
+        setPlayback({ item, url: result.url, mode: result.mode, service: result.service })
+        return
+      }
+      if (result.mode === 'local_service') {
+        setSelectedItem(null)
+        setPlayback({ item, url: '', mode: result.mode, service: result.service })
+        return
+      }
+      notify('该内容暂时没有可用的播放入口', 'info')
     }).catch(reportError)
   }
 
@@ -2091,6 +2552,9 @@ export default function App() {
         onLogin={store.login}
         onRegister={store.registerAccount}
         onSetupOperator={store.setupOperator}
+        onRegisterOperator={store.registerOperator}
+        onLookupOperatorRecovery={store.lookupOperatorRecovery}
+        onRecoverOperator={store.recoverOperator}
         onConfigure={store.configureHost}
         onRetry={store.retryConnection}
         onClearError={store.clearAuthError}
@@ -2098,6 +2562,14 @@ export default function App() {
     )
   }
   const currentUser = store.user
+  const navCounts: Partial<Record<NavKey, number>> = state.role === 'operator'
+    ? {
+        queue: state.jobs.filter((job) => job.status === 'queued' || job.status === 'downloading').length,
+        accounts: store.registrations.filter((item) => item.status === 'pending').length,
+      }
+    : state.role === 'guardian'
+      ? { approvals: state.requests.filter((request) => request.status === 'pending').length }
+      : {}
 
   const renderDashboard = () => {
     if (APP_EDITION === 'client' && activeNav === 'connection') {
@@ -2119,14 +2591,16 @@ export default function App() {
     if (state.role === 'operator') {
       if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={setSelectedItem} onFavorite={handleFavorite} />
       if (activeNav === 'accounts') return <AccountManagementView registrations={store.registrations} users={store.managedUsers} onDecision={(id, decision) => { void store.decideRegistration(id, decision).then(() => notify(decision === 'approved' ? '账户已批准并可登录' : '注册申请已拒绝', decision === 'approved' ? 'success' : 'info')).catch(reportError) }} onStatus={(id, status) => { void store.updateManagedUser(id, status).then(() => notify(status === 'active' ? '账户已恢复' : '账户已停用')).catch(reportError) }} />
-      return <OperatorDashboard jobs={state.jobs} submissions={state.submissions} sources={store.sources} assets={store.assets} systemStatus={store.systemStatus} downloadsPaused={store.downloadsPaused} onJob={(id, status) => { void store.updateJob(id, status).then(() => notify(status === 'paused' ? '任务已暂停' : '任务已重新排队')).catch(reportError) }} onPauseAll={() => { void store.pauseAll().then(() => notify('所有下载任务已暂停', 'warning')).catch(reportError) }} onSync={() => { void store.syncNow().then(() => notify('同步完成，隔离区清单已刷新', 'info')).catch(reportError) }} onQueueBilibili={async (payload) => { await store.queueBilibili(payload); notify(payload.startNow ? 'B站任务已创建，将立即处理' : 'B站任务已加入夜间队列') }} onReviewAsset={async (id, payload) => { await store.reviewAsset(id, payload); notify('资源已审核入库，Client 刷新后即可访问') }} onOpen={setSelectedItem} focus={activeNav} />
+      if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} />
+      if (activeNav === 'settings') return <StorageSettingsView paths={store.storagePaths} busy={store.busy} onSave={store.saveStoragePaths} />
+      return <OperatorDashboard jobs={state.jobs} submissions={state.submissions} sources={store.sources} assets={store.assets} systemStatus={store.systemStatus} downloadsPaused={store.downloadsPaused} onJob={(id, status) => { void store.updateJob(id, status).then(() => notify(status === 'paused' ? '任务已暂停' : '任务已重新排队')).catch(reportError) }} onPauseAll={() => { void store.pauseAll().then(() => notify('所有下载任务已暂停', 'warning')).catch(reportError) }} onResumeAll={() => { void store.resumeAll().then(() => notify('下载队列已恢复')).catch(reportError) }} onSync={() => { void store.syncNow().then(() => notify('同步完成，隔离区清单已刷新', 'info')).catch(reportError) }} onQueueBilibili={async (payload) => { await store.queueBilibili(payload); notify(payload.startNow ? 'B站任务已创建，将立即处理' : 'B站任务已加入夜间队列') }} onReviewAsset={async (id, payload) => { await store.reviewAsset(id, payload); notify('资源已审核入库，Client 刷新后即可访问') }} onOpen={setSelectedItem} focus={activeNav} />
     }
     return null
   }
 
   return (
     <div className={'app-shell role-' + state.role}>
-      <Sidebar user={currentUser} connection={store.connection} activeNav={activeNav} onNav={setActiveNav} onLogout={() => { void store.logout() }} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <Sidebar user={currentUser} connection={store.connection} activeNav={activeNav} onNav={setActiveNav} onLogout={() => { void store.logout() }} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} navCounts={navCounts} />
       {mobileOpen && <button type="button" className="sidebar-scrim" aria-label="关闭导航" onClick={() => setMobileOpen(false)} />}
       <main className="main-shell">
         <Topbar user={currentUser} query={query} onQuery={setQuery} onMenu={() => setMobileOpen(true)} onLogout={() => { void store.logout() }} onCheckUpdate={() => { void handleCheckUpdate() }} updateBusy={updateBusy} />
@@ -2164,7 +2638,7 @@ export default function App() {
           onLaunch={() => handleLaunch(selectedItem)}
         />
       )}
-      {playback && <MediaPlayerModal item={playback.item} url={playback.url} onClose={() => setPlayback(null)} />}
+      {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={() => setPlayback(null)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   )

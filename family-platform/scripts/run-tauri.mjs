@@ -2,8 +2,8 @@ import { run } from '@tauri-apps/cli'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-// Rustup 会更新用户 PATH，但已经打开的终端不会自动继承。
-// 这里补全 Cargo 路径，让工具链安装后可以直接执行原生命令。
+// Rustup updates the user PATH, but long-lived terminals do not inherit it.
+// Keep every native command usable immediately after toolchain installation.
 const cargoHome = process.env.CARGO_HOME
   ?? (process.env.USERPROFILE ? join(process.env.USERPROFILE, '.cargo') : '')
 const cargoBin = cargoHome ? join(cargoHome, 'bin') : ''

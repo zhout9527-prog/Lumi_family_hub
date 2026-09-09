@@ -16,7 +16,9 @@ from .bilibili import BILIBILI_SOURCE_ID, download_bilibili_to_quarantine
 from .config import Settings
 from .database import Base, build_engine, build_session_factory
 from .download import DownloadRejected, download_to_quarantine, read_manifest, redact_manifest
+from .external import sync_due_external_feeds
 from .file_safety import safe_filename, scan_file, sha256_file
+from .library import load_storage_paths
 from .models import (
     CloudInboxAsset,
     CommunitySubmission,
@@ -36,6 +38,8 @@ class WorkerSummary:
     inbox_blocked: int = 0
     jobs_completed: int = 0
     jobs_failed: int = 0
+    feeds_synced: int = 0
+    feed_errors: int = 0
     paused_reason: str | None = None
 
 
@@ -47,23 +51,29 @@ class FamilyWorker:
     def run_once(self, *, ignore_window: bool = False) -> WorkerSummary:
         summary = WorkerSummary()
         with self.session_factory() as db:
-            summary.inbox_added, summary.inbox_duplicates, summary.inbox_blocked = self.scan_inbox(db)
-            paused_reason = self._hard_pause_reason(db)
+            storage_paths = load_storage_paths(db, self.settings, ensure=True)
+            self._recover_interrupted_jobs(db)
+            summary.inbox_added, summary.inbox_duplicates, summary.inbox_blocked = self.scan_inbox(db, storage_paths)
+            summary.feeds_synced, summary.feed_errors = sync_due_external_feeds(db, self.settings)
+            paused_reason = self._hard_pause_reason(db, storage_paths)
             if paused_reason:
                 summary.paused_reason = paused_reason
                 return summary
             outside_window = not ignore_window and not self._in_nightly_window(datetime.now().hour)
-            completed, failed = self.process_jobs(db, outside_window_only=outside_window)
+            completed, failed = self.process_jobs(db, storage_paths, outside_window_only=outside_window)
             summary.jobs_completed = completed
             summary.jobs_failed = failed
             if outside_window and completed == 0 and failed == 0:
                 summary.paused_reason = "outside_nightly_window"
         return summary
 
-    def scan_inbox(self, db: Session) -> tuple[int, int, int]:
+    def scan_inbox(self, db: Session, storage_paths: dict[str, Path] | None = None) -> tuple[int, int, int]:
+        paths = storage_paths or load_storage_paths(db, self.settings, ensure=True)
+        inbox_dir = paths["inbox"]
+        quarantine_dir = paths["quarantine"]
         added = duplicates = blocked = 0
         now_timestamp = time.time()
-        for inbound in sorted(self.settings.inbox_dir.rglob("*")):
+        for inbound in sorted(inbox_dir.rglob("*")):
             if not inbound.is_file() or inbound.is_symlink() or inbound.name.startswith("."):
                 continue
             if inbound.suffix.lower() in {".part", ".partial", ".tmp", ".crdownload"}:
@@ -84,7 +94,7 @@ class FamilyWorker:
             submission_id, display_name = self._submission_reference(db, inbound.name)
             asset_id = new_id()
             quarantine_name = f"{asset_id}--{safe_filename(display_name)}"
-            quarantine_path = self.settings.quarantine_dir / quarantine_name
+            quarantine_path = quarantine_dir / quarantine_name
             shutil.copy2(inbound, quarantine_path)
             result = scan_file(
                 quarantine_path,
@@ -93,7 +103,7 @@ class FamilyWorker:
             )
             if result.status == "blocked":
                 blocked += 1
-            relative_inbound = inbound.resolve().relative_to(self.settings.inbox_dir.resolve()).as_posix()
+            relative_inbound = inbound.resolve().relative_to(inbox_dir.resolve()).as_posix()
             asset = CloudInboxAsset(
                 id=asset_id,
                 household_id="home",
@@ -129,7 +139,14 @@ class FamilyWorker:
             added += 1
         return added, duplicates, blocked
 
-    def process_jobs(self, db: Session, *, outside_window_only: bool = False) -> tuple[int, int]:
+    def process_jobs(
+        self,
+        db: Session,
+        storage_paths: dict[str, Path] | None = None,
+        *,
+        outside_window_only: bool = False,
+    ) -> tuple[int, int]:
+        paths = storage_paths or load_storage_paths(db, self.settings, ensure=True)
         completed = failed = 0
         candidates = db.scalars(
             select(DownloadJob)
@@ -153,27 +170,49 @@ class FamilyWorker:
                 break
         for job in jobs:
             try:
-                self._process_job(db, job)
+                self._process_job(db, job, paths)
                 completed += 1
             except DownloadRejected as exc:
-                job.stage = "failed"
-                job.error_code = self._safe_error_code(str(exc))
-                job.retry_count += 1
-                job.scheduled_at = utcnow() + timedelta(minutes=min(60, 2 ** min(job.retry_count, 5)))
-                add_audit(
-                    db,
-                    request=None,
-                    actor=None,
-                    action="download.failed",
-                    resource_type="download_job",
-                    resource_id=job.id,
-                    metadata={"error_code": job.error_code, "retry_count": job.retry_count},
-                )
-                db.commit()
+                self._mark_failed(db, job, self._safe_error_code(str(exc)))
+                failed += 1
+            except Exception:
+                # 未分类异常也必须结束任务，避免界面永久停在“下载中”。
+                self._mark_failed(db, job, "worker_unexpected_error")
                 failed += 1
         return completed, failed
 
-    def _process_job(self, db: Session, job: DownloadJob) -> None:
+    def _recover_interrupted_jobs(self, db: Session) -> None:
+        """服务重启后重新排队上次未完成的任务。"""
+
+        interrupted = db.scalars(select(DownloadJob).where(DownloadJob.stage == "downloading")).all()
+        if not interrupted:
+            return
+        for job in interrupted:
+            job.stage = "queued"
+            job.progress = 0
+            job.bytes_done = 0
+            job.expected_bytes = None
+            job.error_code = "worker_restarted"
+            job.scheduled_at = utcnow()
+        db.commit()
+
+    def _mark_failed(self, db: Session, job: DownloadJob, error_code: str) -> None:
+        job.stage = "failed"
+        job.error_code = error_code
+        job.retry_count += 1
+        job.scheduled_at = utcnow() + timedelta(minutes=min(60, 2 ** min(job.retry_count, 5)))
+        add_audit(
+            db,
+            request=None,
+            actor=None,
+            action="download.failed",
+            resource_type="download_job",
+            resource_id=job.id,
+            metadata={"error_code": job.error_code, "retry_count": job.retry_count},
+        )
+        db.commit()
+
+    def _process_job(self, db: Session, job: DownloadJob, storage_paths: dict[str, Path]) -> None:
         source = db.get(ContentSource, job.source_id)
         if source is None or not job.manifest_ref:
             raise DownloadRejected("job_manifest_missing")
@@ -213,7 +252,7 @@ class FamilyWorker:
 
             result = download_bilibili_to_quarantine(
                 url=url,
-                destination_dir=self.settings.quarantine_dir,
+                destination_dir=storage_paths["quarantine"],
                 job_id=job.id,
                 max_bytes=self.settings.max_asset_bytes,
                 max_height=int(manifest.get("max_height", 1080)),
@@ -229,7 +268,7 @@ class FamilyWorker:
             path, checksum, size, _remote_mime = download_to_quarantine(
                 url=url,
                 source=source,
-                destination_dir=self.settings.quarantine_dir,
+                destination_dir=storage_paths["quarantine"],
                 job_id=job.id,
                 max_bytes=self.settings.max_asset_bytes,
             )
@@ -285,11 +324,12 @@ class FamilyWorker:
             return None, filename
         return submission.id, display_name
 
-    def _hard_pause_reason(self, db: Session) -> str | None:
+    def _hard_pause_reason(self, db: Session, storage_paths: dict[str, Path] | None = None) -> str | None:
         setting = db.get(SystemSetting, "downloads")
         if setting and setting.value_json.get("paused"):
             return "downloads_paused"
-        usage = shutil.disk_usage(self.settings.root)
+        paths = storage_paths or load_storage_paths(db, self.settings, ensure=True)
+        usage = shutil.disk_usage(paths["video"])
         if usage.free / usage.total < self.settings.min_free_ratio:
             return "disk_free_below_threshold"
         return None

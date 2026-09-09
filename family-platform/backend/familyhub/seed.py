@@ -122,6 +122,49 @@ def seed_database(db: Session, settings: Settings) -> None:
                 review_expire_at=utcnow() + timedelta(days=3650),
             )
         )
+    if db.get(ContentSource, "local-library") is None:
+        db.add(
+            ContentSource(
+                id="local-library",
+                name="家庭本地资源库",
+                kind="owned_file",
+                owner="家庭管理员",
+                license_note="由运维管理员登记并审核的家庭本机文件。",
+                allow_download=False,
+                rate_limit="local scan",
+                reviewed_at=utcnow(),
+                review_expire_at=utcnow() + timedelta(days=3650),
+            )
+        )
+    if db.get(ContentSource, "bilibili-stream") is None:
+        db.add(
+            ContentSource(
+                id="bilibili-stream",
+                name="B站在线内容",
+                kind="official_stream",
+                owner="家庭管理员",
+                base_url="https://www.bilibili.com/",
+                license_note="只同步公开元数据与官方播放入口，不复制视频文件。",
+                allow_download=False,
+                rate_limit="metadata only",
+                reviewed_at=utcnow(),
+                review_expire_at=utcnow() + timedelta(days=3650),
+            )
+        )
+    if db.get(ContentSource, "external-links") is None:
+        db.add(
+            ContentSource(
+                id="external-links",
+                name="家庭在线链接",
+                kind="official_stream",
+                owner="家庭管理员",
+                license_note="由运维管理员审核后发布的在线播放入口。",
+                allow_download=False,
+                rate_limit="metadata only",
+                reviewed_at=utcnow(),
+                review_expire_at=utcnow() + timedelta(days=3650),
+            )
+        )
     db.flush()
 
     if (db.scalar(select(func.count()).select_from(ContentItem)) or 0) == 0:

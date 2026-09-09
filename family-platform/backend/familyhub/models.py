@@ -44,6 +44,17 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class OperatorRecovery(Base):
+    __tablename__ = "operator_recoveries"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    question: Mapped[str] = mapped_column(String(200))
+    answer_salt: Mapped[str] = mapped_column(String(128))
+    answer_hash: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AccountRegistration(Base):
     __tablename__ = "account_registrations"
 
@@ -78,6 +89,17 @@ class SessionToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     user: Mapped[User] = relationship()
+
+
+class SessionScope(Base):
+    __tablename__ = "session_scopes"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("session_tokens.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    effective_role: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ContentSource(Base):

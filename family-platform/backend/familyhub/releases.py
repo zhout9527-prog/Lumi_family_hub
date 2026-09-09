@@ -1,8 +1,9 @@
-"""发布元数据和 Tauri 更新器适配层。
+"""Release metadata and Tauri updater adapter.
 
-控制面不会下载或执行更新，只提供一份由管理员维护的小型清单。桌面端
-Tauri 客户端读取带签名的 ``tauri_platforms``，Android/TV 客户端读取普通
-``platforms`` 条目，并提示用户安装 APK 或打开应用商店。
+The control plane never downloads or executes an update.  It only serves a
+small, administrator-controlled manifest.  Desktop Tauri clients consume the
+signed ``tauri_platforms`` portion; Android/TV clients use the ordinary
+``platforms`` entries and ask the user to install the APK (or open a store).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ _MAX_MANIFEST_BYTES = 1 * 1024 * 1024
 
 
 def version_key(value: str) -> tuple[int, int, int]:
-    """为类似语义化版本的应用版本生成宽容的数字比较键。"""
+    """Return a forgiving numeric key for semver-like app versions."""
 
     match = _VERSION_RE.match(str(value).strip())
     if not match:
@@ -102,7 +103,7 @@ def _default_manifest(settings: Settings) -> dict[str, Any]:
 
 
 def load_manifest(settings: Settings) -> dict[str, Any]:
-    """加载并防御性地规范化管理员提供的发布清单。"""
+    """Load and defensively normalize the administrator-provided manifest."""
 
     result = _default_manifest(settings)
     path = _manifest_path(settings)
@@ -127,7 +128,7 @@ def load_manifest(settings: Settings) -> dict[str, Any]:
     published = raw.get("published_at")
     if isinstance(published, str):
         try:
-            # 完成格式校验后保留原始 ISO 字符串供客户端使用。
+            # Validate, but retain the original ISO representation for clients.
             datetime.fromisoformat(published.replace("Z", "+00:00"))
             result["published_at"] = published
         except ValueError:
@@ -150,7 +151,8 @@ def load_manifest(settings: Settings) -> dict[str, Any]:
     if explicit_tauri:
         result["tauri_platforms"] = explicit_tauri
     else:
-        # 桌面产物按 Tauri 目标命名，签名更新响应中不包含 Android 条目。
+        # Desktop artifacts are conventionally named by Tauri target.  Keep
+        # Android entries out of the signed updater response.
         result["tauri_platforms"] = {
             key: value
             for key, value in result["platforms"].items()
@@ -185,9 +187,11 @@ def tauri_update_payload(
         or key.casefold() == f"{target_l}-{arch_l}"
         or target_l in key.casefold()
     }
-    # 清单可以只发布一个通用签名产物，此时返回完整映射供 Tauri 选择准确键值。
-    # 桌面更新响应保持最小化；通用清单可为 Android UI 携带校验和与文件大小，
-    # 桌面签名插件只需要下载地址和 Tauri 签名。
+    # A manifest may intentionally publish one universal signed artifact. In
+    # that case returning the complete map lets Tauri select its exact key.
+    # The Tauri updater response is deliberately minimal.  The generic
+    # manifest may carry a checksum and file size for the Android UI, but the
+    # signed desktop plugin only needs a URL and its Tauri signature.
     platforms = {
         key: {"url": value["url"], "signature": value["signature"]}
         for key, value in (matching or artifacts).items()

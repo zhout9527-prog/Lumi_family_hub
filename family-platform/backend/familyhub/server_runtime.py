@@ -17,7 +17,8 @@ def run_worker(settings: Settings, stop: threading.Event) -> None:
         try:
             worker.run_once()
         except Exception:
-            # 单次后台扫描失败时保持 API 可用，下次轮询会重试，具体任务错误由 Worker 记录。
+            # The API remains available when one background scan fails. The
+            # next poll retries, while job-specific failures are stored by the worker.
             pass
         stop.wait(max(5, settings.worker_poll_seconds))
 

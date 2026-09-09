@@ -1,4 +1,4 @@
-"""增加账户注册审批
+"""add account registration approvals
 
 Revision ID: 6f2c9d8a41b0
 Revises: 1d7ad2716ef4

@@ -10,8 +10,10 @@ const artifactsPath = fileURLToPath(new URL('./artifacts/', import.meta.url))
 const runId = Date.now().toString(36)
 const childUsername = `xiaodou-${runId}`
 const childPassword = 'XiaoDou-2026'
-let operatorUsername = process.env.FAMILYHUB_E2E_OPERATOR_USERNAME ?? 'operator-demo'
-let operatorPassword = process.env.FAMILYHUB_E2E_OPERATOR_PASSWORD ?? 'operator-demo'
+const operatorUsername = `operator-${runId}`
+let operatorPassword = 'Operator-E2E-2026'
+const operatorRecoveryQuestion = '本次端到端测试的编号是什么？'
+const operatorRecoveryAnswer = `answer-${runId}`
 
 function check(condition, message) {
   if (!condition) throw new Error(message)
@@ -89,20 +91,82 @@ try {
   await server.goto(serverUrl, { waitUntil: 'networkidle' })
   check(await server.getByRole('tab', { name: '注册申请' }).count() === 0, 'Server 不应开放普通账户注册')
   if (health.setup_required) {
-    operatorUsername = process.env.FAMILYHUB_E2E_OPERATOR_USERNAME ?? `operator-${runId}`
-    operatorPassword = process.env.FAMILYHUB_E2E_OPERATOR_PASSWORD ?? 'Operator-E2E-2026'
-    await server.getByRole('heading', { name: '创建运维账户' }).waitFor()
+    await server.getByRole('heading', { name: '创建首个运维账户' }).waitFor()
     await server.getByLabel('显示名称').fill('本机验收管理员')
     await server.getByLabel('账号').fill(operatorUsername)
+    await server.getByLabel('密保问题', { exact: true }).fill(operatorRecoveryQuestion)
+    await server.getByLabel('密保答案', { exact: true }).fill(operatorRecoveryAnswer)
     await server.getByLabel('密码', { exact: true }).fill(operatorPassword)
     await server.getByLabel('确认密码').fill(operatorPassword)
     await server.getByRole('button', { name: '创建运维账户' }).click()
     await server.getByRole('heading', { name: '登录 Lumi Server' }).waitFor()
   } else {
     await server.getByRole('heading', { name: '登录 Lumi Server' }).waitFor()
+    check(await server.getByRole('tab', { name: '新增运维' }).count() === 1, 'Server 缺少新增运维入口')
+    check(await server.getByRole('tab', { name: '找回密码' }).count() === 1, 'Server 缺少密码恢复入口')
+    await server.getByRole('tab', { name: '新增运维' }).click()
+    await server.getByLabel('显示名称').fill('本机验收管理员')
+    await server.getByLabel('账号').fill(operatorUsername)
+    await server.getByLabel('密保问题', { exact: true }).fill(operatorRecoveryQuestion)
+    await server.getByLabel('密保答案', { exact: true }).fill(operatorRecoveryAnswer)
+    await server.getByLabel('密码', { exact: true }).fill(operatorPassword)
+    await server.getByLabel('确认密码').fill(operatorPassword)
+    await server.getByRole('button', { name: '创建新的运维账户' }).click()
+    await server.getByRole('heading', { name: '登录 Lumi Server' }).waitFor()
   }
+
+  await server.getByRole('tab', { name: '找回密码' }).click()
+  await server.getByLabel('账号').fill(operatorUsername)
+  await server.getByRole('button', { name: '查看密保问题' }).click()
+  await server.getByText(operatorRecoveryQuestion).waitFor()
+  operatorPassword = 'Operator-E2E-Reset-2026'
+  await server.getByLabel('密保答案', { exact: true }).fill(operatorRecoveryAnswer)
+  await server.getByLabel('新密码', { exact: true }).fill(operatorPassword)
+  await server.getByLabel('确认新密码').fill(operatorPassword)
+  await server.getByRole('button', { name: '重置密码' }).click()
+  await server.getByText('密码已重置，请使用新密码登录').waitFor()
   await login(server, operatorUsername, operatorPassword, 'operator')
   check(await server.getByRole('button', { name: '探索馆' }).count() === 0, 'Server 出现了儿童导航')
+  await server.getByRole('heading', { name: '运维概览' }).waitFor()
+  check(await server.getByLabel('B站视频链接').count() === 0, '运维概览仍然显示下载表单')
+  await server.getByRole('button', { name: '下载队列' }).click()
+  await server.getByRole('heading', { name: '下载队列' }).waitFor()
+  await server.getByLabel('B站视频链接').fill('https://www.bilibili.com/video/BV18T3G6jEVM/?vd_source=e2e')
+  const downloadResponse = server.waitForResponse((response) =>
+    response.url().endsWith('/api/v1/ops/downloads/bilibili') && response.status() === 201,
+  )
+  await server.getByRole('button', { name: '开始下载' }).click()
+  await downloadResponse
+  const downloadRow = server.locator('.job-item').filter({ hasText: 'BV18T3G6jEVM' }).first()
+  await downloadRow.waitFor()
+  const queueBadge = server.getByLabel('主导航').locator('.nav-item').filter({ hasText: '下载队列' }).locator('em')
+  await queueBadge.waitFor()
+  check(await queueBadge.textContent() === '1', '下载队列角标没有反映实际任务数量')
+  await downloadRow.getByRole('button', { name: '查看任务详情' }).click()
+  await downloadRow.getByRole('region', { name: /任务详情/ }).waitFor()
+  check(await downloadRow.getByText('视频编号').count() === 1, '任务详情没有显示视频编号')
+  await server.screenshot({ path: `${artifactsPath}server-download-0.3.0.png`, fullPage: true })
+  await server.getByRole('button', { name: '运维概览' }).click()
+  await server.getByRole('heading', { name: '运维概览' }).waitFor()
+  check(await server.getByLabel('B站视频链接').count() === 0, '从下载页返回概览后仍显示下载表单')
+  await server.getByRole('button', { name: '资源管理' }).click()
+  await server.getByRole('heading', { name: '资源管理' }).waitFor()
+  check(!await server.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '资源管理页横向溢出')
+  await server.getByRole('tab', { name: '在线播放' }).click()
+  await server.getByLabel('在线资源 URL').fill(`https://media.example.com/e2e-${runId}.mp4`)
+  await server.getByLabel('在线资源标题').fill(`端到端在线播放 ${runId}`)
+  const externalResponse = server.waitForResponse((response) =>
+    response.url().endsWith('/api/v1/ops/library/external') && response.status() === 201,
+  )
+  await server.getByRole('button', { name: '保存在线播放入口' }).click()
+  await externalResponse
+  await server.getByText(`端到端在线播放 ${runId}`, { exact: true }).waitFor()
+  await server.screenshot({ path: `${artifactsPath}server-library-0.3.0.png`, fullPage: true })
+  await server.getByRole('button', { name: '主机设置' }).click()
+  await server.getByRole('heading', { name: '主机设置' }).waitFor()
+  check((await server.getByLabel('视频目录').inputValue()).length > 0, '主机设置没有视频目录')
+  check((await server.getByLabel('缓存目录').inputValue()).length > 0, '主机设置没有缓存目录')
+  check(!await server.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '主机设置页横向溢出')
   await server.getByRole('button', { name: '账户管理' }).click()
   const pendingRow = server.locator('.account-row').filter({ hasText: childUsername }).first()
   await pendingRow.waitFor()
@@ -112,7 +176,7 @@ try {
   await pendingRow.getByRole('button', { name: '批准' }).click()
   await approvalResponse
   await server.locator('.account-row').filter({ hasText: childUsername }).filter({ hasText: '使用中' }).waitFor()
-  await server.screenshot({ path: `${artifactsPath}server-accounts-0.2.0.png`, fullPage: true })
+  await server.screenshot({ path: `${artifactsPath}server-accounts-0.3.0.png`, fullPage: true })
 
   await client.getByLabel('密码').fill(childPassword)
   await client.getByRole('button', { name: '登录', exact: true }).click()
@@ -124,14 +188,12 @@ try {
   await client.getByRole('heading', { name: '连接设置' }).waitFor()
   check((await client.getByLabel('家庭主机地址').inputValue()).length > 0, '登录后连接设置没有主机地址')
 
-  const wrongClientContext = await createContext(browser, { width: 900, height: 700 })
-  const wrongClient = await wrongClientContext.newPage()
-  await wrongClient.goto(clientUrl, { waitUntil: 'networkidle' })
-  await wrongClient.getByLabel('账号').fill(operatorUsername)
-  await wrongClient.getByLabel('密码', { exact: true }).fill(operatorPassword)
-  await wrongClient.getByRole('button', { name: '登录', exact: true }).click()
-  await wrongClient.getByText('运维账号只能登录 Lumi Server').waitFor()
-  check(await wrongClient.locator('.role-operator').count() === 0, '运维账号进入了 Client')
+  const operatorClientContext = await createContext(browser, { width: 900, height: 700 })
+  const operatorClient = await operatorClientContext.newPage()
+  await operatorClient.goto(clientUrl, { waitUntil: 'networkidle' })
+  await login(operatorClient, operatorUsername, operatorPassword, 'guardian')
+  check(await operatorClient.getByRole('button', { name: '家庭概览' }).count() === 1, '运维账号没有以家长身份进入 Client')
+  check(await operatorClient.getByRole('button', { name: '运维概览' }).count() === 0, 'Client 暴露了运维功能')
 
   const wrongServerContext = await createContext(browser, { width: 900, height: 700 })
   const wrongServer = await wrongServerContext.newPage()
@@ -151,7 +213,7 @@ try {
   await login(mobile, childUsername, childPassword, 'child')
   await mobile.locator('.content-card').first().waitFor()
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机儿童页横向溢出')
-  await mobile.screenshot({ path: `${artifactsPath}client-mobile-child-0.2.0.png`, fullPage: true })
+  await mobile.screenshot({ path: `${artifactsPath}client-mobile-child-0.3.0.png`, fullPage: true })
 
   const detailCard = mobile.locator('.content-card').nth(1)
   await detailCard.scrollIntoViewIfNeeded()
@@ -182,7 +244,7 @@ try {
 
   await mobileContext.close()
   await wrongServerContext.close()
-  await wrongClientContext.close()
+  await operatorClientContext.close()
   await serverContext.close()
   await clientContext.close()
 } finally {

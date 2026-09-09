@@ -1,4 +1,4 @@
-"""初始数据库结构
+"""initial schema
 
 Revision ID: 1d7ad2716ef4
 Revises: 

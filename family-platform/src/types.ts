@@ -4,6 +4,8 @@ export type ConnectionMode = 'checking' | 'backend' | 'offline'
 
 export type ContentKind = 'video' | 'book' | 'audio' | 'game' | 'create' | 'discover'
 
+export type PlaybackMode = 'none' | 'local_asset' | 'embed' | 'direct_stream' | 'external_link' | 'local_service'
+
 export type NavKey =
   | 'explore'
   | 'library'
@@ -15,6 +17,8 @@ export type NavKey =
   | 'sources'
   | 'accounts'
   | 'connection'
+  | 'ops-library'
+  | 'settings'
 
 export type RequestStatus = 'pending' | 'approved' | 'rejected'
 
@@ -37,6 +41,10 @@ export interface ContentItem {
   source?: string
   offlineActivity?: string
   localAvailable?: boolean
+  playable?: boolean
+  playbackMode?: PlaybackMode
+  launchAllowed?: boolean
+  provider?: string
 }
 
 export interface ContentRequest {
@@ -50,6 +58,7 @@ export interface ContentRequest {
 
 export interface DownloadJob {
   id: string
+  externalId: string
   title: string
   kind: ContentKind
   status: JobStatus
@@ -57,6 +66,12 @@ export interface DownloadJob {
   size: string
   source: string
   eta: string
+  bytesDone: number
+  expectedBytes?: number
+  retryCount: number
+  scheduledAt: string
+  createdAt: string
+  updatedAt: string
   errorCode?: string
   proofUrl?: string
 }
@@ -66,8 +81,8 @@ export interface BilibiliDownloadDraft {
   title?: string
   maxHeight: 480 | 720 | 1080
   startNow: boolean
-  rightsConfirmed: boolean
-  rightsNote: string
+  rightsConfirmed?: boolean
+  rightsNote?: string
 }
 
 export interface CloudSubmission {
@@ -94,6 +109,27 @@ export interface RegistrationDraft {
   displayName: string
   requestedRole: 'child' | 'guardian'
   childAge?: number
+}
+
+export interface OperatorAccountDraft {
+  username: string
+  password: string
+  displayName: string
+  recoveryQuestion: string
+  recoveryAnswer: string
+}
+
+export interface OperatorRecoveryQuestion {
+  username: string
+  question?: string
+  legacySetupRequired: boolean
+}
+
+export interface OperatorPasswordResetDraft {
+  username: string
+  recoveryAnswer: string
+  newPassword: string
+  recoveryQuestion?: string
 }
 
 export interface AccountRegistration {
@@ -166,7 +202,108 @@ export interface SystemStatus {
     inbox: string
     quarantine: string
     library: string
+    video?: string
+    book?: string
+    audio?: string
+    image?: string
+    cache?: string
   }
+}
+
+export interface StoragePaths {
+  video: string
+  book: string
+  audio: string
+  image: string
+  cache: string
+  inbox: string
+  quarantine: string
+}
+
+export interface LibraryItemRecord {
+  id: string
+  title: string
+  subtitle: string
+  kind: 'video' | 'book' | 'audio'
+  language: string
+  ageFrom: number
+  ageTo: number
+  description: string
+  tags: string[]
+  coverRef?: string
+  acquisitionMode: string
+  publicationStatus: 'draft' | 'published' | 'archived' | string
+  audience: 'child' | 'family' | 'adult' | string
+  featured: boolean
+  sourceId?: string
+  filePath?: string
+  fileSize: number
+  fileAvailable: boolean
+  externalUrl?: string
+  updatedAt: string
+}
+
+export interface LocalImportDraft {
+  sourcePath: string
+  kind: 'video' | 'book' | 'audio'
+  title?: string
+  audience: 'child' | 'family' | 'adult'
+  ageFrom: number
+  ageTo: number
+  language: string
+  description: string
+  copyToLibrary: boolean
+  publish: boolean
+}
+
+export interface ExternalItemDraft {
+  url: string
+  provider: 'auto' | 'bilibili' | 'douyin' | 'quark' | 'direct' | 'other'
+  title?: string
+  kind: 'video' | 'book' | 'audio'
+  coverUrl?: string
+  audience: 'child' | 'family' | 'adult'
+  ageFrom: number
+  ageTo: number
+  language: string
+  description: string
+}
+
+export interface ExternalFeed {
+  id: string
+  name: string
+  provider: string
+  url: string
+  cookieFile?: string
+  audience: 'child' | 'family' | 'adult' | string
+  ageFrom: number
+  ageTo: number
+  language: string
+  maxItems: number
+  syncIntervalHours: number
+  enabled: boolean
+  itemCount: number
+  lastSyncedAt?: string
+  lastAttemptAt?: string
+  lastError?: string
+}
+
+export interface ExternalFeedDraft {
+  name: string
+  url: string
+  cookieFile?: string
+  audience: 'child' | 'family' | 'adult'
+  ageFrom: number
+  ageTo: number
+  language: string
+  maxItems: number
+  syncIntervalHours: number
+}
+
+export interface LibraryScanResult {
+  discovered: number
+  skipped: number
+  failed: number
 }
 
 export interface AppState {

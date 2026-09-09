@@ -25,13 +25,14 @@ preview-*.png
 tests/artifacts/
 test-run-temp/
 artifacts/
+dist-server/
 .env
 .env.*
 !.env.example
 !.env.client
 !.env.server
 
-# 原生构建产物和签名材料仅保留在本机。
+# Native build output and signing material. Keep generated projects and keys local.
 src-tauri/target/
 src-tauri/gen/
 src-tauri/tauri.release.generated.conf.json

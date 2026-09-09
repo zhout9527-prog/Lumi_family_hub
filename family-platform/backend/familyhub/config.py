@@ -28,7 +28,7 @@ class Settings(BaseSettings):
         r"^https?://(localhost|127\.0\.0\.1|tauri\.localhost|10(?:\.\d{1,3}){3}|"
         r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(:\d+)?$"
     )
-    seed_demo: bool = False
+    seed_demo: bool = True
     demo_child_password: str = "child-demo"
     demo_guardian_password: str = "guardian-demo"
     demo_operator_password: str = "operator-demo"
@@ -46,8 +46,9 @@ class Settings(BaseSettings):
     jellyfin_url: str = "http://127.0.0.1:8096"
     kavita_url: str = "http://127.0.0.1:5000"
     audiobookshelf_url: str = "http://127.0.0.1:13378"
-    # 原生客户端读取的公开只读发布信息放在数据库外，发布流程可以原子替换，
-    # 不会接触家庭数据。
+    # Public, read-only release metadata consumed by native clients.  Keep the
+    # manifest outside the database so a release pipeline can replace it
+    # atomically without touching household data.
     update_manifest_path: Path = Path("updates/manifest.json")
     update_channel: str = "stable"
 
@@ -99,6 +100,7 @@ class Settings(BaseSettings):
             self.quarantine_dir,
             self.manifest_dir,
             self.works_dir,
+            self.root / "cache",
             self.library_dir / "video",
             self.library_dir / "books",
             self.library_dir / "audio",

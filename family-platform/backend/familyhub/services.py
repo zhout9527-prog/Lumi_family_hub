@@ -10,15 +10,9 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .file_safety import is_within, safe_filename
+from .library import CONTENT_STORAGE_KEYS, load_storage_paths
 from .models import CloudInboxAsset, ContentAsset, ContentItem, DownloadJob, User, new_id, utcnow
 from .schemas import AssetReviewIn
-
-
-LIBRARY_FOLDER = {
-    "video": "video",
-    "book": "books",
-    "audio": "audio",
-}
 
 
 def apply_asset_review(
@@ -45,14 +39,15 @@ def apply_asset_review(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布信息或许可证明不完整")
     if payload.age_to < payload.age_from:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="适龄范围无效")
-    source_path = (settings.quarantine_dir / asset.quarantine_ref).resolve()
-    if not is_within(source_path, settings.quarantine_dir) or not source_path.is_file():
+    storage_paths = load_storage_paths(db, settings, ensure=True)
+    source_path = (storage_paths["quarantine"] / asset.quarantine_ref).resolve()
+    if not is_within(source_path, storage_paths["quarantine"]) or not source_path.is_file():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="隔离文件不可用")
     content_id = new_id()
-    folder = LIBRARY_FOLDER[payload.content_kind]
     destination_name = f"{content_id}--{safe_filename(asset.original_name)}"
-    destination = (settings.library_dir / folder / destination_name).resolve()
-    if not is_within(destination, settings.library_dir):
+    destination_root = storage_paths[CONTENT_STORAGE_KEYS[payload.content_kind]]
+    destination = (destination_root / destination_name).resolve()
+    if not is_within(destination, destination_root):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="正式库目标路径无效")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, destination)
@@ -81,7 +76,7 @@ def apply_asset_review(
         ContentAsset(
             content_id=item.id,
             asset_kind=payload.content_kind,
-            storage_ref=f"{folder}/{destination_name}",
+            storage_ref=str(destination),
             license_ref=str(payload.license_ref),
             checksum=asset.sha256,
             audience=payload.audience,
@@ -108,8 +103,9 @@ def _service_reachable(url: str) -> bool:
         return False
 
 
-def system_status(settings: Settings) -> dict:
-    usage = shutil.disk_usage(settings.root)
+def system_status(db: Session, settings: Settings) -> dict:
+    paths = load_storage_paths(db, settings, ensure=True)
+    usage = shutil.disk_usage(paths["video"])
     return {
         "node": "online",
         "storage": {
@@ -127,8 +123,13 @@ def system_status(settings: Settings) -> dict:
         "paths": {
             "runtime": str(settings.root),
             "database": str(settings.database_path) if settings.database_path else "外部数据库",
-            "inbox": str(settings.inbox_dir),
-            "quarantine": str(settings.quarantine_dir),
+            "inbox": str(paths["inbox"]),
+            "quarantine": str(paths["quarantine"]),
             "library": str(settings.library_dir),
+            "video": str(paths["video"]),
+            "book": str(paths["book"]),
+            "audio": str(paths["audio"]),
+            "image": str(paths["image"]),
+            "cache": str(paths["cache"]),
         },
     }

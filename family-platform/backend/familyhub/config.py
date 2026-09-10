@@ -97,7 +97,6 @@ class Settings(BaseSettings):
         paths = [
             self.root / "data",
             self.inbox_dir,
-            self.quarantine_dir,
             self.manifest_dir,
             self.works_dir,
             self.root / "cache",

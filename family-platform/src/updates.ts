@@ -1,4 +1,5 @@
 import { API_BASE, apiBaseOrigin, isNativeShell } from './api'
+import { APP_EDITION } from './edition'
 
 export interface ReleaseArtifact {
   url: string
@@ -90,7 +91,9 @@ function androidArtifact(manifest: ReleaseManifest): ReleaseArtifact | undefined
 }
 
 async function fetchManifest(): Promise<ReleaseManifest> {
-  if (!API_BASE) throw new Error('请先连接家庭主机，再检查更新')
+  if (!API_BASE) {
+    throw new Error(APP_EDITION === 'server' ? '本机 Server 服务尚未就绪，暂时无法检查更新' : '请先连接家庭主机，再检查更新')
+  }
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 6000)
   try {

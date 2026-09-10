@@ -5,10 +5,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from familyhub.config import Settings
 from familyhub.file_safety import scan_file
-from familyhub.models import DownloadJob, utcnow
+from familyhub.models import ContentAsset, ContentItem, DownloadJob, utcnow
 from familyhub.worker import FamilyWorker
 
 from .conftest import login
@@ -55,6 +56,9 @@ def test_worker_quarantines_media_and_blocks_executable(client: TestClient, sett
     assert pdf_asset["scan_status"] == "review"
     assert exe_asset["scan_status"] == "blocked"
     assert exe_asset["quarantine_status"] == "frozen"
+    pending_files = list((settings.library_dir / "video" / ".pending").glob("*family-notes.pdf"))
+    assert len(pending_files) == 1
+    assert pending_files[0].is_file()
 
     incomplete_review = client.post(
         f"/api/v1/ops/cloud-inbox/{pdf_asset['id']}/review",
@@ -70,7 +74,6 @@ def test_worker_quarantines_media_and_blocks_executable(client: TestClient, sett
             "age_from": 5,
             "age_to": 8,
             "language": "中文",
-            "license_ref": "https://example.org/family-owned-proof",
         },
     )
     assert incomplete_review.status_code == 422
@@ -88,12 +91,17 @@ def test_worker_quarantines_media_and_blocks_executable(client: TestClient, sett
             "age_from": 5,
             "age_to": 8,
             "language": "中文",
-            "license_ref": "https://example.org/family-owned-proof",
         },
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["quarantine_status"] == "published"
     assert any((settings.library_dir / "books").iterdir())
+    with client.app.state.session_factory() as db:
+        item = db.scalar(select(ContentItem).where(ContentItem.title == "家庭自然观察笔记"))
+        assert item is not None
+        published_asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
+        assert published_asset is not None
+        assert published_asset.license_ref == "家庭自有或已获授权资源"
 
     child = login(client, "child")
     catalog = client.get("/api/v1/catalog/curated", headers=child).json()

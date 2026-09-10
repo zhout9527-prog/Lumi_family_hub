@@ -35,14 +35,22 @@ def apply_asset_review(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="被格式策略冻结的文件不能发布")
     if not payload.rights_confirmed or not payload.security_confirmed:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布必须确认权利与安全检查")
-    if not payload.title or not payload.content_kind or not payload.license_ref:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布信息或许可证明不完整")
+    if not payload.title or not payload.content_kind:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布信息不完整")
     if payload.age_to < payload.age_from:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="适龄范围无效")
     storage_paths = load_storage_paths(db, settings, ensure=True)
     source_path = (storage_paths["quarantine"] / asset.quarantine_ref).resolve()
-    if not is_within(source_path, storage_paths["quarantine"]) or not source_path.is_file():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="隔离文件不可用")
+    if not source_path.is_file():
+        # 如果旧版本文件因权限或占用暂时无法在启动时迁移，审核时仍从旧目录读取，
+        # 避免已经成功下载的资源因为升级而变成“文件不存在”。
+        legacy_path = (settings.quarantine_dir / asset.quarantine_ref).resolve()
+        if legacy_path.is_file() and is_within(legacy_path, settings.quarantine_dir):
+            source_path = legacy_path
+    allowed_pending_path = is_within(source_path, storage_paths["quarantine"])
+    allowed_legacy_path = is_within(source_path, settings.quarantine_dir)
+    if not source_path.is_file() or not (allowed_pending_path or allowed_legacy_path):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="待审核文件不可用")
     content_id = new_id()
     destination_name = f"{content_id}--{safe_filename(asset.original_name)}"
     destination_root = storage_paths[CONTENT_STORAGE_KEYS[payload.content_kind]]
@@ -72,12 +80,15 @@ def apply_asset_review(
     )
     db.add(item)
     db.flush()
+    # URL 只是可选的审计线索，不是家庭内容入库的前置条件。没有填写时
+    # 仍保留明确的内部说明，方便日后查看这项资源是按家庭授权发布的。
+    license_ref = (payload.license_ref or "").strip() or "家庭自有或已获授权资源"
     db.add(
         ContentAsset(
             content_id=item.id,
             asset_kind=payload.content_kind,
             storage_ref=str(destination),
-            license_ref=str(payload.license_ref),
+            license_ref=license_ref,
             checksum=asset.sha256,
             audience=payload.audience,
             publication_status="published",

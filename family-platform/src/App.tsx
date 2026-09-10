@@ -1050,15 +1050,15 @@ function AssetReviewEditor({
   const [ageTo, setAgeTo] = useState(99)
   const [language, setLanguage] = useState('中文')
   const [licenseRef, setLicenseRef] = useState(job?.proofUrl ?? '')
-  const [reviewNote, setReviewNote] = useState('已核对来源、权利说明和文件内容')
+  const [reviewNote, setReviewNote] = useState('已核对来源、家庭使用权利和文件内容')
   const [rightsConfirmed, setRightsConfirmed] = useState(false)
   const [securityConfirmed, setSecurityConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async () => {
-    if (!title.trim() || !/^https:\/\//i.test(licenseRef.trim()) || reviewNote.trim().length < 3) {
-      setError('请完整填写标题、HTTPS 权利证明链接和审核说明')
+    if (!title.trim() || reviewNote.trim().length < 3) {
+      setError('请完整填写标题和审核说明')
       return
     }
     if (ageFrom < 0 || ageTo < ageFrom || ageTo > 99) {
@@ -1072,7 +1072,7 @@ function AssetReviewEditor({
     setSubmitting(true)
     setError('')
     try {
-      await onReview({ title: title.trim(), contentKind, audience, ageFrom, ageTo, language: language.trim(), licenseRef: licenseRef.trim(), reviewNote: reviewNote.trim(), rightsConfirmed, securityConfirmed })
+      await onReview({ title: title.trim(), contentKind, audience, ageFrom, ageTo, language: language.trim(), licenseRef: licenseRef.trim() || undefined, reviewNote: reviewNote.trim(), rightsConfirmed, securityConfirmed })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '审核入库失败')
     } finally {
@@ -1088,10 +1088,10 @@ function AssetReviewEditor({
       <label className="ops-field"><span>最低年龄</span><div><input aria-label="最低年龄" type="number" min="0" max="18" value={ageFrom} onChange={(event) => setAgeFrom(Number(event.target.value))} /></div></label>
       <label className="ops-field"><span>最高年龄</span><div><input aria-label="最高年龄" type="number" min="0" max="99" value={ageTo} onChange={(event) => setAgeTo(Number(event.target.value))} /></div></label>
       <label className="ops-field"><span>语言</span><div><input aria-label="馆藏语言" value={language} onChange={(event) => setLanguage(event.target.value)} /></div></label>
-      <label className="ops-field review-wide"><span>权利证明链接</span><div><ShieldCheck size={15} /><input aria-label="权利证明链接" type="url" value={licenseRef} onChange={(event) => setLicenseRef(event.target.value)} placeholder="原视频页或许可说明的 HTTPS 地址" /></div></label>
+      <label className="ops-field review-wide"><span>来源/授权备注（可选）</span><div><ShieldCheck size={15} /><input aria-label="来源或授权备注" type="text" value={licenseRef} onChange={(event) => setLicenseRef(event.target.value)} placeholder="可填写原视频页、授权说明或家庭自有" /></div></label>
       <label className="ops-field review-wide"><span>审核说明</span><div><FileCheck2 size={15} /><input aria-label="审核说明" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></div></label>
       <div className="review-confirmations review-wide">
-        <label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} />权利说明已核对</label>
+        <label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} />家庭使用权利已确认</label>
         <label className="rights-check"><input type="checkbox" checked={securityConfirmed} onChange={(event) => setSecurityConfirmed(event.target.checked)} />文件与内容已检查</label>
       </div>
       {error && <div className="inline-error review-wide" role="alert"><AlertTriangle size={14} />{error}</div>}
@@ -1106,10 +1106,12 @@ function AssetReviewEditor({
 function AssetReviewPanel({
   assets,
   jobs,
+  pendingRoot,
   onReview,
 }: {
   assets: AssetRecord[]
   jobs: DownloadJob[]
+  pendingRoot?: string
   onReview: (id: string, payload: AssetReviewDraft) => Promise<void>
 }) {
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -1117,11 +1119,11 @@ function AssetReviewPanel({
   return (
     <section className="panel asset-review-panel">
       <div className="panel-heading">
-        <div><span className="eyebrow">QUARANTINE REVIEW</span><h2>隔离区审核</h2></div>
+        <div><span className="eyebrow">PENDING REVIEW</span><h2>待审核资源</h2></div>
         <span className="count-badge">{visibleAssets.filter((asset) => asset.quarantineStatus === 'review').length} 待处理</span>
       </div>
       {visibleAssets.length === 0 ? (
-        <div className="empty-state compact"><CircleCheck size={22} /><strong>隔离区没有待审核文件</strong></div>
+        <div className="empty-state compact"><CircleCheck size={22} /><strong>没有待审核文件</strong></div>
       ) : (
         <div className="asset-review-list">
           {visibleAssets.map((asset) => {
@@ -1132,7 +1134,11 @@ function AssetReviewPanel({
               <div className="asset-review-item" key={asset.id}>
                 <div className="asset-review-row">
                   <span className="submission-symbol"><FileCheck2 size={15} /></span>
-                  <div className="asset-review-copy"><strong>{job?.title ?? asset.originalName}</strong><span>{asset.provider === 'bilibili' ? 'B站下载' : '家庭投递箱'} · {formatFileSize(asset.sizeBytes)} · {asset.scanStatus}</span></div>
+                  <div className="asset-review-copy">
+                    <strong>{job?.title ?? asset.originalName}</strong>
+                    <span>{asset.provider === 'bilibili' ? 'B站下载' : '家庭投递箱'} · {formatFileSize(asset.sizeBytes)} · {asset.scanStatus}</span>
+                    <small title="待审核文件位置">{pendingRoot ? `${pendingRoot}\\${asset.quarantineRef}` : asset.quarantineRef}</small>
+                  </div>
                   <span className={'submission-status ' + (asset.quarantineStatus === 'frozen' ? 'frozen' : 'review')}>{asset.quarantineStatus === 'frozen' ? '已冻结' : '待审核'}</span>
                   {canReview && <button type="button" className="button button-quiet small" onClick={() => setActiveId(activeId === asset.id ? null : asset.id)}>{activeId === asset.id ? <ChevronDown size={14} /> : <FileCheck2 size={14} />}{activeId === asset.id ? '收起' : '审核入库'}</button>}
                 </div>
@@ -1261,7 +1267,7 @@ function OperatorDashboard({
           <SourceCard icon={Inbox} name="候选箱" detail={submissions.length + ' 条待处理记录'} status={reviewCount ? '需复核' : '干净'} tone={reviewCount ? 'yellow' : 'blue'} />
         </div>
       </section>}
-      {isSources && <AssetReviewPanel assets={assets} jobs={jobs} onReview={onReviewAsset} />}
+      {isSources && <AssetReviewPanel assets={assets} jobs={jobs} pendingRoot={systemStatus?.paths.quarantine} onReview={onReviewAsset} />}
     </div>
   )
 }
@@ -2387,7 +2393,7 @@ function StorageSettingsView({
     ['image', '图片与封面缓存', '封面、缩略图和图片素材'],
     ['cache', '运行缓存目录', 'Cookie、元数据和临时文件'],
     ['inbox', '投递箱目录', '外部转存文件的入口'],
-    ['quarantine', '隔离区目录', '安全扫描和人工审核区'],
+    ['quarantine', '待审核资源目录', '下载完成即保存于此，审批后才向 Client 发布'],
   ]
   const submit = async () => {
     setError('')

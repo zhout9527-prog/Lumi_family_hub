@@ -296,6 +296,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with session_factory() as db:
             seed_database(db, active_settings)
             load_storage_paths(db, active_settings, ensure=True)
+            db.commit()
         app.state.settings = active_settings
         app.state.engine = engine
         app.state.session_factory = session_factory

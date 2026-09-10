@@ -62,6 +62,10 @@ function defaultApiBase(): string {
 
 export let API_BASE = defaultApiBase()
 
+function endpointLabel(): string {
+  return APP_EDITION === 'server' ? '本机 Server 服务' : '家庭主机'
+}
+
 export function setApiBase(value: string): string {
   API_BASE = normalizeApiBase(value)
   try {
@@ -127,7 +131,7 @@ async function apiRequest<T>(
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
   try {
-    if (!API_BASE) throw new ApiError(0, '请先设置家庭主机地址')
+    if (!API_BASE) throw new ApiError(0, APP_EDITION === 'server' ? '本机 Server 服务尚未就绪' : '请先设置家庭主机地址')
     // API 响应绑定账户和会话，不能让浏览器或离线壳层复用其他角色的响应。
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
@@ -149,9 +153,9 @@ async function apiRequest<T>(
   } catch (error) {
     if (error instanceof ApiError) throw error
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new ApiError(0, '家庭主机响应超时')
+      throw new ApiError(0, `${endpointLabel()}响应超时`)
     }
-    throw new ApiError(0, '无法连接家庭主机')
+    throw new ApiError(0, `无法连接${endpointLabel()}`)
   } finally {
     window.clearTimeout(timeout)
   }
@@ -260,6 +264,7 @@ interface ApiAsset {
   id: string
   provider: string
   inbound_ref: string
+  quarantine_ref: string
   original_name: string
   mime_type: string
   size_bytes: number
@@ -605,6 +610,7 @@ export function mapAsset(item: ApiAsset): AssetRecord {
     id: item.id,
     provider: item.provider,
     inboundRef: item.inbound_ref,
+    quarantineRef: item.quarantine_ref,
     originalName: item.original_name,
     mimeType: item.mime_type,
     sizeBytes: item.size_bytes,
@@ -837,7 +843,7 @@ export async function reviewAssetApi(id: string, payload: AssetReviewDraft): Pro
       age_from: payload.ageFrom,
       age_to: payload.ageTo,
       language: payload.language,
-      license_ref: payload.licenseRef,
+      license_ref: payload.licenseRef?.trim() || null,
     }),
   })
 }

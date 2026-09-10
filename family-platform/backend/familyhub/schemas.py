@@ -346,6 +346,7 @@ class AssetOut(ApiModel):
     submission_id: str | None
     provider: str
     inbound_ref: str
+    quarantine_ref: str
     original_name: str
     mime_type: str
     size_bytes: int
@@ -506,7 +507,9 @@ class AssetReviewIn(BaseModel):
     age_from: int = Field(default=0, ge=0, le=18)
     age_to: int = Field(default=99, ge=0, le=99)
     language: str = Field(default="中文", max_length=120)
-    license_ref: HttpUrl | None = None
+    # 仅作为可选的来源/授权备注保存。家庭自有文件、已获授权的下载文件
+    # 不应被强制要求提供一个公开 URL；真正的发布门槛是上面的两项人工确认。
+    license_ref: str | None = Field(default=None, max_length=1000)
 
 
 class CompleteIn(BaseModel):

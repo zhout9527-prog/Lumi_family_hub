@@ -18,9 +18,6 @@ struct ServerProcess(Mutex<Option<Child>>);
 
 #[cfg(desktop)]
 fn server_core_path() -> io::Result<PathBuf> {
-    if let Some(configured) = std::env::var_os("FAMILYHUB_SERVER_CORE") {
-        return Ok(PathBuf::from(configured));
-    }
     let directory = std::env::current_exe()?
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "application directory is unavailable"))?
@@ -30,11 +27,59 @@ fn server_core_path() -> io::Result<PathBuf> {
     } else {
         "lumi-server-core"
     };
-    let bundled_directory = directory.join("lumi-server-core").join(core_name);
-    if bundled_directory.is_file() {
-        return Ok(bundled_directory);
+    let mut candidates = Vec::new();
+    if let Some(configured) = std::env::var_os("FAMILYHUB_SERVER_CORE") {
+        candidates.push(PathBuf::from(configured));
     }
-    Ok(directory.join(core_name))
+    // 安装版和便携版都使用这个相对布局：GUI 与 Core 在同一目录下，
+    // Core 的依赖文件保留在其自己的 onedir 文件夹中。
+    candidates.push(directory.join("lumi-server-core").join(core_name));
+    // 兼容早期把 Core 单文件直接放在 GUI 旁边的版本。
+    candidates.push(directory.join(core_name));
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!(
+            "Lumi Server core is missing beside {} (expected lumi-server-core\\{})",
+            directory.display(),
+            core_name
+        ),
+    ))
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn report_startup_error(error: &io::Error) {
+    use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            window: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+
+    let message = format!(
+        "Lumi Server 本机服务没有启动。\n\n{}\n\n请确认 lumi-server-core 文件夹与 Lumi Server 主程序放在一起，然后重新启动。",
+        error
+    );
+    let text: Vec<u16> = OsStr::new(&message).encode_wide().chain(Some(0)).collect();
+    let caption: Vec<u16> = OsStr::new("Lumi Server 启动提示").encode_wide().chain(Some(0)).collect();
+    // SAFETY: MessageBoxW 只读取以 NUL 结尾的 UTF-16 字符串，指针在调用期间有效。
+    unsafe {
+        MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10);
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn report_startup_error(error: &io::Error) {
+    eprintln!("Lumi Server core failed to start: {error}");
 }
 
 #[cfg(desktop)]
@@ -87,7 +132,15 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 let child = if app.config().identifier.ends_with(".server") {
-                    start_server_core(app)?
+                    match start_server_core(app) {
+                        Ok(child) => child,
+                        Err(error) => {
+                            // 让 GUI 保持打开并显示离线状态，避免 Windows 上只闪退而
+                            // 用户无法知道是 Core 缺失还是网络连接问题。
+                            report_startup_error(&error);
+                            None
+                        }
+                    }
                 } else {
                     None
                 };

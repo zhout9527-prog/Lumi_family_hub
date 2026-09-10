@@ -164,6 +164,8 @@ export interface AssetRecord {
   id: string
   provider: string
   inboundRef: string
+  /** Server 待审核目录中的文件名，仅在运维端返回。 */
+  quarantineRef: string
   originalName: string
   mimeType: string
   sizeBytes: number
@@ -180,7 +182,8 @@ export interface AssetReviewDraft {
   ageFrom: number
   ageTo: number
   language: string
-  licenseRef: string
+  /** 可选的来源或授权备注；家庭内容审核不要求填写 URL。 */
+  licenseRef?: string
   reviewNote: string
   rightsConfirmed: boolean
   securityConfirmed: boolean

@@ -2413,6 +2413,17 @@ select:focus-visible,
   font-size: 9px;
 }
 
+.asset-review-copy small {
+  display: block;
+  max-width: min(720px, 70vw);
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .asset-review-form {
   display: grid;
   grid-template-columns: minmax(180px, 1.4fr) 120px 120px 92px 92px minmax(110px, 0.7fr);

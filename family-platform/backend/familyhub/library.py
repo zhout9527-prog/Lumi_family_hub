@@ -33,23 +33,70 @@ def default_storage_paths(settings: Settings) -> dict[str, Path]:
         "image": settings.library_dir / "images",
         "cache": settings.root / "cache",
         "inbox": settings.inbox_dir,
-        "quarantine": settings.quarantine_dir,
+        # 下载完成后先落到正式视频库下的隐藏待审核目录。它仍不属于
+        # Client 可见的正式馆藏，审核通过时才会复制到 video 根目录。
+        "quarantine": settings.library_dir / "video" / ".pending",
     }
+
+
+def _migrate_legacy_quarantine(legacy: Path, pending: Path) -> None:
+    """把旧版本 runtime/quarantine 中的已下载文件迁移到待审核目录。"""
+
+    if not legacy.is_dir() or legacy.resolve() == pending.resolve():
+        return
+    try:
+        entries = list(legacy.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.is_file() or entry.is_symlink():
+            continue
+        destination = pending / entry.name
+        if destination.exists():
+            continue
+        try:
+            shutil.move(str(entry), str(destination))
+        except OSError:
+            # 迁移失败时保留旧文件，避免启动过程删除用户资源。
+            continue
+    try:
+        legacy.rmdir()
+    except OSError:
+        # 目录中仍有文件或被其他程序占用时继续保留。
+        pass
 
 
 def load_storage_paths(db: Session, settings: Settings, *, ensure: bool = False) -> dict[str, Path]:
     paths = default_storage_paths(settings)
     stored = db.get(SystemSetting, STORAGE_SETTING_KEY)
     values = stored.value_json if stored and isinstance(stored.value_json, dict) else {}
+    configured_quarantine = values.get("quarantine")
     for key in STORAGE_KEYS:
         value = values.get(key)
         if isinstance(value, str) and value.strip():
             paths[key] = Path(value).expanduser().resolve()
         else:
             paths[key] = paths[key].expanduser().resolve()
+    legacy_quarantine = settings.quarantine_dir.expanduser().resolve()
+    pending_quarantine = default_storage_paths(settings)["quarantine"].expanduser().resolve()
+    configured_legacy_path = (
+        isinstance(configured_quarantine, str)
+        and bool(configured_quarantine.strip())
+        and paths["quarantine"] == legacy_quarantine
+    )
+    if configured_legacy_path:
+        # 旧版把默认隔离目录也写入过设置。它不是用户主动选择的自定义目录，
+        # 因此随版本升级到媒体库内的 .pending，并同步修正数据库中的路径。
+        paths["quarantine"] = pending_quarantine
+        if stored is not None:
+            updated_values = dict(values)
+            updated_values["quarantine"] = str(pending_quarantine)
+            stored.value_json = updated_values
     if ensure:
         for path in paths.values():
             path.mkdir(parents=True, exist_ok=True)
+        if configured_legacy_path or not isinstance(configured_quarantine, str) or not configured_quarantine.strip():
+            _migrate_legacy_quarantine(legacy_quarantine, paths["quarantine"])
     return paths
 
 
@@ -229,6 +276,11 @@ def scan_managed_library(db: Session, settings: Settings, *, user: User) -> dict
         root = paths[CONTENT_STORAGE_KEYS[kind]]
         for path in sorted(root.rglob("*")):
             if not path.is_file() or path.is_symlink() or path.name.startswith(".") or path.suffix.lower() not in suffixes:
+                continue
+            # 隐藏的待审核目录只用于 CloudInboxAsset，不能被本地资源扫描提前
+            # 登记成草稿，更不能绕过隔离审核直接进入 Client 目录。
+            relative_parts = path.relative_to(root).parts
+            if any(part.startswith(".") for part in relative_parts[:-1]):
                 continue
             if _existing_asset_for_path(db, path):
                 result["skipped"] += 1

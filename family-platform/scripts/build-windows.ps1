@@ -19,6 +19,7 @@ if ($Edition -eq "All") {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 Set-Location $projectRoot
+Set-Variable -Scope Script -Name LumiArtifactOutputRoot -Value ([string](Join-Path $projectRoot "artifacts\windows")) -Option Constant
 $tauriRoot = Join-Path $projectRoot "src-tauri"
 $defaultTauriConfigPath = Join-Path $tauriRoot ($(if ($Edition -eq "Server") { "tauri.server.conf.json" } else { "tauri.conf.json" }))
 $windowsTemplate = Join-Path $projectRoot "native\windows\installer.nsi"
@@ -53,6 +54,25 @@ function Invoke-CheckedExternalCommand {
   & $Command
   if ($LASTEXITCODE -ne 0) {
     throw "$Description failed with exit code $LASTEXITCODE."
+  }
+}
+
+function Copy-DirectoryTree([string]$Source, [string]$Destination) {
+  if ([string]::IsNullOrWhiteSpace($Source) -or -not (Test-Path -LiteralPath $Source -PathType Container)) {
+    throw "Core source directory is missing: $Source"
+  }
+  if ([string]::IsNullOrWhiteSpace($Destination)) {
+    throw "Core destination directory is empty."
+  }
+  New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+  # Robocopy 对 PyInstaller 的大型 onedir 文件树比 Copy-Item 更稳定。
+  & robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  $robocopyExitCode = $LASTEXITCODE
+  if ($robocopyExitCode -ge 8) {
+    throw "Core directory copy failed with Robocopy exit code $robocopyExitCode."
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Destination "lumi-server-core.exe") -PathType Leaf)) {
+    throw "Core directory copy did not produce lumi-server-core.exe: $Destination"
   }
 }
 
@@ -116,6 +136,7 @@ $stageOutput = Join-Path $stageRoot "${productSlug}_${version}_x64-setup.exe"
 $artifactInstaller = Join-Path $artifactRoot "${productSlug}_${version}_x64-setup.exe"
 $artifactBinary = Join-Path $artifactRoot "$($binaryName.Substring(0, $binaryName.Length - 4))_${version}_x64.exe"
 $serverCore = $null
+$serverCoreBundleDir = $null
 
 New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
@@ -155,9 +176,33 @@ try {
         --collect-all imageio_ffmpeg `
         (Join-Path $backendSource "server_entry.py")
     }
-    $serverCoreDir = Join-Path $pyinstallerDist "lumi-server-core"
-    $serverCore = Join-Path $serverCoreDir "lumi-server-core.exe"
+    $serverCoreBundleDir = Join-Path $pyinstallerDist "lumi-server-core"
+    $serverCore = Join-Path $serverCoreBundleDir "lumi-server-core.exe"
     if (-not (Test-Path -LiteralPath $serverCore)) { throw "Lumi Server core executable was not produced." }
+    if (-not $serverCoreBundleDir) { throw "Lumi Server core directory path was not set." }
+  }
+
+  if ($isServer) {
+    # 先于 NSIS 调用准备便携文件树。NSIS 会改变当前 PowerShell 进程的
+    # 部分上下文，因此 Core 目录复制必须在外部安装器运行前完成。
+    $artifactOutputRoot = $script:LumiArtifactOutputRoot
+    if ([string]::IsNullOrWhiteSpace($artifactOutputRoot)) { throw "Windows artifact directory is unavailable." }
+    $rootCoreTarget = "$artifactOutputRoot\lumi-server-core"
+    if (Test-Path -LiteralPath $rootCoreTarget) {
+      Remove-Item -LiteralPath $rootCoreTarget -Recurse -Force
+    }
+    $legacyCoreTarget = "$artifactOutputRoot\lumi-server-core.exe"
+    if (Test-Path -LiteralPath $legacyCoreTarget) {
+      Remove-Item -LiteralPath $legacyCoreTarget -Force
+    }
+    Copy-DirectoryTree $serverCoreBundleDir $rootCoreTarget
+    $portableTarget = "$artifactOutputRoot\${productSlug}_${version}_x64-portable"
+    if (Test-Path -LiteralPath $portableTarget) {
+      Remove-Item -LiteralPath $portableTarget -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $portableTarget -Force | Out-Null
+    Copy-Item -LiteralPath $appBinary -Destination "$portableTarget\$binaryName" -Force
+    Copy-DirectoryTree $serverCoreBundleDir "$portableTarget\lumi-server-core"
   }
 
   $nsisArguments = @(
@@ -170,9 +215,10 @@ try {
     "/DMAIN_BINARY=$binaryName",
     "/DINSTALL_SUBDIR=$installSubdir"
   )
-  if ($serverCore) {
+  if ($isServer) {
+    if (-not $serverCoreBundleDir) { throw "Lumi Server core directory path was lost before packaging." }
     $nsisArguments += @(
-      "/DSERVER_CORE_DIR=$serverCoreDir",
+      "/DSERVER_CORE_DIR=$serverCoreBundleDir",
       "/DSERVER_CORE_BINARY=lumi-server-core.exe"
     )
   }
@@ -181,12 +227,6 @@ try {
 
   Copy-Item -LiteralPath $stageOutput -Destination $artifactInstaller -Force
   Copy-Item -LiteralPath $appBinary -Destination $artifactBinary -Force
-  if ($serverCore) {
-    $portableDir = Join-Path $artifactRoot "${productSlug}_${version}_x64-portable"
-    New-Item -ItemType Directory -Path $portableDir -Force | Out-Null
-    Copy-Item -LiteralPath $appBinary -Destination (Join-Path $portableDir $binaryName) -Force
-    Copy-Item -LiteralPath $serverCoreDir -Destination (Join-Path $portableDir "lumi-server-core") -Recurse -Force
-  }
 } finally {
   if ((Test-Path -LiteralPath $stageRoot) -and $stageRoot.StartsWith($stageParent, [System.StringComparison]::OrdinalIgnoreCase)) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force

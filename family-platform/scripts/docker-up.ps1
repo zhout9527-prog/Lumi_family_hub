@@ -16,4 +16,4 @@ if ($Media) { $composeArgs += @("--profile", "media") }
 $composeArgs += @("up", "-d", "--build")
 & docker @composeArgs
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose 启动失败。" }
-Write-Host "家庭平台容器已启动: http://localhost:8000"
+Write-Host "家庭平台容器已启动: http://localhost:2521"

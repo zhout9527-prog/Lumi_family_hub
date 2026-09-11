@@ -5,7 +5,7 @@ declare const process: {
   env: Record<string, string | undefined>
 }
 
-const apiProxyTarget = process.env.FAMILYHUB_PROXY_TARGET?.trim() || 'http://127.0.0.1:8000'
+const apiProxyTarget = process.env.FAMILYHUB_PROXY_TARGET?.trim() || 'http://127.0.0.1:2521'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],

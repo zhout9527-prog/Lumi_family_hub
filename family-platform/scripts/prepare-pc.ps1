@@ -64,7 +64,7 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     "FAMILYHUB_NIGHTLY_START_HOUR=1",
     "FAMILYHUB_NIGHTLY_END_HOUR=6",
     "FAMILYHUB_MIN_FREE_RATIO=0.20",
-    "FAMILYHUB_CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000"
+    "FAMILYHUB_CORS_ORIGINS=http://localhost:2521,http://127.0.0.1:2521"
   )
   Set-Content -LiteralPath $envPath -Value $envText -Encoding utf8NoBOM
   Write-Host "已生成 .env，并创建一次性演示账号密码："

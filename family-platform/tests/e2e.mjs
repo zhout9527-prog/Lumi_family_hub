@@ -6,6 +6,7 @@ const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.
 const clientUrl = process.env.FAMILYHUB_E2E_CLIENT_URL ?? 'http://127.0.0.1:4175'
 const serverUrl = process.env.FAMILYHUB_E2E_SERVER_URL ?? 'http://127.0.0.1:4176'
 const apiBase = process.env.FAMILYHUB_E2E_API_BASE ?? 'http://127.0.0.1:8010/api/v1'
+const serverApiBase = process.env.FAMILYHUB_E2E_SERVER_API_BASE ?? apiBase
 const artifactsPath = fileURLToPath(new URL('./artifacts/', import.meta.url))
 const runId = Date.now().toString(36)
 const childUsername = `xiaodou-${runId}`
@@ -19,11 +20,11 @@ function check(condition, message) {
   if (!condition) throw new Error(message)
 }
 
-async function createContext(browser, viewport) {
+async function createContext(browser, viewport, targetApiBase = apiBase) {
   const context = await browser.newContext({ viewport, locale: 'zh-CN' })
   await context.route('**/api/v1/**', (route) => {
     const requestUrl = new URL(route.request().url())
-    const destination = new URL(apiBase)
+    const destination = new URL(targetApiBase)
     requestUrl.protocol = destination.protocol
     requestUrl.host = destination.host
     return route.continue({ url: requestUrl.toString() })
@@ -85,7 +86,7 @@ try {
   await client.getByRole('button', { name: '登录', exact: true }).click()
   await client.getByText('账号正在等待运维管理员审批').waitFor()
 
-  const serverContext = await createContext(browser, { width: 1440, height: 980 })
+  const serverContext = await createContext(browser, { width: 1440, height: 980 }, serverApiBase)
   const server = await serverContext.newPage()
   collectFailures(server, failures, 'server')
   await server.goto(serverUrl, { waitUntil: 'networkidle' })
@@ -195,7 +196,7 @@ try {
   check(await operatorClient.getByRole('button', { name: '家庭概览' }).count() === 1, '运维账号没有以家长身份进入 Client')
   check(await operatorClient.getByRole('button', { name: '运维概览' }).count() === 0, 'Client 暴露了运维功能')
 
-  const wrongServerContext = await createContext(browser, { width: 900, height: 700 })
+  const wrongServerContext = await createContext(browser, { width: 900, height: 700 }, serverApiBase)
   const wrongServer = await wrongServerContext.newPage()
   await wrongServer.goto(serverUrl, { waitUntil: 'networkidle' })
   await wrongServer.getByLabel('账号').fill(childUsername)

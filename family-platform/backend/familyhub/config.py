@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     app_name: str = "Lumi Family Hub"
     environment: str = "development"
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 2521
     runtime_root: Path = Path("runtime")
     database_url: str | None = None
     cors_origins: str = (
@@ -46,9 +46,7 @@ class Settings(BaseSettings):
     jellyfin_url: str = "http://127.0.0.1:8096"
     kavita_url: str = "http://127.0.0.1:5000"
     audiobookshelf_url: str = "http://127.0.0.1:13378"
-    # Public, read-only release metadata consumed by native clients.  Keep the
-    # manifest outside the database so a release pipeline can replace it
-    # atomically without touching household data.
+    # 原生客户端只读发布清单；独立于数据库，发布流程可原子替换且不触碰家庭数据。
     update_manifest_path: Path = Path("updates/manifest.json")
     update_channel: str = "stable"
 

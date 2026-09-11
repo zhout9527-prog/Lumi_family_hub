@@ -4,11 +4,26 @@ import { chromium } from 'playwright-core'
 
 const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const baseUrl = process.env.FAMILYHUB_PLAYER_E2E_URL ?? 'http://127.0.0.1:4181'
+const apiBase = process.env.FAMILYHUB_PLAYER_E2E_API_BASE
 const artifactsPath = fileURLToPath(new URL('./artifacts/', import.meta.url))
 const runId = Date.now().toString(36)
 
 function check(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+async function createContext(browser, options) {
+  const context = await browser.newContext(options)
+  if (apiBase) {
+    await context.route('**/api/v1/**', (route) => {
+      const requestUrl = new URL(route.request().url())
+      const destination = new URL(apiBase)
+      requestUrl.protocol = destination.protocol
+      requestUrl.host = destination.host
+      return route.continue({ url: requestUrl.toString() })
+    })
+  }
+  return context
 }
 
 async function login(page) {
@@ -43,7 +58,7 @@ async function playerLayout(page, label) {
 await mkdir(artifactsPath, { recursive: true })
 const browser = await chromium.launch({ executablePath: edgePath, headless: true })
 try {
-  const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 980 }, locale: 'zh-CN' })
+  const desktopContext = await createContext(browser, { viewport: { width: 1440, height: 980 }, locale: 'zh-CN' })
   const desktop = await desktopContext.newPage()
   await login(desktop)
   await desktop.getByLabel('仅视频').check()
@@ -90,7 +105,7 @@ try {
   await desktop.getByRole('button', { name: '关闭播放器' }).click()
   await desktopContext.close()
 
-  const mobileContext = await browser.newContext({
+  const mobileContext = await createContext(browser, {
     viewport: { width: 390, height: 844 },
     locale: 'zh-CN',
     isMobile: true,
@@ -126,7 +141,7 @@ try {
   await mobile.screenshot({ path: `${artifactsPath}player-mobile-${runId}.png` })
   await mobileContext.close()
 
-  const tvContext = await browser.newContext({
+  const tvContext = await createContext(browser, {
     viewport: { width: 1280, height: 720 },
     locale: 'zh-CN',
     userAgent: 'Mozilla/5.0 (Linux; Android 11; SHIELD Android TV) AppleWebKit/537.36 Chrome/131 Safari/537.36',

@@ -16,7 +16,7 @@ RUN python -m pip install --no-cache-dir -r backend/requirements.txt
 COPY backend ./backend
 COPY updates ./updates
 COPY --from=web-build /build/dist ./dist
-EXPOSE 8000
+EXPOSE 2521
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)" || exit 1
-CMD ["python", "-m", "uvicorn", "backend.familyhub.main:app", "--host", "0.0.0.0", "--port", "8000"]
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:2521/api/v1/health', timeout=3)" || exit 1
+CMD ["python", "-m", "uvicorn", "backend.familyhub.main:app", "--host", "0.0.0.0", "--port", "2521"]

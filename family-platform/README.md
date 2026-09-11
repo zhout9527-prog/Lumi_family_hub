@@ -32,7 +32,7 @@
 
 ### Server 就是家庭主机
 
-`Lumi Server` 不是“还要再连接一台主机”的客户端，它本身就是运行在家庭 PC/NAS 上的主机服务。Server 安装包启动两个进程：Windows 原生界面用于运维，内置 Core 监听 `8000` 端口并负责数据库、文件、Worker 和 API。Server 界面中显示的“本机服务”只是对自身 Core 的健康检查，不需要配置另一台主机。`Lumi Client` 才需要填写“家庭主机地址”：同一台电脑填 `127.0.0.1:8000`，局域网设备填运行 Server 的电脑的固定局域网地址（例如 `192.168.1.20:8000`）。
+`Lumi Server` 不是“还要再连接一台主机”的客户端，它本身就是运行在家庭 PC/NAS 上的主机服务。Server 安装包启动两个进程：Windows 原生界面用于运维，内置 Core 监听 `2521` 端口并负责数据库、文件、Worker 和 API。Server 界面中显示的“本机服务”只是对自身 Core 的健康检查，不需要配置另一台主机。`Lumi Client` 才需要填写“家庭主机地址”：同一台电脑填 `127.0.0.1:2521`，局域网设备填运行 Server 的电脑的固定局域网地址（例如 `192.168.1.20:2521`）。
 
 连接关系只有一条：
 
@@ -40,7 +40,7 @@
 Windows Server（家庭 PC）
   ├─ 运维界面 + API + Worker + SQLite
   ├─ 资源目录：inbox -> quarantine -> library
-  └─ 监听 0.0.0.0:8000
+  └─ 监听 0.0.0.0:2521
         ↑ HTTP/HTTPS（局域网或 Tailscale）
 Windows/Android/Android TV Client（儿童、家长）
 ```
@@ -54,26 +54,26 @@ Windows/Android/Android TV Client（儿童、家长）
 日常使用不要求安装 Python、Node.js 或编译工具。优先运行：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.2_x64-setup.exe
+artifacts\windows\Lumi-Server_0.5.3_x64-setup.exe
 ```
 
 不想安装时，完整保留并运行便携目录；其中两个 EXE 缺一不可：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.2_x64-portable\
+artifacts\windows\Lumi-Server_0.5.3_x64-portable\
   lumi-server.exe
   lumi-server-core\
     lumi-server-core.exe
     （Server Core 运行库文件）
 ```
 
-`artifacts\windows\lumi-server_0.5.2_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
+`artifacts\windows\lumi-server_0.5.3_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
 
 首次打开 Server 会在本机创建数据目录并显示“创建首个运维账户”。密码至少 10 位，并且必须填写密保问题和答案；按钮只在提交期间禁用，输入不符合要求时会显示明确提示。创建后，用该账户登录 Server。已有账户可从登录页进入“找回密码”，也可创建另一个运维账户作为备用。家庭成员在 Client 的“注册申请”页提交儿童或家长账户，运维人员在 Server 的“账户管理”中批准，获批账户随后才能登录 Client。运维账户也可以登录 Client，但服务端只签发 `guardian` 范围的会话，不能从 Client 调用运维接口。界面中的称呼始终取服务器账户的显示名称，不写死某个孩子名字。
 
-同一台 PC 上的 Client 默认访问 `127.0.0.1:8000`。Android 首次还不知道家庭主机地址时，可在登录页展开次级的“首次连接或更换家庭主机”，填写例如 `192.168.1.20:8000`；登录后主导航中始终有“连接设置”。登录页不再被单独的连接向导占据。
+同一台 PC 上的 Client 默认访问 `127.0.0.1:2521`。Android 首次还不知道家庭主机地址时，可在登录页展开次级的“首次连接或更换家庭主机”，填写例如 `192.168.1.20:2521`；登录后主导航中始终有“连接设置”。登录页不再被单独的连接向导占据。
 
-PC 作为临时家庭 NAS 时，应关闭自动睡眠，给电脑设置固定 DHCP 地址，并在 Windows 防火墙中只允许“专用网络”访问 `8000`。若从外网访问，先使用 Tailscale 等私有组网，再填写该私网地址；不要把 API、下载器或运维面板直接映射到公网。
+PC 作为临时家庭 NAS 时，应关闭自动睡眠，给电脑设置固定 DHCP 地址。Server 安装器会在 Windows 防火墙中只允许“专用网络”的本地子网访问 `2521`；便携版需手动创建同等规则。若从外网访问，先使用 Tailscale 等私有组网，再填写该私网地址；不要把 API、下载器或运维面板直接映射到公网。
 
 源码开发模式仍可使用 `prepare-pc.ps1`、`start-familyhub.ps1`、`backup.ps1` 和 `run-worker-once.ps1`，但这些脚本不是普通家庭成员安装 Client 的前置条件。
 
@@ -89,11 +89,11 @@ npm run build
 
 ## 原生客户端与跨平台发布
 
-前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:8000`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.5.2`、Client `0.4.3`。
+前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.5.3`、Client `0.4.4`。
 
 | 目标 | 产物 | 最低系统 | 说明 |
 | --- | --- | --- | --- |
-| Windows Server x64 | 含核心的 NSIS `setup.exe`、带 Core 运行库目录的便携包 | Windows 10 1803+ | 仅运维角色；自动监听家庭 API `8000` |
+| Windows Server x64 | 含核心的 NSIS `setup.exe`、带 Core 运行库目录的便携包 | Windows 10 1803+ | 仅运维角色；自动监听家庭 API `2521` |
 | Windows Client x64 | 独立 EXE、NSIS `setup.exe` | Windows 10 1803+ | 儿童/家长界面；运维账户进入时降为家长权限；需要 WebView2 |
 | Android 手机 Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 小米 15 使用 ARM64 APK；已适配状态栏安全区 |
 | Android TV Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 同一 Client 带 Leanback 启动类别 |
@@ -178,7 +178,7 @@ Windows 桌面端由 Tauri updater 验签后下载、安装并重启；Android �
 npm run dev
 ```
 
-默认是 `http://localhost:4173`。后端 API 前缀为 `/api/v1`；开发服务器会把 `/api` 代理到 `http://127.0.0.1:8000`，也可以用 `FAMILYHUB_PROXY_TARGET` 指定其他端口。
+默认是 `http://localhost:4173`。后端 API 前缀为 `/api/v1`；开发服务器会把 `/api` 代理到 `http://127.0.0.1:2521`，也可以用 `FAMILYHUB_PROXY_TARGET` 指定其他端口。
 
 ## Docker（可选）
 
@@ -196,7 +196,7 @@ Copy-Item .env.example .env
 .\scripts\docker-up.ps1 -Media
 ```
 
-控制面地址为 `http://localhost:8000`。Jellyfin、Kavita、Audiobookshelf 启动后仍需在各自的管理界面完成首次设置、媒体目录映射和家庭账号配置。它们是播放/阅读层，不把下载器权限下发给儿童账号。
+控制面地址为 `http://localhost:2521`。Jellyfin、Kavita、Audiobookshelf 启动后仍需在各自的管理界面完成首次设置、媒体目录映射和家庭账号配置。它们是播放/阅读层，不把下载器权限下发给儿童账号。
 
 ## 数据目录和迁移
 

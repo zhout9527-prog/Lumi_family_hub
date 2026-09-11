@@ -22,7 +22,7 @@ flowchart LR
   OS -->|人工确认| LIB --> MEDIA
 ```
 
-Lumi Server 是家庭 PC/NAS 本身的控制面，不是还要连接的第三台主机；媒体服务是可选的消费面。动画、图书、音频和儿童游戏都可以进入同一目录，但实际播放/阅读由本地资源播放入口或 Jellyfin/Kavita/Audiobookshelf 等专用服务负责。没有安装媒体服务时，平台仍可先完成账号、目录、审批和文件整理。Server 与 Client 是不同安装包，不是同一应用中的角色切换。Client 的“家庭主机地址”只是在告诉 Client 去哪里访问这台 Server：同机为 `127.0.0.1:8000`，局域网为 Server 所在 PC 的固定 IP 和端口。
+Lumi Server 是家庭 PC/NAS 本身的控制面，不是还要连接的第三台主机；媒体服务是可选的消费面。动画、图书、音频和儿童游戏都可以进入同一目录，但实际播放/阅读由本地资源播放入口或 Jellyfin/Kavita/Audiobookshelf 等专用服务负责。没有安装媒体服务时，平台仍可先完成账号、目录、审批和文件整理。Server 与 Client 是不同安装包，不是同一应用中的角色切换。Client 的“家庭主机地址”只是在告诉 Client 去哪里访问这台 Server：同机为 `127.0.0.1:2521`，局域网为 Server 所在 PC 的固定 IP 和端口。
 
 ## 2. 应用、账户与平台边界
 

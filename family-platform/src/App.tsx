@@ -2153,7 +2153,7 @@ function LoginScreen({
               }}>
                 <label className="login-field">
                   <span>家庭主机地址</span>
-                  <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:8000" autoComplete="url" /></div>
+                  <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521" autoComplete="url" /></div>
                 </label>
                 <div className="login-server-actions">
                   <button type="submit" className="button button-quiet" disabled={busy || !host.trim()}><Wifi size={15} />保存并测试</button>
@@ -2200,7 +2200,7 @@ function ConnectionView({
         <form className="connection-form" onSubmit={(event) => { event.preventDefault(); void onSave(host).catch(() => undefined) }}>
           <label className="login-field">
             <span>家庭主机地址</span>
-            <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:8000" autoComplete="url" /></div>
+            <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521" autoComplete="url" /></div>
           </label>
           {error && <div className="login-error" role="alert"><AlertTriangle size={15} />{error}</div>}
           <div className="connection-actions">

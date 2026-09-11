@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [int]$Port = 8000,
+  [int]$Port = 2521,
   [int]$WebPort = 4173,
   [switch]$Foreground
 )

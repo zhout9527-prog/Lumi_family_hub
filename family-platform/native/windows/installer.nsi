@@ -37,7 +37,13 @@ Name "${PRODUCT_NAME}"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$LOCALAPPDATA\Programs\${INSTALL_SUBDIR}"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
-RequestExecutionLevel user
+!ifdef SERVER_CORE_BINARY
+  RequestExecutionLevel admin
+  !define SERVER_API_PORT "2521"
+  !define SERVER_FIREWALL_RULE "Lumi Server LAN API"
+!else
+  RequestExecutionLevel user
+!endif
 SetCompressor /SOLID lzma
 VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
@@ -105,6 +111,12 @@ Section "Install"
     SetOutPath "$INSTDIR\lumi-server-core"
     File /r "${SERVER_CORE_DIR}\*"
     SetOutPath "$INSTDIR"
+    nsExec::ExecToStack /TIMEOUT=10000 '"$SYSDIR\netsh.exe" advfirewall firewall delete rule name="${SERVER_FIREWALL_RULE}"'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack /TIMEOUT=10000 '"$SYSDIR\netsh.exe" advfirewall firewall add rule name="${SERVER_FIREWALL_RULE}" dir=in action=allow protocol=TCP localport=${SERVER_API_PORT} program="$INSTDIR\lumi-server-core\${SERVER_CORE_BINARY}" profile=private remoteip=LocalSubnet enable=yes'
+    Pop $0
+    Pop $1
   !endif
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
@@ -144,6 +156,9 @@ Section "Uninstall"
 
   Delete "$INSTDIR\${MAIN_BINARY}"
   !ifdef SERVER_CORE_DIR
+    nsExec::ExecToStack /TIMEOUT=10000 '"$SYSDIR\netsh.exe" advfirewall firewall delete rule name="${SERVER_FIREWALL_RULE}"'
+    Pop $0
+    Pop $1
     RMDir /r "$INSTDIR\lumi-server-core"
   !endif
   Delete "$INSTDIR\uninstall.exe"

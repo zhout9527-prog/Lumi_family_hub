@@ -57,7 +57,7 @@ services:
   api:
     <<: *familyhub-service
     ports:
-      - "${FAMILYHUB_PORT:-8000}:8000"
+      - "${FAMILYHUB_PORT:-2521}:2521"
     depends_on:
       database:
         condition: service_healthy

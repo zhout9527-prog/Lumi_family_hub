@@ -20,6 +20,9 @@ struct ServerProcess(Mutex<Option<Child>>);
 struct ExitState(AtomicBool);
 
 #[cfg(desktop)]
+const SERVER_API_PORT: u16 = 2521;
+
+#[cfg(desktop)]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_skip_taskbar(false);
@@ -242,7 +245,7 @@ fn report_startup_error(error: &io::Error) {
 
 #[cfg(desktop)]
 fn start_server_core(app: &tauri::App) -> io::Result<Option<Child>> {
-    let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8000);
+    let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), SERVER_API_PORT);
     if TcpStream::connect_timeout(&endpoint, Duration::from_millis(250)).is_ok() {
         return Ok(None);
     }
@@ -270,7 +273,7 @@ fn start_server_core(app: &tauri::App) -> io::Result<Option<Child>> {
         .env("FAMILYHUB_ENVIRONMENT", "production")
         .env("FAMILYHUB_SEED_DEMO", "false")
         .env("FAMILYHUB_API_HOST", "0.0.0.0")
-        .env("FAMILYHUB_API_PORT", "8000");
+        .env("FAMILYHUB_API_PORT", SERVER_API_PORT.to_string());
     #[cfg(target_os = "windows")]
     command.creation_flags(0x0800_0000);
     command.spawn().map(Some)

@@ -33,6 +33,7 @@ import { APP_EDITION } from './edition'
 
 const TOKEN_KEY = 'lumi-family-platform-session-v1'
 const API_BASE_KEY = 'lumi-family-platform-api-base-v1'
+const DEFAULT_SERVER_ORIGIN = 'http://127.0.0.1:2521'
 
 function normalizeApiBase(value: string): string {
   let normalized = value.trim()
@@ -69,9 +70,21 @@ function defaultApiBase(): string {
     stored = ''
   }
   if (configured) return normalizeApiBase(configured)
-  if (stored) return normalizeApiBase(stored)
+  if (stored) {
+    const normalized = normalizeApiBase(stored)
+    if (isNativeShell() && !/Android/i.test(window.navigator.userAgent) && /^https?:\/\/(?:127\.0\.0\.1|localhost):8000\/api\/v1$/i.test(normalized)) {
+      const migrated = normalized.replace(':8000/', ':2521/')
+      try {
+        window.localStorage.setItem(API_BASE_KEY, migrated)
+      } catch {
+        // 存储不可用时仍使用本次迁移结果，避免 Windows 客户端继续连接旧端口。
+      }
+      return migrated
+    }
+    return normalized
+  }
   if (isNativeShell()) {
-    return /Android/i.test(window.navigator.userAgent) ? '' : 'http://127.0.0.1:8000/api/v1'
+    return /Android/i.test(window.navigator.userAgent) ? '' : `${DEFAULT_SERVER_ORIGIN}/api/v1`
   }
   return `${window.location.origin}/api/v1`
 }

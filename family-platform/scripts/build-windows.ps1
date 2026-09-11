@@ -8,6 +8,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+trap {
+  Write-Host ("Windows build failed: " + $_.Exception.Message)
+  Write-Host $_.InvocationInfo.PositionMessage
+  throw
+}
+
 if ($Edition -eq "All") {
   if ($TauriConfig) { throw "-TauriConfig cannot be combined with -Edition All." }
   & $PSCommandPath -Edition Client -SignUpdater:$SignUpdater
@@ -19,11 +25,10 @@ if ($Edition -eq "All") {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 Set-Location $projectRoot
-Set-Variable -Scope Script -Name LumiArtifactOutputRoot -Value ([string](Join-Path $projectRoot "artifacts\windows")) -Option Constant
 $tauriRoot = Join-Path $projectRoot "src-tauri"
 $defaultTauriConfigPath = Join-Path $tauriRoot ($(if ($Edition -eq "Server") { "tauri.server.conf.json" } else { "tauri.conf.json" }))
 $windowsTemplate = Join-Path $projectRoot "native\windows\installer.nsi"
-$artifactRoot = Join-Path $projectRoot "artifacts\windows"
+$artifactRoot = "artifacts\windows"
 $isServer = $Edition -eq "Server"
 $productName = if ($isServer) { "Lumi Server" } else { "Lumi Client" }
 $productId = if ($isServer) { "cn.lumi.familyhub.server" } else { "cn.lumi.familyhub" }
@@ -32,6 +37,7 @@ $binaryName = if ($isServer) { "lumi-server.exe" } else { "lumi-client.exe" }
 $installSubdir = if ($isServer) { "LumiServer" } else { "LumiClient" }
 
 function Remove-OldWindowsArtifacts([string]$KeepVersion, [string]$CurrentProductSlug) {
+  $artifactRoot = "artifacts\windows"
   if (-not (Test-Path -LiteralPath $artifactRoot)) { return }
   $escapedVersion = [regex]::Escape($KeepVersion)
   $escapedProduct = [regex]::Escape($CurrentProductSlug)
@@ -153,49 +159,46 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $projectRoot "backend\familyhub") -Filter "*.py" -File |
       Copy-Item -Destination $backendPackage -Force
     $pyinstallerRoot = Join-Path $stageRoot "pyinstaller"
-    $pyinstallerDist = Join-Path $pyinstallerRoot "dist"
-    $pyinstallerWork = Join-Path $pyinstallerRoot "work"
-    $pyinstallerSpec = Join-Path $pyinstallerRoot "spec"
-    New-Item -ItemType Directory -Path $pyinstallerDist, $pyinstallerWork, $pyinstallerSpec -Force | Out-Null
-    Invoke-CheckedExternalCommand "Lumi Server core build" {
-      & $pythonPath -m PyInstaller `
-        --noconfirm `
-        --noupx `
-        --onedir `
-        --name lumi-server-core `
-        --paths $backendSource `
-        --distpath $pyinstallerDist `
-        --workpath $pyinstallerWork `
-        --specpath $pyinstallerSpec `
-        --hidden-import uvicorn.logging `
-        --hidden-import uvicorn.loops.auto `
-        --hidden-import uvicorn.protocols.http.auto `
-        --hidden-import uvicorn.protocols.websockets.auto `
-        --hidden-import uvicorn.lifespan.on `
-        --collect-all yt_dlp `
-        --collect-all imageio_ffmpeg `
-        (Join-Path $backendSource "server_entry.py")
+    # Core 直接输出到最终产物目录。这样安装包、版本化 EXE 和便携版
+    # 始终共享同一份完整的 onedir 文件树，不会再产生只有 GUI 的闪退包。
+    $distPathArg = Join-Path $projectRoot "artifacts\windows"
+    New-Item -ItemType Directory -Path $pyinstallerRoot -Force | Out-Null
+    Push-Location $pyinstallerRoot
+    try {
+      # 在独立目录运行 PyInstaller，使用其默认 build/spec 子目录，
+      # 避免 PowerShell 长时间构建时临时变量被外部工具清空。
+      Invoke-CheckedExternalCommand "Lumi Server core build" {
+        & $pythonPath -m PyInstaller `
+          --noconfirm `
+          --noupx `
+          --onedir `
+          --name lumi-server-core `
+          --paths $backendSource `
+          --distpath $distPathArg `
+          --hidden-import uvicorn.logging `
+          --hidden-import uvicorn.loops.auto `
+          --hidden-import uvicorn.protocols.http.auto `
+          --hidden-import uvicorn.protocols.websockets.auto `
+          --hidden-import uvicorn.lifespan.on `
+          --collect-all yt_dlp `
+          --collect-all imageio_ffmpeg `
+          (Join-Path $backendSource "server_entry.py")
+      }
+    } finally {
+      Pop-Location
     }
-    $serverCoreBundleDir = Join-Path $pyinstallerDist "lumi-server-core"
+    $serverCoreBundleDir = Join-Path $projectRoot "artifacts\windows\lumi-server-core"
     $serverCore = Join-Path $serverCoreBundleDir "lumi-server-core.exe"
     if (-not (Test-Path -LiteralPath $serverCore)) { throw "Lumi Server core executable was not produced." }
     if (-not $serverCoreBundleDir) { throw "Lumi Server core directory path was not set." }
   }
 
   if ($isServer) {
-    # 先于 NSIS 调用准备便携文件树。NSIS 会改变当前 PowerShell 进程的
-    # 部分上下文，因此 Core 目录复制必须在外部安装器运行前完成。
-    $artifactOutputRoot = $script:LumiArtifactOutputRoot
-    if ([string]::IsNullOrWhiteSpace($artifactOutputRoot)) { throw "Windows artifact directory is unavailable." }
-    $rootCoreTarget = "$artifactOutputRoot\lumi-server-core"
-    if (Test-Path -LiteralPath $rootCoreTarget) {
-      Remove-Item -LiteralPath $rootCoreTarget -Recurse -Force
-    }
+    $artifactOutputRoot = "artifacts\windows"
     $legacyCoreTarget = "$artifactOutputRoot\lumi-server-core.exe"
     if (Test-Path -LiteralPath $legacyCoreTarget) {
       Remove-Item -LiteralPath $legacyCoreTarget -Force
     }
-    Copy-DirectoryTree $serverCoreBundleDir $rootCoreTarget
     $portableTarget = "$artifactOutputRoot\${productSlug}_${version}_x64-portable"
     if (Test-Path -LiteralPath $portableTarget) {
       Remove-Item -LiteralPath $portableTarget -Recurse -Force

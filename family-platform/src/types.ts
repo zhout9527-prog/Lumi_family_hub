@@ -6,9 +6,52 @@ export type ContentKind = 'video' | 'book' | 'audio' | 'game' | 'create' | 'disc
 
 export type PlaybackMode = 'none' | 'local_asset' | 'embed' | 'direct_stream' | 'external_link' | 'local_service'
 
+export interface PlaybackResult {
+  mode: string
+  url?: string
+  service?: string
+  quality?: string
+  expiresAt?: string
+}
+
+export interface BilibiliAccountStatus {
+  connected: boolean
+  accountName?: string
+  vip: boolean
+  browser?: 'edge' | 'chrome' | 'firefox'
+  updatedAt?: string
+}
+
+export interface AdultCredentials {
+  username: string
+  password: string
+}
+
+export interface BilibiliComment {
+  id: string
+  author: string
+  text: string
+  likes: number
+  timestamp?: number
+}
+
+export interface BilibiliDanmaku {
+  id: string
+  time: number
+  text: string
+  color: number
+}
+
+export interface BilibiliInteractions {
+  comments: BilibiliComment[]
+  danmaku: BilibiliDanmaku[]
+}
+
 export type NavKey =
   | 'explore'
   | 'library'
+  | 'poster-wall'
+  | 'games'
   | 'progress'
   | 'approvals'
   | 'planning'

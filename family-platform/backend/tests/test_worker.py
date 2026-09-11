@@ -5,11 +5,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
 from familyhub.config import Settings
 from familyhub.file_safety import scan_file
 from familyhub.models import ContentAsset, ContentItem, DownloadJob, utcnow
+from sqlalchemy import select
 from familyhub.worker import FamilyWorker
 
 from .conftest import login
@@ -74,6 +74,7 @@ def test_worker_quarantines_media_and_blocks_executable(client: TestClient, sett
             "age_from": 5,
             "age_to": 8,
             "language": "中文",
+            "license_ref": "https://example.org/family-owned-proof",
         },
     )
     assert incomplete_review.status_code == 422

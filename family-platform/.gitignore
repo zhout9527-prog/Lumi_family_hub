@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-server/
 .venv/
 runtime/
 backend/runtime/
@@ -25,7 +26,6 @@ preview-*.png
 tests/artifacts/
 test-run-temp/
 artifacts/
-dist-server/
 .env
 .env.*
 !.env.example

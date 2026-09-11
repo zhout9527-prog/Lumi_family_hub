@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react'
 import {
   Activity,
@@ -15,6 +15,7 @@ import {
   Compass,
   Download,
   ExternalLink,
+  Film,
   FolderOpen,
   FileCheck2,
   Gamepad2,
@@ -30,6 +31,7 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  MessageSquareText,
   Pause,
   PenTool,
   Play,
@@ -40,6 +42,7 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  ThumbsUp,
   Server,
   Link2,
   Timer,
@@ -53,13 +56,25 @@ import {
 } from 'lucide-react'
 import { APP_EDITION, PRODUCT_NAME } from './edition'
 import { useFamilyStore } from './store'
-import type { AccountRegistration, AssetRecord, AssetReviewDraft, BilibiliDownloadDraft, CloudSubmission, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
+import type { AccountRegistration, AdultCredentials, AssetRecord, AssetReviewDraft, BilibiliAccountStatus, BilibiliDownloadDraft, BilibiliInteractions, CloudSubmission, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
 import { checkForAppUpdate, installDesktopUpdate } from './updates'
 import type { UpdateCheckResult } from './updates'
 import type { LucideIcon } from 'lucide-react'
+import { DEFAULT_COVER, useArtworkSource } from './artwork'
+import { DEVICE_PROFILE, useTvSpatialNavigation } from './device'
+import { matchesContentSearch } from './search'
+import { TvSearchKeyboard } from './TvSearchKeyboard'
+import { VideoPlayer } from './VideoPlayer'
+import { PosterWall } from './PosterWall'
+import { GamesView, TetrisGame } from './TetrisGame'
+import { contentInteractionsApi } from './api'
 import './styles.css'
 
 type NoticeTone = 'success' | 'info' | 'warning'
+
+function passwordCharacters(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, '')
+}
 
 interface NavItem {
   key: NavKey
@@ -94,6 +109,7 @@ const navByRole: Record<Role, NavItem[]> = {
   child: [
     { key: 'explore', label: '探索馆', icon: Compass },
     { key: 'library', label: '我的书架', icon: Library },
+    { key: 'games', label: '小游戏', icon: Gamepad2 },
     { key: 'progress', label: '成长记录', icon: Sparkles },
     { key: 'connection', label: '连接设置', icon: Wifi },
   ],
@@ -102,6 +118,8 @@ const navByRole: Record<Role, NavItem[]> = {
     { key: 'approvals', label: '审批中心', icon: ListChecks },
     { key: 'planning', label: '本周编排', icon: Clock3 },
     { key: 'library', label: '家庭书架', icon: Library },
+    { key: 'poster-wall', label: '家庭海报墙', icon: Film },
+    { key: 'games', label: '小游戏', icon: Gamepad2 },
     { key: 'connection', label: '连接设置', icon: Wifi },
   ],
   operator: [
@@ -149,12 +167,15 @@ function Cover({
   item,
   className = '',
   onOpen,
+  focusable = true,
 }: {
   item: ContentItem
   className?: string
   onOpen?: () => void
+  focusable?: boolean
 }) {
   const [failed, setFailed] = useState(false)
+  const artwork = useArtworkSource(item.cover)
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return
     if (event.key === 'Enter' || event.key === ' ') {
@@ -168,12 +189,12 @@ function Cover({
       style={{ backgroundColor: item.accent }}
       onClick={onOpen}
       onKeyDown={handleKeyDown}
-      role={onOpen ? 'button' : undefined}
-      tabIndex={onOpen ? 0 : undefined}
+      role={onOpen && focusable ? 'button' : undefined}
+      tabIndex={onOpen && focusable ? 0 : undefined}
     >
-      {!failed && (
+      {!failed && artwork && (
         <img
-          src={item.cover}
+          src={artwork}
           alt=""
           loading="lazy"
           onError={() => setFailed(true)}
@@ -197,6 +218,11 @@ function Cover({
   )
 }
 
+function ArtworkImage({ source, alt = '' }: { source: string; alt?: string }) {
+  const artwork = useArtworkSource(source)
+  return artwork ? <img src={artwork} alt={alt} /> : null
+}
+
 function ContentCard({
   item,
   favorite,
@@ -212,7 +238,7 @@ function ContentCard({
   return (
     <article className="content-card">
       <div className="card-cover-wrap">
-        <Cover item={item} onOpen={onOpen} />
+        <Cover item={item} onOpen={onOpen} focusable={false} />
         <IconButton
           label={favorite ? '取消收藏' : '加入收藏'}
           className={'favorite-button ' + (favorite ? 'is-favorite' : '')}
@@ -441,6 +467,8 @@ function Topbar({
   onLogout,
   onCheckUpdate,
   updateBusy,
+  videoOnly,
+  onVideoOnly,
 }: {
   user: SessionUser
   query: string
@@ -449,10 +477,18 @@ function Topbar({
   onLogout?: () => void
   onCheckUpdate: () => void
   updateBusy: boolean
+  videoOnly: boolean
+  onVideoOnly: (value: boolean) => void
 }) {
   const role = user.role
   const meta = roleMeta[role]
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [tvKeyboardOpen, setTvKeyboardOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const closeTvKeyboard = useCallback(() => {
+    setTvKeyboardOpen(false)
+    window.setTimeout(() => searchInputRef.current?.focus(), 0)
+  }, [])
   const searchExpanded = mobileSearchOpen || Boolean(query)
   return (
     <header className="topbar">
@@ -467,20 +503,30 @@ function Topbar({
         </div>
       </div>
       <div className="topbar-actions">
-        <label
+        <div
           className={'search-box ' + (searchExpanded ? 'mobile-search-open' : '')}
           title="搜索"
           onClick={() => {
-            if (!mobileSearchOpen) setMobileSearchOpen(true)
+            if (DEVICE_PROFILE === 'tv') setTvKeyboardOpen(true)
+            else if (!mobileSearchOpen) setMobileSearchOpen(true)
           }}
         >
           <Search size={17} />
           <input
+            ref={searchInputRef}
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="搜索故事、书和活动"
-            aria-label="搜索故事、书和活动"
+            placeholder="搜索视频、图书和音乐"
+            aria-label="搜索全部家庭资源"
             autoFocus={mobileSearchOpen}
+            readOnly={DEVICE_PROFILE === 'tv'}
+            inputMode={DEVICE_PROFILE === 'tv' ? 'none' : undefined}
+            onKeyDown={(event) => {
+              if (DEVICE_PROFILE === 'tv' && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault()
+                setTvKeyboardOpen(true)
+              }
+            }}
           />
           {searchExpanded && (
             <IconButton
@@ -493,6 +539,10 @@ function Topbar({
               <X size={14} />
             </IconButton>
           )}
+        </div>
+        <label className="search-kind-filter">
+          <input type="checkbox" checked={videoOnly} onChange={(event) => onVideoOnly(event.target.checked)} />
+          <span>仅视频</span>
         </label>
         <IconButton label="通知">
           <Bell size={18} />
@@ -508,6 +558,7 @@ function Topbar({
           {accountInitial(user.displayName)}
         </div>
       </div>
+      {tvKeyboardOpen && <TvSearchKeyboard value={query} onChange={onQuery} onClose={closeTvKeyboard} />}
     </header>
   )
 }
@@ -563,6 +614,9 @@ function ChildDashboard({
   onFavorite: (id: string) => void
 }) {
   const [kind, setKind] = useState<ContentKind | 'all'>('all')
+  if (!items.length) {
+    return <div className="dashboard child-dashboard"><div className="empty-state search-empty"><Search size={25} /><strong>馆藏暂时为空</strong><span>这里还没有已发布的家庭内容。</span></div></div>
+  }
   const featured = items.find((item) => item.featured) ?? items[0]
   const filtered = items.filter((item) => kind === 'all' || item.kind === kind)
   const completedCount = completedIds.length
@@ -686,7 +740,7 @@ function ApprovalRow({
   return (
     <div className="approval-row">
       <div className="approval-thumb" style={{ backgroundColor: item.accent }}>
-        <img src={item.cover} alt="" />
+        <ArtworkImage source={item.cover} />
         <ItemIcon size={15} />
       </div>
       <div className="approval-copy">
@@ -1387,6 +1441,38 @@ function LibraryView({
   )
 }
 
+function SearchResults({
+  items,
+  query,
+  videoOnly,
+  favoriteIds,
+  onOpen,
+  onFavorite,
+}: {
+  items: ContentItem[]
+  query: string
+  videoOnly: boolean
+  favoriteIds: string[]
+  onOpen: (item: ContentItem) => void
+  onFavorite: (id: string) => void
+}) {
+  return (
+    <div className="dashboard search-results-dashboard">
+      <section className="page-intro search-results-intro">
+        <div><span className="eyebrow">SEARCH RESULTS</span><h1>{query ? `“${query}”的搜索结果` : '视频资源'}</h1><p>{videoOnly ? '家庭馆藏中的视频结果。' : '家庭馆藏中的匹配内容。'}</p></div>
+        <span className="soft-badge">{items.length} 项</span>
+      </section>
+      {items.length ? (
+        <div className="content-grid library-grid">
+          {items.map((item) => <ContentCard key={item.id} item={item} favorite={favoriteIds.includes(item.id)} onOpen={() => onOpen(item)} onFavorite={() => onFavorite(item.id)} />)}
+        </div>
+      ) : (
+        <div className="empty-state search-empty"><Search size={25} /><strong>没有找到匹配内容</strong><span>当前馆藏中没有对应结果。</span></div>
+      )}
+    </div>
+  )
+}
+
 function ProgressView({ displayName, completedCount, activeMinutes }: { displayName: string; completedCount: number; activeMinutes: number }) {
   return (
     <div className="dashboard progress-dashboard">
@@ -1514,6 +1600,21 @@ function MediaPlayerModal({
   service?: string
   onClose: () => void
 }) {
+  const [interactions, setInteractions] = useState<BilibiliInteractions>({ comments: [], danmaku: [] })
+  const [communityTab, setCommunityTab] = useState<'comments' | 'danmaku'>('comments')
+  const [communityLoading, setCommunityLoading] = useState(item.provider === 'bilibili')
+
+  useEffect(() => {
+    if (item.provider !== 'bilibili') return
+    let active = true
+    setCommunityLoading(true)
+    void contentInteractionsApi(item.id)
+      .then((result) => { if (active) setInteractions(result) })
+      .catch(() => { if (active) setInteractions({ comments: [], danmaku: [] }) })
+      .finally(() => { if (active) setCommunityLoading(false) })
+    return () => { active = false }
+  }, [item.id, item.provider])
+
   useEffect(() => {
     const previousOverflow = document.documentElement.style.overflow
     document.documentElement.style.overflow = 'hidden'
@@ -1529,20 +1630,41 @@ function MediaPlayerModal({
 
   return (
     <div className="modal-backdrop player-backdrop" onMouseDown={onClose}>
-      <section className="media-player" role="dialog" aria-modal="true" aria-label={`播放 ${item.title}`} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="player-heading"><div><span className="eyebrow">{mode === 'local_asset' ? 'LOCAL LIBRARY' : mode === 'embed' ? 'OFFICIAL PLAYER' : mode === 'direct_stream' ? 'DIRECT STREAM' : 'EXTERNAL PAGE'}</span><strong>{item.title}</strong></div><IconButton label="关闭播放器" onClick={onClose}><X size={18} /></IconButton></div>
-        {mode === 'local_service' ? (
+      <section className={'media-player ' + ((mode === 'local_asset' || mode === 'direct_stream') && item.kind === 'video' ? 'has-custom-video' : '') + (item.provider === 'bilibili' ? ' has-community' : '')} role="dialog" aria-modal="true" aria-label={`播放 ${item.title}`} onMouseDown={(event) => event.stopPropagation()}>
+        {(mode === 'local_asset' || mode === 'direct_stream') && item.kind === 'video' ? (
+          <div className="player-experience">
+            <VideoPlayer item={item} url={url} profile={DEVICE_PROFILE} danmaku={interactions.danmaku} onClose={onClose} />
+            {item.provider === 'bilibili' && (
+              <aside className="player-community" aria-label="B站评论与弹幕">
+                <div className="community-tabs" role="tablist">
+                  <button type="button" role="tab" aria-selected={communityTab === 'comments'} className={communityTab === 'comments' ? 'active' : ''} onClick={() => setCommunityTab('comments')}>评论 {interactions.comments.length}</button>
+                  <button type="button" role="tab" aria-selected={communityTab === 'danmaku'} className={communityTab === 'danmaku' ? 'active' : ''} onClick={() => setCommunityTab('danmaku')}>弹幕 {interactions.danmaku.length}</button>
+                </div>
+                <div className="community-list">
+                  {communityLoading ? <div className="community-empty"><RefreshCw className="spin" size={20} />正在获取</div> : communityTab === 'comments' ? (
+                    interactions.comments.length ? interactions.comments.map((comment) => <article className="community-comment" key={comment.id}><span>{comment.author}</span><p>{comment.text}</p><small><ThumbsUp size={12} />{comment.likes}</small></article>) : <div className="community-empty"><MessageSquareText size={20} />暂无可显示评论</div>
+                  ) : interactions.danmaku.length ? interactions.danmaku.map((entry) => <article className="community-danmaku" key={entry.id}><time>{Math.floor(entry.time / 60)}:{String(Math.floor(entry.time % 60)).padStart(2, '0')}</time><span>{entry.text}</span></article>) : <div className="community-empty"><MessageSquareText size={20} />暂无可显示弹幕</div>}
+                </div>
+              </aside>
+            )}
+          </div>
+        ) : (
+          <><div className="player-heading"><div><span className="eyebrow">{mode === 'loading' ? 'PREPARING' : mode === 'local_service' ? 'LOCAL SERVICE' : mode === 'embed' ? 'OFFICIAL PLAYER' : mode === 'external_link' ? 'EXTERNAL PAGE' : 'MEDIA'}</span><strong>{item.title}</strong></div><IconButton label="关闭播放器" className="modal-player-close" onClick={onClose}><X size={18} /></IconButton></div>
+        {mode === 'loading' ? (
+          <div className="player-placeholder"><RefreshCw className="spin" size={30} /><strong>正在准备播放</strong><span>正在向家庭主机获取播放权限。</span></div>
+        ) : mode === 'local_service' ? (
           <div className="player-placeholder"><Server size={30} /><strong>需要配置 {service ?? '媒体服务'}</strong><span>Server 已记录这个内容，但当前还没有可直接播放的文件或在线播放地址。</span></div>
         ) : mode === 'external_link' ? (
           <div className="external-player"><iframe src={url} title={item.title} allow="autoplay; fullscreen" /><a className="button button-primary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={15} />在官方页面打开</a></div>
         ) : mode === 'embed' ? (
           <iframe className="embed-player" src={url} title={item.title} allow="autoplay; fullscreen; picture-in-picture" />
         ) : item.kind === 'video' ? (
-          <video src={url} controls autoPlay playsInline preload="metadata" />
+          <video src={url} controls autoPlay playsInline preload="auto" poster={item.cover === DEFAULT_COVER ? undefined : item.cover} />
         ) : item.kind === 'audio' ? (
           <div className="audio-player"><Headphones size={32} /><audio src={url} controls autoPlay /></div>
         ) : (
           <iframe src={url} title={item.title} />
+        )}</>
         )}
       </section>
     </div>
@@ -1691,8 +1813,8 @@ function LoginScreen({
       setFormError('登录账号至少 2 个字符，且不能包含空格')
       return
     }
-    if (password.length < 8) {
-      setFormError('儿童或家长账户的密码至少需要 8 位')
+    if (password.length < 8 || !/^[A-Za-z0-9]+$/.test(password)) {
+      setFormError('儿童或家长账户密码至少 8 位，只能使用英文字母和数字')
       return
     }
     if (password !== confirmPassword) {
@@ -1727,8 +1849,8 @@ function LoginScreen({
       setFormError('登录账号至少 2 个字符，且不能包含空格')
       return
     }
-    if (password.length < 10) {
-      setFormError('运维账户的密码至少需要 10 位')
+    if (password.length < 10 || !/^[A-Za-z0-9]+$/.test(password)) {
+      setFormError('运维账户密码至少 10 位，只能使用英文字母和数字')
       return
     }
     if (password !== confirmPassword) {
@@ -1791,8 +1913,8 @@ function LoginScreen({
       setFormError('请输入密保答案')
       return
     }
-    if (password.length < 10) {
-      setFormError('新密码至少需要 10 位')
+    if (password.length < 10 || !/^[A-Za-z0-9]+$/.test(password)) {
+      setFormError('新密码至少 10 位，只能使用英文字母和数字')
       return
     }
     if (password !== confirmPassword) {
@@ -1973,14 +2095,14 @@ function LoginScreen({
               {(mode !== 'recover' || isRecoveryResolved) && (
                 <label className="login-field">
                   <span>{mode === 'recover' ? '新密码' : '密码'}</span>
-                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '新密码' : '密码'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={isOperatorAccountMode || mode === 'recover' ? '至少 10 位' : mode === 'register' ? '至少 8 位' : '请输入账户密码'} required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : mode === 'register' ? 8 : 6} maxLength={256} /></div>
-                  {mode !== 'login' && <small className="field-hint">建议同时使用字母、数字和符号，不要与常用网站相同。</small>}
+                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '新密码' : '密码'} type="password" value={password} onChange={(event) => setPassword(passwordCharacters(event.target.value))} inputMode="text" autoCapitalize="none" spellCheck={false} pattern="[A-Za-z0-9]*" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={isOperatorAccountMode || mode === 'recover' ? '至少 10 位字母或数字' : mode === 'register' ? '至少 8 位字母或数字' : '请输入字母或数字密码'} required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : mode === 'register' ? 8 : 6} maxLength={256} /></div>
+                  {mode !== 'login' && <small className="field-hint">只能使用英文字母和数字，请勿与常用网站使用相同密码。</small>}
                 </label>
               )}
               {(mode === 'register' || isOperatorAccountMode || isRecoveryResolved) && (
                 <label className="login-field">
                   <span>{mode === 'recover' ? '确认新密码' : '确认密码'}</span>
-                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '确认新密码' : '确认密码'} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" placeholder="再次输入同一密码" required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : 8} maxLength={256} /></div>
+                  <div><LockKeyhole size={17} /><input aria-label={mode === 'recover' ? '确认新密码' : '确认密码'} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(passwordCharacters(event.target.value))} inputMode="text" autoCapitalize="none" spellCheck={false} pattern="[A-Za-z0-9]*" autoComplete="new-password" placeholder="再次输入同一密码" required minLength={isOperatorAccountMode || mode === 'recover' ? 10 : 8} maxLength={256} /></div>
                 </label>
               )}
               {visibleError && <div className="login-error" role="alert"><AlertTriangle size={15} />{visibleError}</div>}
@@ -2129,6 +2251,8 @@ const libraryKindLabels: Record<LibraryItemRecord['kind'], string> = {
 function ResourceManagerView({
   items,
   feeds,
+  bilibiliAccount,
+  operatorUsername,
   busy,
   onScan,
   onImport,
@@ -2138,9 +2262,13 @@ function ResourceManagerView({
   onCreateFeed,
   onSyncFeed,
   onDeleteFeed,
+  onImportBilibiliAccount,
+  onDisconnectBilibiliAccount,
 }: {
   items: LibraryItemRecord[]
   feeds: ExternalFeed[]
+  bilibiliAccount: BilibiliAccountStatus
+  operatorUsername: string
   busy: boolean
   onScan: () => Promise<{ discovered: number; skipped: number; failed: number }>
   onImport: (payload: LocalImportDraft) => Promise<LibraryItemRecord>
@@ -2150,6 +2278,8 @@ function ResourceManagerView({
   onCreateFeed: (payload: ExternalFeedDraft) => Promise<ExternalFeed>
   onSyncFeed: (id: string) => Promise<ExternalFeed>
   onDeleteFeed: (id: string) => Promise<void>
+  onImportBilibiliAccount: (browser: 'edge' | 'chrome' | 'firefox', credentials: AdultCredentials) => Promise<BilibiliAccountStatus>
+  onDisconnectBilibiliAccount: (credentials: AdultCredentials) => Promise<BilibiliAccountStatus>
 }) {
   const [tab, setTab] = useState<'local' | 'online' | 'feeds'>('local')
   const [scanMessage, setScanMessage] = useState('')
@@ -2186,6 +2316,46 @@ function ResourceManagerView({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [actionBusy, setActionBusy] = useState<'scan' | 'local' | 'online' | 'feed' | null>(null)
+  const [bilibiliBrowser, setBilibiliBrowser] = useState<'edge' | 'chrome' | 'firefox'>('edge')
+  const [bilibiliUsername, setBilibiliUsername] = useState(operatorUsername)
+  const [bilibiliPassword, setBilibiliPassword] = useState('')
+  const [bilibiliMessage, setBilibiliMessage] = useState('')
+  const [bilibiliBusy, setBilibiliBusy] = useState(false)
+
+  const importBilibili = async () => {
+    if (!bilibiliUsername.trim() || bilibiliPassword.length < 6) {
+      setBilibiliMessage('请先填写成人 Lumi 账户和密码')
+      return
+    }
+    setBilibiliBusy(true)
+    setBilibiliMessage('')
+    try {
+      await onImportBilibiliAccount(bilibiliBrowser, { username: bilibiliUsername.trim(), password: bilibiliPassword })
+      setBilibiliPassword('')
+      setBilibiliMessage('B站登录状态已连接，播放时会按账号权限取流')
+    } catch (error) {
+      setBilibiliMessage(error instanceof Error ? error.message : 'B站登录状态导入失败')
+    } finally {
+      setBilibiliBusy(false)
+    }
+  }
+
+  const disconnectBilibili = async () => {
+    if (!bilibiliUsername.trim() || bilibiliPassword.length < 6) {
+      setBilibiliMessage('请输入成人 Lumi 密码后再断开')
+      return
+    }
+    setBilibiliBusy(true)
+    try {
+      await onDisconnectBilibiliAccount({ username: bilibiliUsername.trim(), password: bilibiliPassword })
+      setBilibiliPassword('')
+      setBilibiliMessage('B站登录状态已断开')
+    } catch (error) {
+      setBilibiliMessage(error instanceof Error ? error.message : '断开失败')
+    } finally {
+      setBilibiliBusy(false)
+    }
+  }
 
   const submitLocal = async () => {
     if (!localPath.trim()) { setFormError('请输入 Server 所在电脑上的文件路径'); return }
@@ -2277,6 +2447,17 @@ function ResourceManagerView({
       </div>
       {scanMessage && <div className="connection-notice resource-notice"><CircleCheck size={16} /><span>{scanMessage}</span><button type="button" onClick={() => setScanMessage('')}>关闭</button></div>}
       {formError && <div className="inline-error resource-error" role="alert"><AlertTriangle size={14} />{formError}<IconButton label="关闭错误" onClick={() => setFormError('')}><X size={14} /></IconButton></div>}
+      {(tab === 'online' || tab === 'feeds') && <section className="panel bilibili-account-panel">
+        <div className="panel-heading"><div><span className="eyebrow">ADULT ACCOUNT GATE</span><h2>B站成人账号</h2></div><span className={'account-status ' + (bilibiliAccount.connected ? 'active' : 'suspended')}>{bilibiliAccount.connected ? `已连接 ${bilibiliAccount.accountName ?? ''}` : '未连接'}</span></div>
+        <div className="bilibili-account-grid">
+          <a className="button button-quiet small" href="https://www.bilibili.com/" target="_blank" rel="noreferrer"><ExternalLink size={14} />打开 B站登录</a>
+          <label className="ops-field compact-select"><span>登录浏览器</span><select aria-label="B站登录浏览器" value={bilibiliBrowser} onChange={(event) => setBilibiliBrowser(event.target.value as typeof bilibiliBrowser)}><option value="edge">Microsoft Edge</option><option value="chrome">Google Chrome</option><option value="firefox">Firefox</option></select></label>
+          <label className="ops-field"><span>成人 Lumi 账号</span><div><Users size={15} /><input aria-label="B站成人验证账号" value={bilibiliUsername} onChange={(event) => setBilibiliUsername(event.target.value)} autoComplete="username" /></div></label>
+          <label className="ops-field"><span>成人 Lumi 密码</span><div><LockKeyhole size={15} /><input aria-label="B站成人验证密码" type="password" value={bilibiliPassword} onChange={(event) => setBilibiliPassword(passwordCharacters(event.target.value))} inputMode="text" autoCapitalize="none" autoComplete="current-password" pattern="[A-Za-z0-9]*" /></div></label>
+        </div>
+        <div className="bilibili-account-actions"><button type="button" className="button button-primary small" disabled={bilibiliBusy} onClick={() => { void importBilibili() }}>{bilibiliBusy ? <RefreshCw className="spin" size={14} /> : <ShieldCheck size={14} />}{bilibiliBusy ? '正在验证' : '验证并连接'}</button>{bilibiliAccount.connected && <button type="button" className="button button-quiet small" disabled={bilibiliBusy} onClick={() => { void disconnectBilibili() }}><X size={14} />断开账号</button>}<span className="panel-hint">先在所选浏览器完成 B站官方登录，再回到这里导入登录状态。</span></div>
+        {bilibiliMessage && <div className="success-note">{bilibiliMessage}</div>}
+      </section>}
 
       {tab === 'local' && <>
         <section className="panel resource-form-panel">
@@ -2407,30 +2588,29 @@ export default function App() {
   const { state } = store
   const [activeNav, setActiveNav] = useState<NavKey>('explore')
   const [query, setQuery] = useState('')
+  const [videoOnly, setVideoOnly] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
   const [playback, setPlayback] = useState<{ item: ContentItem; url: string; mode: string; service?: string } | null>(null)
+  const [tetrisOpen, setTetrisOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: NoticeTone } | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateProgress, setUpdateProgress] = useState<number | null>(null)
 
+  useTvSpatialNavigation(DEVICE_PROFILE === 'tv')
+
   useEffect(() => {
     setActiveNav(state.role === 'operator' ? 'ops' : 'explore')
     setSelectedItem(null)
-  }, [state.role])
+    setTetrisOpen(false)
+  }, [state.role, store.user?.id])
 
   const items = store.catalog
 
   const visibleItems = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    if (!normalized) return items
-    return items.filter((item) =>
-      [item.title, item.subtitle, item.language, ...item.tags].some((value) =>
-        value.toLowerCase().includes(normalized),
-      ),
-    )
-  }, [items, query])
+    return items.filter((item) => (!videoOnly || item.kind === 'video') && matchesContentSearch(item, query))
+  }, [items, query, videoOnly])
 
   const notify = (message: string, tone: NoticeTone = 'success') => {
     setToast({ message, tone })
@@ -2527,6 +2707,8 @@ export default function App() {
   }
 
   const handleLaunch = (item: ContentItem) => {
+    setSelectedItem(null)
+    if (item.kind === 'video') setPlayback({ item, url: '', mode: 'loading' })
     void store.launchContent(item.id).then((result) => {
       if (result.mode === 'local_asset' && result.url) {
         setSelectedItem(null)
@@ -2543,8 +2725,21 @@ export default function App() {
         setPlayback({ item, url: '', mode: result.mode, service: result.service })
         return
       }
+      setPlayback(null)
       notify('该内容暂时没有可用的播放入口', 'info')
-    }).catch(reportError)
+    }).catch((error) => {
+      setPlayback(null)
+      reportError(error)
+    })
+  }
+
+  const handleOpenItem = (item: ContentItem) => {
+    const canLaunch = item.playable && (state.role !== 'child' || item.launchAllowed)
+    if (item.kind === 'video' && canLaunch) {
+      handleLaunch(item)
+      return
+    }
+    setSelectedItem(item)
   }
 
   if (!store.user) {
@@ -2581,35 +2776,44 @@ export default function App() {
     if (APP_EDITION === 'client' && activeNav === 'connection') {
       return <ConnectionView address={store.serverAddress} connection={store.connection} busy={store.busy} error={store.authError} onSave={store.configureHost} onRetry={store.retryConnection} />
     }
+    if (query || videoOnly) {
+      return <SearchResults items={visibleItems} query={query} videoOnly={videoOnly} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+    }
+    if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
+      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} />
+    }
+    if (activeNav === 'poster-wall' && state.role === 'guardian') {
+      return <PosterWall items={items} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+    }
     if (state.role === 'child' && (activeNav === 'explore' || activeNav === 'library' || activeNav === 'progress')) {
       if (activeNav === 'library') {
-        return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={setSelectedItem} onFavorite={handleFavorite} />
+        return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       }
       if (activeNav === 'progress') {
         return <ProgressView displayName={currentUser.displayName} completedCount={state.completed.length} activeMinutes={state.activeMinutes} />
       }
-      return <ChildDashboard displayName={currentUser.displayName} items={visibleItems} favoriteIds={state.favorites} completedIds={state.completed} onOpen={setSelectedItem} onFavorite={handleFavorite} />
+      return <ChildDashboard displayName={currentUser.displayName} items={visibleItems} favoriteIds={state.favorites} completedIds={state.completed} onOpen={handleOpenItem} onFavorite={handleFavorite} />
     }
     if (state.role === 'guardian') {
-      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={setSelectedItem} onFavorite={handleFavorite} />
-      return <GuardianDashboard displayName={currentUser.displayName} items={visibleItems} requests={state.requests} submissions={state.submissions} onDecision={(id, status) => { void store.decideRequest(id, status).then(() => notify(status === 'approved' ? '已批准，孩子下次打开就能看到' : '已拒绝，并保留了这次决定', status === 'approved' ? 'success' : 'info')).catch(reportError) }} onOpen={setSelectedItem} onAddSubmission={handleSubmission} onTransfer={(id) => { void store.updateSubmission(id, 'transferred').then(() => notify('已记录转存，夜间 Worker 会在隔离区扫描')).catch(reportError) }} focus={activeNav} />
+      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+      return <GuardianDashboard displayName={currentUser.displayName} items={visibleItems} requests={state.requests} submissions={state.submissions} onDecision={(id, status) => { void store.decideRequest(id, status).then(() => notify(status === 'approved' ? '已批准，孩子下次打开就能看到' : '已拒绝，并保留了这次决定', status === 'approved' ? 'success' : 'info')).catch(reportError) }} onOpen={handleOpenItem} onAddSubmission={handleSubmission} onTransfer={(id) => { void store.updateSubmission(id, 'transferred').then(() => notify('已记录转存，夜间 Worker 会在隔离区扫描')).catch(reportError) }} focus={activeNav} />
     }
     if (state.role === 'operator') {
-      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={setSelectedItem} onFavorite={handleFavorite} />
+      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       if (activeNav === 'accounts') return <AccountManagementView registrations={store.registrations} users={store.managedUsers} onDecision={(id, decision) => { void store.decideRegistration(id, decision).then(() => notify(decision === 'approved' ? '账户已批准并可登录' : '注册申请已拒绝', decision === 'approved' ? 'success' : 'info')).catch(reportError) }} onStatus={(id, status) => { void store.updateManagedUser(id, status).then(() => notify(status === 'active' ? '账户已恢复' : '账户已停用')).catch(reportError) }} />
-      if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} />
+      if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} bilibiliAccount={store.bilibiliAccount} operatorUsername={currentUser.username} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} onImportBilibiliAccount={store.importBilibiliAccount} onDisconnectBilibiliAccount={store.disconnectBilibiliAccount} />
       if (activeNav === 'settings') return <StorageSettingsView paths={store.storagePaths} busy={store.busy} onSave={store.saveStoragePaths} />
-      return <OperatorDashboard jobs={state.jobs} submissions={state.submissions} sources={store.sources} assets={store.assets} systemStatus={store.systemStatus} downloadsPaused={store.downloadsPaused} onJob={(id, status) => { void store.updateJob(id, status).then(() => notify(status === 'paused' ? '任务已暂停' : '任务已重新排队')).catch(reportError) }} onPauseAll={() => { void store.pauseAll().then(() => notify('所有下载任务已暂停', 'warning')).catch(reportError) }} onResumeAll={() => { void store.resumeAll().then(() => notify('下载队列已恢复')).catch(reportError) }} onSync={() => { void store.syncNow().then(() => notify('同步完成，隔离区清单已刷新', 'info')).catch(reportError) }} onQueueBilibili={async (payload) => { await store.queueBilibili(payload); notify(payload.startNow ? 'B站任务已创建，将立即处理' : 'B站任务已加入夜间队列') }} onReviewAsset={async (id, payload) => { await store.reviewAsset(id, payload); notify('资源已审核入库，Client 刷新后即可访问') }} onOpen={setSelectedItem} focus={activeNav} />
+      return <OperatorDashboard jobs={state.jobs} submissions={state.submissions} sources={store.sources} assets={store.assets} systemStatus={store.systemStatus} downloadsPaused={store.downloadsPaused} onJob={(id, status) => { void store.updateJob(id, status).then(() => notify(status === 'paused' ? '任务已暂停' : '任务已重新排队')).catch(reportError) }} onPauseAll={() => { void store.pauseAll().then(() => notify('所有下载任务已暂停', 'warning')).catch(reportError) }} onResumeAll={() => { void store.resumeAll().then(() => notify('下载队列已恢复')).catch(reportError) }} onSync={() => { void store.syncNow().then(() => notify('同步完成，隔离区清单已刷新', 'info')).catch(reportError) }} onQueueBilibili={async (payload) => { await store.queueBilibili(payload); notify(payload.startNow ? 'B站任务已创建，将立即处理' : 'B站任务已加入夜间队列') }} onReviewAsset={async (id, payload) => { await store.reviewAsset(id, payload); notify('资源已审核入库，Client 刷新后即可访问') }} onOpen={handleOpenItem} focus={activeNav} />
     }
     return null
   }
 
   return (
     <div className={'app-shell role-' + state.role}>
-      <Sidebar user={currentUser} connection={store.connection} activeNav={activeNav} onNav={setActiveNav} onLogout={() => { void store.logout() }} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} navCounts={navCounts} />
+      <Sidebar user={currentUser} connection={store.connection} activeNav={activeNav} onNav={(next) => { setActiveNav(next); if (next === 'games' || next === 'poster-wall') { setQuery(''); setVideoOnly(false) } }} onLogout={() => { void store.logout() }} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} navCounts={navCounts} />
       {mobileOpen && <button type="button" className="sidebar-scrim" aria-label="关闭导航" onClick={() => setMobileOpen(false)} />}
       <main className="main-shell">
-        <Topbar user={currentUser} query={query} onQuery={setQuery} onMenu={() => setMobileOpen(true)} onLogout={() => { void store.logout() }} onCheckUpdate={() => { void handleCheckUpdate() }} updateBusy={updateBusy} />
+        <Topbar user={currentUser} query={query} onQuery={setQuery} videoOnly={videoOnly} onVideoOnly={setVideoOnly} onMenu={() => setMobileOpen(true)} onLogout={() => { void store.logout() }} onCheckUpdate={() => { void handleCheckUpdate() }} updateBusy={updateBusy} />
         <div className="main-scroll">
           {availableUpdate && (
             <UpdateBanner update={availableUpdate} busy={updateBusy} progress={updateProgress} onInstall={() => { void handleInstallUpdate() }} onClose={() => setAvailableUpdate(null)} />
@@ -2621,11 +2825,11 @@ export default function App() {
               <button type="button" onClick={() => { void store.retryConnection().catch(reportError) }}>重新连接</button>
             </div>
           )}
-          {query && (
+          {(query || videoOnly) && (
             <div className="search-context">
               <span>搜索结果</span>
-              <strong>{visibleItems.length} 个内容</strong>
-              <button type="button" onClick={() => setQuery('')}>清除</button>
+              <strong>{visibleItems.length} 个内容{videoOnly ? ' · 仅视频' : ''}</strong>
+              <button type="button" onClick={() => { setQuery(''); setVideoOnly(false) }}>清除</button>
             </div>
           )}
           {renderDashboard()}
@@ -2645,6 +2849,7 @@ export default function App() {
         />
       )}
       {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={() => setPlayback(null)} />}
+      {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   )

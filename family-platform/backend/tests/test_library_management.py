@@ -103,6 +103,7 @@ def test_bilibili_item_can_be_saved_when_metadata_is_temporarily_unavailable(
         raise ExternalCatalogError("bilibili_metadata_failed")
 
     monkeypatch.setattr(familyhub_main, "extract_bilibili_entries", unavailable)
+    monkeypatch.setattr(familyhub_main, "fetch_bilibili_public_metadata", unavailable)
     operator = login(client, "operator")
     created = client.post(
         "/api/v1/ops/library/external",
@@ -173,12 +174,32 @@ def test_bilibili_favorite_feed_syncs_metadata_without_downloading(
     catalog = client.get("/api/v1/catalog/curated", headers=guardian).json()
     item = next(entry for entry in catalog if entry["title"] == "适合儿童的自然观察")
     assert item["provider"] == "bilibili"
-    assert item["playback_mode"] == "embed"
+    assert item["playback_mode"] == "direct_stream"
     assert item["cover_ref"] == "https://i0.hdslb.com/example.jpg"
+    monkeypatch.setattr(
+        familyhub_main,
+        "resolve_bilibili_playback",
+        lambda *_args, **_kwargs: external.BilibiliPlayback(
+            video_url="https://media.example/video.m4s",
+            video_headers={},
+            audio_url="https://media.example/audio.m4s",
+            audio_headers={},
+            quality_label="1080P",
+        ),
+    )
+
+    class FakeHlsManager:
+        def prepare(self, _content_id, playback):
+            return type("PreparedStream", (), {"quality": playback.quality_label})()
+
+        def close(self):
+            return None
+
+    client.app.state.bilibili_hls = FakeHlsManager()
     launch = client.post(f"/api/v1/catalog/{item['id']}/launch", headers=guardian)
     assert launch.status_code == 200
-    assert launch.json()["mode"] == "embed"
-    assert "BV18T3G6jEVM" in launch.json()["url"]
+    assert launch.json()["mode"] == "direct_stream"
+    assert launch.json()["url"].startswith(f"/api/v1/online/{item['id']}/index.m3u8?ticket=")
 
     removed = client.delete(f"/api/v1/ops/external-feeds/{feed.json()['id']}", headers=operator)
     assert removed.status_code == 204

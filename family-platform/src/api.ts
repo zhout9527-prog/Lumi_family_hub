@@ -3,6 +3,9 @@ import type {
   AssetRecord,
   AssetReviewDraft,
   BilibiliDownloadDraft,
+  AdultCredentials,
+  BilibiliAccountStatus,
+  BilibiliInteractions,
   CloudSubmission,
   ContentItem,
   ContentRequest,
@@ -23,6 +26,7 @@ import type {
   SourceRecord,
   StoragePaths,
   SystemStatus,
+  PlaybackResult,
 } from './types'
 import { APP_EDITION } from './edition'
 
@@ -350,6 +354,14 @@ interface ApiExternalFeed {
   last_error?: string | null
 }
 
+interface ApiBilibiliAccountStatus {
+  connected: boolean
+  account_name?: string | null
+  vip: boolean
+  browser?: 'edge' | 'chrome' | 'firefox' | null
+  updated_at?: string | null
+}
+
 export interface BootstrapPayload {
   user: ApiUser
   catalog: ApiContent[]
@@ -365,6 +377,7 @@ export interface BootstrapPayload {
   library_items?: ApiLibraryItem[]
   storage_paths?: ApiStoragePaths
   external_feeds?: ApiExternalFeed[]
+  bilibili_account?: ApiBilibiliAccountStatus
 }
 
 export interface HealthPayload {
@@ -848,13 +861,59 @@ export async function reviewAssetApi(id: string, payload: AssetReviewDraft): Pro
   })
 }
 
-export async function launchContentApi(id: string): Promise<{ mode: string; url?: string; service?: string; expires_at?: string }> {
-  const result = await apiRequest<{ mode: string; url?: string; service?: string; expires_at?: string }>(
+export async function launchContentApi(id: string): Promise<PlaybackResult> {
+  const result = await apiRequest<{ mode: string; url?: string; service?: string; quality?: string; expires_at?: string }>(
     `/catalog/${encodeURIComponent(id)}/launch`,
     { method: 'POST' },
+    { timeoutMs: 60000 },
   )
   if (result.url?.startsWith('/')) result.url = apiBaseOrigin() + result.url
-  return result
+  return { ...result, expiresAt: result.expires_at }
+}
+
+export function mapBilibiliAccount(item?: ApiBilibiliAccountStatus): BilibiliAccountStatus {
+  return {
+    connected: Boolean(item?.connected),
+    accountName: item?.account_name ?? undefined,
+    vip: Boolean(item?.vip),
+    browser: item?.browser ?? undefined,
+    updatedAt: item?.updated_at ?? undefined,
+  }
+}
+
+function adultCredentialBody(credentials: AdultCredentials) {
+  return { username: credentials.username, password: credentials.password }
+}
+
+export async function verifyBilibiliAdultApi(credentials: AdultCredentials): Promise<string> {
+  const result = await apiRequest<{ message: string }>('/ops/bilibili-account/verify', {
+    method: 'POST',
+    body: JSON.stringify(adultCredentialBody(credentials)),
+  })
+  return result.message
+}
+
+export async function importBilibiliAccountApi(
+  browser: 'edge' | 'chrome' | 'firefox',
+  credentials: AdultCredentials,
+): Promise<BilibiliAccountStatus> {
+  const result = await apiRequest<ApiBilibiliAccountStatus>('/ops/bilibili-account/import', {
+    method: 'POST',
+    body: JSON.stringify({ ...adultCredentialBody(credentials), browser }),
+  }, { timeoutMs: 60000 })
+  return mapBilibiliAccount(result)
+}
+
+export async function disconnectBilibiliAccountApi(credentials: AdultCredentials): Promise<BilibiliAccountStatus> {
+  const result = await apiRequest<ApiBilibiliAccountStatus>('/ops/bilibili-account/disconnect', {
+    method: 'POST',
+    body: JSON.stringify(adultCredentialBody(credentials)),
+  })
+  return mapBilibiliAccount(result)
+}
+
+export async function contentInteractionsApi(id: string): Promise<BilibiliInteractions> {
+  return apiRequest<BilibiliInteractions>(`/catalog/${encodeURIComponent(id)}/interactions`, {}, { timeoutMs: 45000 })
 }
 
 export async function pauseAllApi(): Promise<void> {

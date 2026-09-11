@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .audit import add_audit
 from .bilibili import BILIBILI_SOURCE_ID, download_bilibili_to_quarantine
+from .bilibili_account import active_bilibili_cookie_file
 from .config import Settings
 from .database import Base, build_engine, build_session_factory
 from .download import DownloadRejected, download_to_quarantine, read_manifest, redact_manifest
@@ -228,6 +229,7 @@ class FamilyWorker:
         job.progress = 1
         db.commit()
         provider = "direct_http"
+        cover_path: Path | None = None
         if connector == "bilibili":
             if source.id != BILIBILI_SOURCE_ID:
                 raise DownloadRejected("bilibili_source_invalid")
@@ -256,9 +258,11 @@ class FamilyWorker:
                 job_id=job.id,
                 max_bytes=self.settings.max_asset_bytes,
                 max_height=int(manifest.get("max_height", 1080)),
+                cookie_file=active_bilibili_cookie_file(self.settings),
                 progress=report_progress,
             )
             path = result.path
+            cover_path = result.cover_path
             checksum = result.checksum
             size = result.size_bytes
             job.title = result.title
@@ -277,6 +281,8 @@ class FamilyWorker:
         expected = manifest.get("expected_sha256")
         if expected and checksum.lower() != str(expected).lower():
             path.unlink(missing_ok=True)
+            if cover_path is not None:
+                cover_path.unlink(missing_ok=True)
             raise DownloadRejected("checksum_mismatch")
         result = scan_file(
             path,

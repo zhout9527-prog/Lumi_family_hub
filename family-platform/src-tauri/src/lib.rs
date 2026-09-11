@@ -4,17 +4,90 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
     process::{Child, Command},
-    sync::Mutex,
+    sync::{atomic::{AtomicBool, Ordering}, Mutex},
     time::Duration,
 };
 
 #[cfg(all(desktop, target_os = "windows"))]
 use std::os::windows::process::CommandExt;
 #[cfg(desktop)]
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg(desktop)]
 struct ServerProcess(Mutex<Option<Child>>);
+
+#[cfg(desktop)]
+struct ExitState(AtomicBool);
+
+#[cfg(desktop)]
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[cfg(desktop)]
+fn exit_application(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<ExitState>() {
+        state.0.store(true, Ordering::SeqCst);
+    }
+    app.exit(0);
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn respond_to_close(app: tauri::AppHandle, action: String) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不可用".to_string())?;
+    match action.as_str() {
+        "exit" => exit_application(&app),
+        "minimize" => window.minimize().map_err(|error| error.to_string())?,
+        "cancel" => {}
+        _ => return Err("未知的关闭方式".to_string()),
+    }
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::{
+        menu::MenuBuilder,
+        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    };
+
+    let is_server = app.config().identifier.ends_with(".server");
+    let menu = MenuBuilder::new(app)
+        .text("show", "打开 Lumi")
+        .text("quit", "退出")
+        .build()?;
+    let mut builder = TrayIconBuilder::with_id("lumi-main")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip(if is_server { "Lumi Server 正在后台运行" } else { "Lumi Client" })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app),
+            "quit" => exit_application(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+    builder.build(app)?;
+    Ok(())
+}
 
 #[cfg(desktop)]
 fn server_core_path() -> io::Result<PathBuf> {
@@ -125,12 +198,31 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![respond_to_close])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let can_exit = app
+                    .try_state::<ExitState>()
+                    .is_some_and(|state| state.0.load(Ordering::SeqCst));
+                if can_exit {
+                    return;
+                }
+                api.prevent_close();
+                if app.config().identifier.ends_with(".server") {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.emit("lumi://close-requested", ());
+                }
+            }
+        });
 
     let app = builder
         .setup(|app| {
             #[cfg(desktop)]
             {
+                app.manage(ExitState(AtomicBool::new(false)));
                 let child = if app.config().identifier.ends_with(".server") {
                     match start_server_core(app) {
                         Ok(child) => child,
@@ -145,6 +237,7 @@ pub fn run() {
                     None
                 };
                 app.manage(ServerProcess(Mutex::new(child)));
+                install_tray(app)?;
             }
             Ok(())
         })

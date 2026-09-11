@@ -29,9 +29,9 @@ class Settings(BaseSettings):
         r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(:\d+)?$"
     )
     seed_demo: bool = True
-    demo_child_password: str = "child-demo"
-    demo_guardian_password: str = "guardian-demo"
-    demo_operator_password: str = "operator-demo"
+    demo_child_password: str = "ChildDemo2026"
+    demo_guardian_password: str = "GuardianDemo2026"
+    demo_operator_password: str = "OperatorDemo2026"
     session_hours: int = 12
     password_iterations: int = 310_000
     worker_poll_seconds: int = 30

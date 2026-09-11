@@ -91,7 +91,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/registrations",
         json={
             "username": "xiaodou",
-            "password": "XiaoDou-2026",
+            "password": "XiaoDou2026",
             "display_name": "小豆",
             "requested_role": "child",
             "child_age": 6,
@@ -106,7 +106,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/login",
         json={
             "username": "xiaodou",
-            "password": "XiaoDou-2026",
+            "password": "XiaoDou2026",
             "device_name": "pytest-client",
             "app_edition": "client",
         },
@@ -134,7 +134,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/login",
         json={
             "username": "xiaodou",
-            "password": "XiaoDou-2026",
+            "password": "XiaoDou2026",
             "device_name": "pytest-client",
             "app_edition": "client",
         },
@@ -148,7 +148,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/login",
         json={
             "username": "xiaodou",
-            "password": "XiaoDou-2026",
+            "password": "XiaoDou2026",
             "device_name": "pytest-server",
             "app_edition": "server",
         },
@@ -158,7 +158,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/login",
         json={
             "username": "operator-demo",
-            "password": "operator-demo",
+            "password": "OperatorDemo2026",
             "device_name": "pytest-client",
             "app_edition": "client",
         },
@@ -191,7 +191,7 @@ def test_registration_requires_operator_approval_and_respects_app_edition(client
         "/api/v1/auth/login",
         json={
             "username": "xiaodou",
-            "password": "XiaoDou-2026",
+            "password": "XiaoDou2026",
             "device_name": "pytest-client",
             "app_edition": "client",
         },
@@ -211,7 +211,7 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
             "/api/v1/auth/operator-setup",
             json={
                 "username": "home-admin",
-                "password": "Strong-Home-Password",
+                "password": "StrongHomePassword2026",
                 "display_name": "家庭管理员",
                 "recovery_question": "我的结婚纪念日是什么时候？",
                 "recovery_answer": "2020-05-20",
@@ -224,7 +224,7 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
             "/api/v1/auth/operator-setup",
             json={
                 "username": "another-admin",
-                "password": "Another-Strong-Password",
+                "password": "AnotherStrongPassword2026",
                 "display_name": "另一个管理员",
                 "recovery_question": "我最喜欢的城市是哪里？",
                 "recovery_answer": "杭州",
@@ -235,7 +235,7 @@ def test_fresh_server_operator_setup_is_local_and_one_time(settings) -> None:
             "/api/v1/auth/login",
             json={
                 "username": "home-admin",
-                "password": "Strong-Home-Password",
+                "password": "StrongHomePassword2026",
                 "device_name": "pytest-server",
                 "app_edition": "server",
             },
@@ -248,7 +248,7 @@ def test_local_operator_registration_and_password_recovery(client: TestClient) -
         "/api/v1/auth/operators",
         json={
             "username": "second-admin",
-            "password": "Second-Admin-Password",
+            "password": "SecondAdminPassword2026",
             "display_name": "备用管理员",
             "recovery_question": "我的结婚纪念日是什么时候？",
             "recovery_answer": "2020年05月20日",
@@ -273,7 +273,7 @@ def test_local_operator_registration_and_password_recovery(client: TestClient) -
         json={
             "username": "second-admin",
             "recovery_answer": "错误答案",
-            "new_password": "Changed-Admin-Password",
+            "new_password": "ChangedAdminPassword2026",
         },
     )
     assert wrong.status_code == 401
@@ -283,7 +283,7 @@ def test_local_operator_registration_and_password_recovery(client: TestClient) -
         json={
             "username": "second-admin",
             "recovery_answer": "2020/05/20",
-            "new_password": "Changed-Admin-Password",
+            "new_password": "ChangedAdminPassword2026",
         },
     )
     assert recovered.status_code == 200, recovered.text
@@ -293,7 +293,7 @@ def test_local_operator_registration_and_password_recovery(client: TestClient) -
         "/api/v1/auth/login",
         json={
             "username": "second-admin",
-            "password": "Second-Admin-Password",
+            "password": "SecondAdminPassword2026",
             "device_name": "pytest-server",
             "app_edition": "server",
         },
@@ -303,7 +303,7 @@ def test_local_operator_registration_and_password_recovery(client: TestClient) -
         "/api/v1/auth/login",
         json={
             "username": "second-admin",
-            "password": "Changed-Admin-Password",
+            "password": "ChangedAdminPassword2026",
             "device_name": "pytest-server",
             "app_edition": "server",
         },
@@ -320,7 +320,7 @@ def test_legacy_operator_can_initialize_recovery_and_legacy_hash_upgrades(client
     with client.app.state.session_factory() as db:
         operator = db.scalar(select(User).where(User.username == "operator-demo"))
         assert operator is not None
-        legacy_salt, versioned_hash = hash_password("operator-demo", 200_000)
+        legacy_salt, versioned_hash = hash_password("OperatorDemo2026", 200_000)
         operator.password_salt = legacy_salt
         operator.password_hash = versioned_hash.rsplit("$", 1)[-1]
         db.commit()
@@ -329,7 +329,7 @@ def test_legacy_operator_can_initialize_recovery_and_legacy_hash_upgrades(client
         "/api/v1/auth/login",
         json={
             "username": "operator-demo",
-            "password": "operator-demo",
+            "password": "OperatorDemo2026",
             "device_name": "pytest-server",
             "app_edition": "server",
         },
@@ -355,7 +355,7 @@ def test_legacy_operator_can_initialize_recovery_and_legacy_hash_upgrades(client
             "username": "operator-demo",
             "recovery_question": "我小时候居住的城市是哪里？",
             "recovery_answer": "南京",
-            "new_password": "Recovered-Operator-Password",
+            "new_password": "RecoveredOperatorPassword2026",
         },
     )
     assert reset.status_code == 200, reset.text
@@ -363,9 +363,50 @@ def test_legacy_operator_can_initialize_recovery_and_legacy_hash_upgrades(client
         "/api/v1/auth/login",
         json={
             "username": "operator-demo",
-            "password": "Recovered-Operator-Password",
+            "password": "RecoveredOperatorPassword2026",
             "device_name": "pytest-server",
             "app_edition": "server",
         },
     )
     assert relogin.status_code == 200
+
+
+def test_bilibili_account_management_requires_adult_reverification(client: TestClient) -> None:
+    operator = login(client, "operator")
+    guardian = login(client, "guardian")
+    child = login(client, "child")
+
+    status_response = client.get("/api/v1/ops/bilibili-account", headers=operator)
+    assert status_response.status_code == 200
+    assert status_response.json()["connected"] is False
+
+    verified = client.post(
+        "/api/v1/ops/bilibili-account/verify",
+        headers=operator,
+        json={"username": "guardian-demo", "password": "GuardianDemo2026"},
+    )
+    assert verified.status_code == 200, verified.text
+
+    child_account = client.post(
+        "/api/v1/ops/bilibili-account/verify",
+        headers=operator,
+        json={"username": "child-demo", "password": "ChildDemo2026"},
+    )
+    assert child_account.status_code == 401
+
+    wrong_password = client.post(
+        "/api/v1/ops/bilibili-account/verify",
+        headers=operator,
+        json={"username": "guardian-demo", "password": "WrongPassword2026"},
+    )
+    assert wrong_password.status_code == 401
+
+    invalid_characters = client.post(
+        "/api/v1/ops/bilibili-account/verify",
+        headers=operator,
+        json={"username": "guardian-demo", "password": "Guardian!2026"},
+    )
+    assert invalid_characters.status_code == 422
+
+    assert client.get("/api/v1/ops/bilibili-account", headers=guardian).status_code == 403
+    assert client.get("/api/v1/ops/bilibili-account", headers=child).status_code == 403

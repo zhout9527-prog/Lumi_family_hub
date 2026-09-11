@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import ModuleType
+import sys
 
 from fastapi.testclient import TestClient
 
+from familyhub import bilibili
 from familyhub.bilibili import _download_error_code, normalize_bilibili_url
 
 from .conftest import login
@@ -37,6 +41,63 @@ def test_bilibili_download_errors_are_presented_as_actionable_codes() -> None:
     assert _download_error_code("HTTP Error 412: Precondition Failed") == "bilibili_access_limited"
     assert _download_error_code("Unable to download webpage: WinError 10061 connection refused") == "bilibili_network_error"
     assert _download_error_code("This video is only available for registered users") == "bilibili_login_required"
+
+
+def test_bilibili_download_keeps_original_thumbnail(tmp_path: Path, monkeypatch) -> None:
+    class FakeDownloadError(Exception):
+        pass
+
+    class FakeYoutubeDL:
+        def __init__(self, options: dict) -> None:
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def extract_info(self, _url: str, *, download: bool) -> dict:
+            assert download is True
+            assert self.options["writethumbnail"] is True
+            output_dir = Path(self.options["outtmpl"]).parent
+            (output_dir / "BV18T3G6jEVM.mp4").write_bytes(b"video-content")
+            (output_dir / "BV18T3G6jEVM.webp").write_bytes(b"RIFF" + b"original-thumbnail")
+            return {
+                "id": "BV18T3G6jEVM",
+                "title": "千与千寻",
+                "duration": 125,
+                "webpage_url": "https://www.bilibili.com/video/BV18T3G6jEVM",
+            }
+
+    package = ModuleType("yt_dlp")
+    package.YoutubeDL = FakeYoutubeDL
+    utils = ModuleType("yt_dlp.utils")
+    utils.DownloadError = FakeDownloadError
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+    monkeypatch.setitem(sys.modules, "yt_dlp.utils", utils)
+    monkeypatch.setattr(bilibili, "_ffmpeg_executable", lambda: "ffmpeg")
+
+    result = bilibili.download_bilibili_to_quarantine(
+        url="https://www.bilibili.com/video/BV18T3G6jEVM",
+        destination_dir=tmp_path,
+        job_id="a" * 32,
+        max_bytes=1024,
+        max_height=720,
+    )
+
+    assert result.path.read_bytes() == b"video-content"
+    assert result.cover_path is not None
+    assert result.cover_path.name == f"{'a' * 32}--cover.webp"
+    assert result.cover_path.read_bytes() == b"RIFF" + b"original-thumbnail"
+
+    legacy_cover = bilibili.download_bilibili_cover(
+        url="https://www.bilibili.com/video/BV18T3G6jEVM",
+        destination_dir=tmp_path,
+        content_id="b" * 32,
+    )
+    assert legacy_cover.name == f"{'b' * 32}--cover.webp"
+    assert legacy_cover.read_bytes() == b"RIFF" + b"original-thumbnail"
 
 
 def test_operator_can_queue_bilibili_job_without_leaking_url(client: TestClient) -> None:

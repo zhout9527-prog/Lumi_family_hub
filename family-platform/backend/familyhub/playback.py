@@ -5,6 +5,7 @@ import secrets
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from .models import utcnow
 
@@ -14,6 +15,7 @@ class PlaybackGrant:
     user_id: str
     content_id: str
     expires_at: datetime
+    metadata: dict[str, Any]
 
 
 class PlaybackTickets:
@@ -24,9 +26,20 @@ class PlaybackTickets:
         self._grants: dict[str, PlaybackGrant] = {}
         self._lock = threading.Lock()
 
-    def issue(self, *, user_id: str, content_id: str) -> tuple[str, PlaybackGrant]:
+    def issue(
+        self,
+        *,
+        user_id: str,
+        content_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[str, PlaybackGrant]:
         raw = secrets.token_urlsafe(32)
-        grant = PlaybackGrant(user_id=user_id, content_id=content_id, expires_at=utcnow() + self.lifetime)
+        grant = PlaybackGrant(
+            user_id=user_id,
+            content_id=content_id,
+            expires_at=utcnow() + self.lifetime,
+            metadata=dict(metadata or {}),
+        )
         with self._lock:
             self._remove_expired()
             self._grants[self._digest(raw)] = grant

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -9,10 +10,35 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .file_safety import is_within, safe_filename
+from .file_safety import is_within, safe_filename, scan_file
 from .library import CONTENT_STORAGE_KEYS, load_storage_paths
 from .models import CloudInboxAsset, ContentAsset, ContentItem, DownloadJob, User, new_id, utcnow
 from .schemas import AssetReviewIn
+
+
+_COVER_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
+
+
+def _pending_cover_path(asset: CloudInboxAsset, source_path: Path) -> Path | None:
+    if not asset.inbound_ref.startswith("download-job:"):
+        return None
+    job_id = asset.inbound_ref.removeprefix("download-job:")
+    if not re.fullmatch(r"[0-9a-zA-Z-]{1,80}", job_id):
+        return None
+    candidates = [
+        path
+        for path in source_path.parent.glob(f"{job_id}--cover.*")
+        if path.is_file()
+        and not path.is_symlink()
+        and path.suffix.lower() in _COVER_SUFFIXES
+        and is_within(path, source_path.parent)
+    ]
+    valid = [
+        path
+        for path in candidates
+        if scan_file(path, max_bytes=12 * 1024 * 1024, use_defender=False).status != "blocked"
+    ]
+    return max(valid, key=lambda path: path.stat().st_size) if valid else None
 
 
 def apply_asset_review(
@@ -59,6 +85,21 @@ def apply_asset_review(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="正式库目标路径无效")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, destination)
+    pending_cover = _pending_cover_path(asset, source_path)
+    cover_ref: str | None = None
+    if pending_cover is not None:
+        cover_root = storage_paths["image"]
+        cover_destination = (cover_root / f"{content_id}--cover{pending_cover.suffix.lower()}").resolve()
+        if not is_within(cover_destination, cover_root):
+            destination.unlink(missing_ok=True)
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="封面目标路径无效")
+        try:
+            cover_destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(pending_cover, cover_destination)
+        except OSError as exc:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="原视频封面无法入库") from exc
+        cover_ref = f"/api/v1/artwork/{content_id}"
     item = ContentItem(
         id=content_id,
         household_id=asset.household_id,
@@ -77,6 +118,7 @@ def apply_asset_review(
         stimulation_level="reviewed",
         offline_activity="和家人分享一个印象最深的片段",
         source_id="cloud-inbox",
+        cover_ref=cover_ref,
     )
     db.add(item)
     db.flush()
@@ -100,6 +142,7 @@ def apply_asset_review(
         if job is not None:
             job.stage = "published"
             job.progress = 100
+            job.content_id = item.id
     return item
 
 

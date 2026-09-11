@@ -11,6 +11,12 @@ Role = Literal["child", "guardian", "operator"]
 ContentKind = Literal["video", "book", "audio", "game", "create", "discover"]
 
 
+def require_ascii_password(value: str) -> str:
+    if not value.isascii() or not value.isalnum():
+        raise ValueError("密码只能包含英文字母和数字")
+    return value
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,7 +35,6 @@ class LoginIn(BaseModel):
     device_name: str = Field(default="browser", max_length=120)
     app_edition: Literal["client", "server"] = "client"
 
-
 class LoginOut(ApiModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
@@ -43,6 +48,8 @@ class OperatorSetupIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     recovery_question: str = Field(min_length=4, max_length=200)
     recovery_answer: str = Field(min_length=2, max_length=256)
+
+    _password_characters = field_validator("password")(require_ascii_password)
 
     @field_validator("username")
     @classmethod
@@ -101,6 +108,8 @@ class OperatorPasswordResetIn(BaseModel):
     new_password: str = Field(min_length=10, max_length=256)
     recovery_question: str | None = Field(default=None, min_length=4, max_length=200)
 
+    _password_characters = field_validator("new_password")(require_ascii_password)
+
     @field_validator("username")
     @classmethod
     def clean_username(cls, value: str) -> str:
@@ -130,6 +139,8 @@ class RegistrationIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     requested_role: Literal["child", "guardian"]
     child_age: int | None = Field(default=None, ge=3, le=17)
+
+    _password_characters = field_validator("password")(require_ascii_password)
 
     @field_validator("username")
     @classmethod
@@ -362,6 +373,45 @@ class PlaybackOut(BaseModel):
     url: str | None = None
     service: str | None = None
     expires_at: datetime | None = None
+
+
+class AdultVerificationIn(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+    password: str = Field(min_length=6, max_length=256)
+
+    _password_characters = field_validator("password")(require_ascii_password)
+
+
+class BilibiliAccountImportIn(AdultVerificationIn):
+    browser: Literal["edge", "chrome", "firefox"]
+
+
+class BilibiliAccountStatusOut(BaseModel):
+    connected: bool
+    account_name: str | None = None
+    vip: bool = False
+    browser: str | None = None
+    updated_at: datetime | None = None
+
+
+class BilibiliCommentOut(BaseModel):
+    id: str
+    author: str
+    text: str
+    likes: int = 0
+    timestamp: int | None = None
+
+
+class BilibiliDanmakuOut(BaseModel):
+    id: str
+    time: float
+    text: str
+    color: int = 0xFFFFFF
+
+
+class BilibiliInteractionsOut(BaseModel):
+    comments: list[BilibiliCommentOut]
+    danmaku: list[BilibiliDanmakuOut]
 
 
 class StoragePathsIn(BaseModel):

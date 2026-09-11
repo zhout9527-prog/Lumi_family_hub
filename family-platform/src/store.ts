@@ -3,6 +3,7 @@ import {
   ApiError,
   bootstrapApi,
   completeItemApi,
+  disconnectBilibiliAccountApi,
   addExternalItemApi,
   confirmTransferApi,
   createRequestApi,
@@ -16,6 +17,7 @@ import {
   launchContentApi,
   logoutApi,
   mapAsset,
+  mapBilibiliAccount,
   mapContent,
   mapExternalFeed,
   mapJob,
@@ -39,6 +41,7 @@ import {
   libraryItemsApi,
   registerAccountApi,
   registerOperatorApi,
+  importBilibiliAccountApi,
   resetOperatorPasswordApi,
   resumeAllApi,
   retryJobApi,
@@ -55,6 +58,7 @@ import {
   updateManagedUserStatusApi,
   archiveLibraryItemApi,
   updateLibraryItemApi,
+  verifyBilibiliAdultApi,
   type BootstrapPayload,
 } from './api'
 import { APP_EDITION, isRoleAllowed } from './edition'
@@ -63,6 +67,8 @@ import type {
   AppState,
   AssetRecord,
   AssetReviewDraft,
+  AdultCredentials,
+  BilibiliAccountStatus,
   BilibiliDownloadDraft,
   CloudSubmission,
   ConnectionMode,
@@ -121,6 +127,7 @@ export function useFamilyStore() {
   const [libraryItems, setLibraryItems] = useState<LibraryItemRecord[]>([])
   const [storagePaths, setStoragePaths] = useState<StoragePaths | null>(null)
   const [externalFeeds, setExternalFeeds] = useState<ExternalFeed[]>([])
+  const [bilibiliAccount, setBilibiliAccount] = useState<BilibiliAccountStatus>({ connected: false, vip: false })
   const authTransition = useRef<Promise<void>>(Promise.resolve())
 
   const clearSessionState = () => {
@@ -135,6 +142,7 @@ export function useFamilyStore() {
     setLibraryItems([])
     setStoragePaths(null)
     setExternalFeeds([])
+    setBilibiliAccount({ connected: false, vip: false })
     setState(defaultState)
   }
 
@@ -156,6 +164,7 @@ export function useFamilyStore() {
     setLibraryItems((payload.library_items ?? []).map(mapLibraryItem))
     setStoragePaths(payload.storage_paths ? mapStoragePaths(payload.storage_paths) : null)
     setExternalFeeds((payload.external_feeds ?? []).map(mapExternalFeed))
+    setBilibiliAccount(mapBilibiliAccount(payload.bilibili_account))
     setDownloadsPaused(payload.downloads_paused)
     setState({
       role: mappedUser.role,
@@ -633,6 +642,22 @@ export function useFamilyStore() {
     setExternalFeeds((current) => current.filter((candidate) => candidate.id !== id))
   }
 
+  const importBilibiliAccount = async (
+    browser: 'edge' | 'chrome' | 'firefox',
+    credentials: AdultCredentials,
+  ) => {
+    await verifyBilibiliAdultApi(credentials)
+    const status = await importBilibiliAccountApi(browser, credentials)
+    setBilibiliAccount(status)
+    return status
+  }
+
+  const disconnectBilibiliAccount = async (credentials: AdultCredentials) => {
+    const status = await disconnectBilibiliAccountApi(credentials)
+    setBilibiliAccount(status)
+    return status
+  }
+
   return {
     state,
     catalog,
@@ -651,6 +676,7 @@ export function useFamilyStore() {
     libraryItems,
     storagePaths,
     externalFeeds,
+    bilibiliAccount,
     login,
     logout,
     registerAccount,
@@ -686,6 +712,8 @@ export function useFamilyStore() {
     createExternalFeed,
     syncExternalFeed,
     deleteExternalFeed,
+    importBilibiliAccount,
+    disconnectBilibiliAccount,
     clearAuthError: () => setAuthError(''),
   }
 }

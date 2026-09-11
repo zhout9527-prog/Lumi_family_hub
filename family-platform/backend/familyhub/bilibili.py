@@ -9,13 +9,22 @@ from typing import Callable
 from urllib.parse import urlparse, urlunparse
 
 from .download import DownloadRejected
-from .file_safety import safe_filename, sha256_file
+from .file_safety import safe_filename, scan_file, sha256_file
 
 
 BILIBILI_SOURCE_ID = "bilibili-public"
 _BVID_PATTERN = re.compile(r"(?<![0-9A-Za-z])(BV[0-9A-Za-z]{10})(?![0-9A-Za-z])")
 _ALLOWED_HOSTS = {"www.bilibili.com", "m.bilibili.com", "bilibili.com", "b23.tv"}
 _MEDIA_SUFFIXES = {".m4a", ".mkv", ".mp4", ".mov", ".webm"}
+_IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
+_MAX_THUMBNAIL_BYTES = 12 * 1024 * 1024
+
+
+def _valid_thumbnail(path: Path) -> bool:
+    try:
+        return scan_file(path, max_bytes=_MAX_THUMBNAIL_BYTES, use_defender=False).status != "blocked"
+    except OSError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -27,6 +36,7 @@ class BilibiliReference:
 @dataclass(frozen=True)
 class BilibiliDownloadResult:
     path: Path
+    cover_path: Path | None
     checksum: str
     size_bytes: int
     mime_type: str
@@ -110,9 +120,10 @@ def download_bilibili_to_quarantine(
     job_id: str,
     max_bytes: int,
     max_height: int,
+    cookie_file: Path | None = None,
     progress: Callable[[int, int | None], None] | None = None,
 ) -> BilibiliDownloadResult:
-    """Download one public video without cookies, account data, or DRM bypasses."""
+    """下载单个家庭管理员确认有权保存的 B 站视频。"""
 
     reference = normalize_bilibili_url(url)
     if max_height not in {480, 720, 1080}:
@@ -152,6 +163,8 @@ def download_bilibili_to_quarantine(
         ),
         "merge_output_format": "mp4",
         "outtmpl": str(work_dir / "%(id)s.%(ext)s"),
+        "writethumbnail": True,
+        "write_all_thumbnails": False,
         "ffmpeg_location": _ffmpeg_executable(),
         "noplaylist": True,
         "playlistend": 1,
@@ -176,6 +189,8 @@ def download_bilibili_to_quarantine(
         },
         "progress_hooks": [progress_hook],
     }
+    if cookie_file and cookie_file.is_file():
+        options["cookiefile"] = str(cookie_file)
 
     try:
         with YoutubeDL(options) as downloader:
@@ -224,6 +239,18 @@ def download_bilibili_to_quarantine(
     display_name = safe_filename(f"{title} [{external_id}]{suffix}")
     final_path = destination_dir / f"{job_id}--{display_name}"
     downloaded_path.replace(final_path)
+    cover_candidates = [
+        path
+        for path in work_dir.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in _IMAGE_SUFFIXES
+        and _valid_thumbnail(path)
+    ]
+    cover_path: Path | None = None
+    if cover_candidates:
+        downloaded_cover = max(cover_candidates, key=lambda path: path.stat().st_size)
+        cover_path = destination_dir / f"{job_id}--cover{downloaded_cover.suffix.lower()}"
+        downloaded_cover.replace(cover_path)
     checksum = sha256_file(final_path)
     mime_type = mimetypes.guess_type(final_path.name)[0] or "video/mp4"
     duration_value = info.get("duration")
@@ -233,6 +260,7 @@ def download_bilibili_to_quarantine(
         progress(size, size)
     return BilibiliDownloadResult(
         path=final_path,
+        cover_path=cover_path,
         checksum=checksum,
         size_bytes=size,
         mime_type=mime_type,
@@ -240,3 +268,83 @@ def download_bilibili_to_quarantine(
         external_id=external_id,
         duration_seconds=duration_seconds,
     )
+
+
+def download_bilibili_cover(
+    *,
+    url: str,
+    destination_dir: Path,
+    content_id: str,
+    cookie_file: Path | None = None,
+) -> Path:
+    """只读取公开元数据并缓存原视频封面，用于兼容旧版已发布资源。"""
+
+    reference = normalize_bilibili_url(url)
+    if not re.fullmatch(r"[0-9a-f]{32}", content_id):
+        raise DownloadRejected("bilibili_content_id_invalid")
+    try:
+        from yt_dlp import YoutubeDL
+        from yt_dlp.utils import DownloadError
+    except ImportError as exc:
+        raise DownloadRejected("bilibili_engine_unavailable") from exc
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = (destination_dir / f".{content_id}-cover").resolve()
+    try:
+        work_dir.relative_to(destination_dir.resolve())
+    except ValueError as exc:
+        raise DownloadRejected("bilibili_cover_path_invalid") from exc
+    shutil.rmtree(work_dir, ignore_errors=True)
+    work_dir.mkdir(parents=True)
+    logger = _QuietLogger()
+    options = {
+        "skip_download": True,
+        "writethumbnail": True,
+        "write_all_thumbnails": False,
+        "outtmpl": str(work_dir / "%(id)s.%(ext)s"),
+        "noplaylist": True,
+        "playlistend": 1,
+        "cachedir": False,
+        "overwrites": True,
+        "socket_timeout": 25,
+        "retries": 2,
+        "quiet": True,
+        "no_warnings": True,
+        "logger": logger,
+        "http_headers": {
+            "Referer": "https://www.bilibili.com/",
+            "Origin": "https://www.bilibili.com",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+        },
+    }
+    if cookie_file and cookie_file.is_file():
+        options["cookiefile"] = str(cookie_file)
+    try:
+        with YoutubeDL(options) as downloader:
+            info = downloader.extract_info(reference.url, download=True)
+        if not isinstance(info, dict):
+            raise DownloadRejected("bilibili_metadata_missing")
+        candidates = [
+            path
+            for path in work_dir.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in _IMAGE_SUFFIXES
+            and _valid_thumbnail(path)
+        ]
+        if not candidates:
+            raise DownloadRejected("bilibili_thumbnail_missing")
+        downloaded_cover = max(candidates, key=lambda path: path.stat().st_size)
+        final_path = destination_dir / f"{content_id}--cover{downloaded_cover.suffix.lower()}"
+        downloaded_cover.replace(final_path)
+        return final_path
+    except DownloadError as exc:
+        raise DownloadRejected(_download_error_code(logger.last_error or str(exc))) from exc
+    except DownloadRejected:
+        raise
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise DownloadRejected("bilibili_thumbnail_failed") from exc
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)

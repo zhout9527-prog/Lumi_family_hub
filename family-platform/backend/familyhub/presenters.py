@@ -43,7 +43,7 @@ def present_content(
     playback_mode = (
         "local_asset"
         if local_available
-        else "embed"
+        else "direct_stream"
         if provider == "bilibili"
         else "direct_stream"
         if provider == "direct"

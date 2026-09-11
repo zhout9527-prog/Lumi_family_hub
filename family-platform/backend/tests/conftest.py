@@ -37,9 +37,9 @@ def client(settings: Settings) -> Iterator[TestClient]:
 
 def login(client: TestClient, role: str) -> dict[str, str]:
     credentials = {
-        "child": ("child-demo", "child-demo"),
-        "guardian": ("guardian-demo", "guardian-demo"),
-        "operator": ("operator-demo", "operator-demo"),
+        "child": ("child-demo", "ChildDemo2026"),
+        "guardian": ("guardian-demo", "GuardianDemo2026"),
+        "operator": ("operator-demo", "OperatorDemo2026"),
     }
     username, password = credentials[role]
     response = client.post(

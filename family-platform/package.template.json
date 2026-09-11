@@ -1,7 +1,7 @@
 {
   "name": "family-platform",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.2",
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js --mode client",
@@ -35,8 +35,11 @@
   "dependencies": {
     "@vitejs/plugin-react": "4.7.0",
     "lucide-react": "0.468.0",
+    "hls.js": "1.7.2",
+    "pinyin-pro": "3.29.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-tetris": "0.4.0",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-updater": "2.11.0",
     "@tauri-apps/plugin-process": "2.3.1"

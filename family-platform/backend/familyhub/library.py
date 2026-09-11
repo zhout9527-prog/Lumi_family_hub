@@ -77,6 +77,7 @@ def load_storage_paths(db: Session, settings: Settings, *, ensure: bool = False)
             paths[key] = Path(value).expanduser().resolve()
         else:
             paths[key] = paths[key].expanduser().resolve()
+
     legacy_quarantine = settings.quarantine_dir.expanduser().resolve()
     pending_quarantine = default_storage_paths(settings)["quarantine"].expanduser().resolve()
     configured_legacy_path = (

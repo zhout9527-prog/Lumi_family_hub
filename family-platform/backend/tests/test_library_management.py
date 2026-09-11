@@ -510,3 +510,51 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
     assert client.post(f"/api/v1/ops/external-feeds/{feed.json()['id']}/sync", headers=operator).status_code == 200
     catalog = client.get("/api/v1/catalog/curated", headers=guardian).json()
     assert all(item.get("collection_id") != collection_id for item in catalog)
+
+
+def test_collection_expansion_keeps_every_episode(monkeypatch) -> None:
+    seed = ExternalEntry(
+        external_id="BV0000000001",
+        title="超长合集中的一集",
+        url="https://www.bilibili.com/video/BV0000000001",
+        cover_url=None,
+        duration_minutes=3,
+        description="",
+        uploader="测试作者",
+    )
+    episodes = tuple(
+        ExternalEntry(
+            external_id=f"BV{index:010d}",
+            title=f"第 {index} 集",
+            url=f"https://www.bilibili.com/video/BV{index:010d}",
+            cover_url=None,
+            duration_minutes=3,
+            description="",
+            uploader="测试作者",
+            collection_id="bilibili-collection-long",
+            collection_external_id="long-collection",
+            collection_title="超长合集",
+            collection_description="",
+            collection_cover_url=None,
+            collection_kind="ugc_season",
+            episode_index=index,
+            episode_count=205,
+        )
+        for index in range(1, 206)
+    )
+    collection = ExternalCollection(
+        collection_id="bilibili-collection-long",
+        external_id="long-collection",
+        title="超长合集",
+        description="",
+        cover_url=None,
+        source_url=seed.url,
+        collection_kind="ugc_season",
+        episodes=episodes,
+    )
+    monkeypatch.setattr(external, "fetch_bilibili_collection", lambda *_args, **_kwargs: collection)
+
+    expanded = external.expand_bilibili_collections([seed])
+
+    assert len(expanded) == 205
+    assert expanded[-1].episode_index == 205

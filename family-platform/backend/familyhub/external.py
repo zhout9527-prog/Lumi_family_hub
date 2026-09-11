@@ -966,7 +966,7 @@ def expand_bilibili_collections(
             collection = None
         if collection is not None and collection.collection_id not in seen_collections:
             seen_collections.add(collection.collection_id)
-            candidates = collection.episodes[:200]
+            candidates = collection.episodes
         elif collection is not None:
             candidates = ()
         else:

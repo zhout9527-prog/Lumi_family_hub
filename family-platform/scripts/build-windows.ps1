@@ -170,6 +170,7 @@ try {
       Invoke-CheckedExternalCommand "Lumi Server core build" {
         & $pythonPath -m PyInstaller `
           --noconfirm `
+          --noconsole `
           --noupx `
           --onedir `
           --name lumi-server-core `

@@ -14,6 +14,7 @@ import {
   Cloud,
   Compass,
   Download,
+  EyeOff,
   ExternalLink,
   Film,
   FolderOpen,
@@ -37,6 +38,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings2,
   ShieldCheck,
@@ -46,6 +48,7 @@ import {
   Server,
   Link2,
   Timer,
+  Trash2,
   UploadCloud,
   Users,
   Wifi,
@@ -56,7 +59,7 @@ import {
 } from 'lucide-react'
 import { APP_EDITION, PRODUCT_NAME } from './edition'
 import { useFamilyStore } from './store'
-import type { AccountRegistration, AdultCredentials, AssetRecord, AssetReviewDraft, BilibiliAccountStatus, BilibiliDownloadDraft, BilibiliInteractions, CloudSubmission, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
+import type { AccountRegistration, AdultCredentials, AssetRecord, AssetReviewDraft, BilibiliAccountStatus, BilibiliDownloadDraft, BilibiliInteractions, CloudSubmission, ContentCollection, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
 import { checkForAppUpdate, installDesktopUpdate } from './updates'
 import type { UpdateCheckResult } from './updates'
 import type { LucideIcon } from 'lucide-react'
@@ -67,7 +70,7 @@ import { TvSearchKeyboard } from './TvSearchKeyboard'
 import { VideoPlayer } from './VideoPlayer'
 import { PosterWall } from './PosterWall'
 import { GamesView, TetrisGame } from './TetrisGame'
-import { contentInteractionsApi } from './api'
+import { contentCollectionApi, contentInteractionsApi, openBilibiliLogin } from './api'
 import './styles.css'
 
 type NoticeTone = 'success' | 'info' | 'warning'
@@ -144,11 +147,13 @@ function IconButton({
   children,
   onClick,
   className = '',
+  disabled = false,
 }: {
   label: string
   children: ReactNode
   onClick?: () => void
   className?: string
+  disabled?: boolean
 }) {
   return (
     <button
@@ -157,6 +162,7 @@ function IconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </button>
@@ -1593,16 +1599,31 @@ function MediaPlayerModal({
   mode,
   service,
   onClose,
+  onSelectEpisode,
 }: {
   item: ContentItem
   url: string
   mode: string
   service?: string
   onClose: () => void
+  onSelectEpisode: (item: ContentItem) => void
 }) {
   const [interactions, setInteractions] = useState<BilibiliInteractions>({ comments: [], danmaku: [] })
   const [communityTab, setCommunityTab] = useState<'comments' | 'danmaku'>('comments')
   const [communityLoading, setCommunityLoading] = useState(item.provider === 'bilibili')
+  const [collection, setCollection] = useState<ContentCollection | null>(null)
+
+  useEffect(() => {
+    if (!item.collectionId) {
+      setCollection(null)
+      return
+    }
+    let active = true
+    void contentCollectionApi(item.id)
+      .then((result) => { if (active) setCollection(result) })
+      .catch(() => { if (active) setCollection(null) })
+    return () => { active = false }
+  }, [item.collectionId, item.id])
 
   useEffect(() => {
     if (item.provider !== 'bilibili') return
@@ -1636,6 +1657,12 @@ function MediaPlayerModal({
             <VideoPlayer item={item} url={url} profile={DEVICE_PROFILE} danmaku={interactions.danmaku} onClose={onClose} />
             {item.provider === 'bilibili' && (
               <aside className="player-community" aria-label="B站评论与弹幕">
+                {collection && <div className="player-collection">
+                  <div><strong>{collection.title}</strong><span>{collection.episodes.length} / {collection.episodeCount} 集</span></div>
+                  <div className="player-episode-list" aria-label="合集选集">
+                    {collection.episodes.map((episode) => <button type="button" key={episode.id} className={episode.id === item.id ? 'active' : ''} aria-current={episode.id === item.id ? 'true' : undefined} onClick={() => { if (episode.id !== item.id) onSelectEpisode(episode) }}><span>{episode.episodeIndex ?? '-'}</span><strong>{episode.title}</strong></button>)}
+                  </div>
+                </div>}
                 <div className="community-tabs" role="tablist">
                   <button type="button" role="tab" aria-selected={communityTab === 'comments'} className={communityTab === 'comments' ? 'active' : ''} onClick={() => setCommunityTab('comments')}>评论 {interactions.comments.length}</button>
                   <button type="button" role="tab" aria-selected={communityTab === 'danmaku'} className={communityTab === 'danmaku' ? 'active' : ''} onClick={() => setCommunityTab('danmaku')}>弹幕 {interactions.danmaku.length}</button>
@@ -2259,10 +2286,14 @@ function ResourceManagerView({
   onExternal,
   onUpdate,
   onArchive,
+  onRefreshExternal,
+  onDeleteExternal,
+  onDeleteCollection,
   onCreateFeed,
   onSyncFeed,
   onDeleteFeed,
   onImportBilibiliAccount,
+  onSwitchBilibiliAccount,
   onDisconnectBilibiliAccount,
 }: {
   items: LibraryItemRecord[]
@@ -2275,10 +2306,14 @@ function ResourceManagerView({
   onExternal: (payload: ExternalItemDraft) => Promise<LibraryItemRecord>
   onUpdate: (id: string, changes: Record<string, unknown>) => Promise<LibraryItemRecord>
   onArchive: (id: string) => Promise<LibraryItemRecord>
+  onRefreshExternal: (id: string) => Promise<LibraryItemRecord>
+  onDeleteExternal: (id: string) => Promise<void>
+  onDeleteCollection: (id: string) => Promise<void>
   onCreateFeed: (payload: ExternalFeedDraft) => Promise<ExternalFeed>
   onSyncFeed: (id: string) => Promise<ExternalFeed>
   onDeleteFeed: (id: string) => Promise<void>
   onImportBilibiliAccount: (browser: 'edge' | 'chrome' | 'firefox', credentials: AdultCredentials) => Promise<BilibiliAccountStatus>
+  onSwitchBilibiliAccount: (browser: 'edge' | 'chrome' | 'firefox', credentials: AdultCredentials) => Promise<BilibiliAccountStatus>
   onDisconnectBilibiliAccount: (credentials: AdultCredentials) => Promise<BilibiliAccountStatus>
 }) {
   const [tab, setTab] = useState<'local' | 'online' | 'feeds'>('local')
@@ -2327,12 +2362,20 @@ function ResourceManagerView({
       setBilibiliMessage('请先填写成人 Lumi 账户和密码')
       return
     }
+    const switching = bilibiliAccount.connected
+    const previousName = bilibiliAccount.accountName ?? '当前账号'
+    if (switching && !window.confirm(`确认用 ${bilibiliBrowser} 当前登录的 B站账号替换“${previousName}”？`)) return
     setBilibiliBusy(true)
     setBilibiliMessage('')
     try {
-      await onImportBilibiliAccount(bilibiliBrowser, { username: bilibiliUsername.trim(), password: bilibiliPassword })
+      const next = await (switching ? onSwitchBilibiliAccount : onImportBilibiliAccount)(
+        bilibiliBrowser,
+        { username: bilibiliUsername.trim(), password: bilibiliPassword },
+      )
       setBilibiliPassword('')
-      setBilibiliMessage('B站登录状态已连接，播放时会按账号权限取流')
+      setBilibiliMessage(switching
+        ? `B站账户已从“${previousName}”切换为“${next.accountName ?? '新账号'}”`
+        : `B站账户“${next.accountName ?? '已登录账号'}”已连接，播放时会按账号权限取流`)
     } catch (error) {
       setBilibiliMessage(error instanceof Error ? error.message : 'B站登录状态导入失败')
     } finally {
@@ -2354,6 +2397,21 @@ function ResourceManagerView({
       setBilibiliMessage(error instanceof Error ? error.message : '断开失败')
     } finally {
       setBilibiliBusy(false)
+    }
+  }
+
+  const openBilibili = async () => {
+    setBilibiliMessage('')
+    try {
+      const openedBrowser = await openBilibiliLogin(bilibiliBrowser)
+      const browserName = openedBrowser === 'default'
+        ? '系统默认浏览器'
+        : openedBrowser === 'edge' ? 'Microsoft Edge' : openedBrowser === 'chrome' ? 'Google Chrome' : 'Firefox'
+      setBilibiliMessage(bilibiliAccount.connected
+        ? `已在${browserName}打开 B站，请切换到目标账号后返回 Lumi`
+        : `已在${browserName}打开 B站，请完成登录后返回 Lumi`)
+    } catch (error) {
+      setBilibiliMessage(error instanceof Error ? error.message : '无法打开 B站登录页')
     }
   }
 
@@ -2431,7 +2489,7 @@ function ResourceManagerView({
     } finally { setActionBusy(null) }
   }
 
-  const statusLabel = (status: string) => status === 'published' ? '已发布' : status === 'archived' ? '已归档' : '草稿'
+  const statusLabel = (status: string) => status === 'published' ? '已发布' : status === 'archived' ? '已隐藏' : '未发布'
   const providerLabel = (mode: string) => mode === 'external_bilibili' ? 'B站' : mode === 'direct_stream' ? '开放直链' : mode === 'external_link' ? '第三方页面' : mode === 'local_library' ? '本地文件' : '在线资源'
 
   return (
@@ -2448,14 +2506,14 @@ function ResourceManagerView({
       {scanMessage && <div className="connection-notice resource-notice"><CircleCheck size={16} /><span>{scanMessage}</span><button type="button" onClick={() => setScanMessage('')}>关闭</button></div>}
       {formError && <div className="inline-error resource-error" role="alert"><AlertTriangle size={14} />{formError}<IconButton label="关闭错误" onClick={() => setFormError('')}><X size={14} /></IconButton></div>}
       {(tab === 'online' || tab === 'feeds') && <section className="panel bilibili-account-panel">
-        <div className="panel-heading"><div><span className="eyebrow">ADULT ACCOUNT GATE</span><h2>B站成人账号</h2></div><span className={'account-status ' + (bilibiliAccount.connected ? 'active' : 'suspended')}>{bilibiliAccount.connected ? `已连接 ${bilibiliAccount.accountName ?? ''}` : '未连接'}</span></div>
+        <div className="panel-heading"><div><span className="eyebrow">ADULT ACCOUNT GATE</span><h2>B站成人账号</h2></div><span className={'account-status ' + (bilibiliAccount.connected ? 'active' : 'suspended')}>{bilibiliAccount.connected ? `已连接 ${bilibiliAccount.accountName ?? ''}${bilibiliAccount.accountId ? ` · UID ${bilibiliAccount.accountId}` : ''}` : '未连接'}</span></div>
         <div className="bilibili-account-grid">
-          <a className="button button-quiet small" href="https://www.bilibili.com/" target="_blank" rel="noreferrer"><ExternalLink size={14} />打开 B站登录</a>
+          <button type="button" className="button button-quiet small" onClick={() => { void openBilibili() }}><ExternalLink size={14} />{bilibiliAccount.connected ? '打开 B站切换账号' : '打开 B站登录'}</button>
           <label className="ops-field compact-select"><span>登录浏览器</span><select aria-label="B站登录浏览器" value={bilibiliBrowser} onChange={(event) => setBilibiliBrowser(event.target.value as typeof bilibiliBrowser)}><option value="edge">Microsoft Edge</option><option value="chrome">Google Chrome</option><option value="firefox">Firefox</option></select></label>
           <label className="ops-field"><span>成人 Lumi 账号</span><div><Users size={15} /><input aria-label="B站成人验证账号" value={bilibiliUsername} onChange={(event) => setBilibiliUsername(event.target.value)} autoComplete="username" /></div></label>
           <label className="ops-field"><span>成人 Lumi 密码</span><div><LockKeyhole size={15} /><input aria-label="B站成人验证密码" type="password" value={bilibiliPassword} onChange={(event) => setBilibiliPassword(passwordCharacters(event.target.value))} inputMode="text" autoCapitalize="none" autoComplete="current-password" pattern="[A-Za-z0-9]*" /></div></label>
         </div>
-        <div className="bilibili-account-actions"><button type="button" className="button button-primary small" disabled={bilibiliBusy} onClick={() => { void importBilibili() }}>{bilibiliBusy ? <RefreshCw className="spin" size={14} /> : <ShieldCheck size={14} />}{bilibiliBusy ? '正在验证' : '验证并连接'}</button>{bilibiliAccount.connected && <button type="button" className="button button-quiet small" disabled={bilibiliBusy} onClick={() => { void disconnectBilibili() }}><X size={14} />断开账号</button>}<span className="panel-hint">先在所选浏览器完成 B站官方登录，再回到这里导入登录状态。</span></div>
+        <div className="bilibili-account-actions"><button type="button" className="button button-primary small" disabled={bilibiliBusy} onClick={() => { void importBilibili() }}>{bilibiliBusy ? <RefreshCw className="spin" size={14} /> : <ShieldCheck size={14} />}{bilibiliBusy ? '正在验证' : bilibiliAccount.connected ? '验证并切换' : '验证并连接'}</button>{bilibiliAccount.connected && <button type="button" className="button button-quiet small" disabled={bilibiliBusy} onClick={() => { void disconnectBilibili() }}><X size={14} />断开账号</button>}<span className="panel-hint">先在所选浏览器登录目标 B站账号，再用任意成人 Lumi 账户复核；切换失败会保留原账号。</span></div>
         {bilibiliMessage && <div className="success-note">{bilibiliMessage}</div>}
       </section>}
 
@@ -2476,7 +2534,7 @@ function ResourceManagerView({
           <div className="resource-options"><label className="rights-check"><input type="checkbox" checked={localCopy} onChange={(event) => setLocalCopy(event.target.checked)} />复制到已配置的资源目录（推荐）</label><label className="rights-check"><input type="checkbox" checked={localPublish} onChange={(event) => setLocalPublish(event.target.checked)} />导入后立即发布给 Client</label></div>
           <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitLocal().catch((error) => setFormError(error instanceof Error ? error.message : '导入失败')) }}><UploadCloud size={16} />{actionBusy === 'local' ? '正在导入' : '导入资源'}</button>
         </section>
-        <LibraryTable items={items} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
+        <LibraryTable items={items.filter((item) => !item.externalUrl)} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onRefreshExternal={onRefreshExternal} onDeleteExternal={onDeleteExternal} onDeleteCollection={onDeleteCollection} onError={setFormError} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
       </>}
 
       {tab === 'online' && <>
@@ -2497,7 +2555,7 @@ function ResourceManagerView({
           </div>
           <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitOnline().catch((error) => setFormError(error instanceof Error ? error.message : '在线资源添加失败')) }}><Plus size={16} />{actionBusy === 'online' ? '正在读取元数据' : '保存在线播放入口'}</button>
         </section>
-        <LibraryTable items={items.filter((item) => Boolean(item.externalUrl))} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
+        <LibraryTable items={items.filter((item) => Boolean(item.externalUrl))} busy={busy} statusLabel={statusLabel} providerLabel={providerLabel} onUpdate={onUpdate} onArchive={onArchive} onRefreshExternal={onRefreshExternal} onDeleteExternal={onDeleteExternal} onDeleteCollection={onDeleteCollection} onError={setFormError} onBeginEdit={(item) => { setEditingId(item.id); setEditingTitle(item.title) }} editingId={editingId} editingTitle={editingTitle} onEditingTitle={setEditingTitle} onSaveEdit={async (id) => { await onUpdate(id, { title: editingTitle.trim() }); setEditingId(null) }} />
       </>}
 
       {tab === 'feeds' && <>
@@ -2532,6 +2590,10 @@ function LibraryTable({
   providerLabel,
   onUpdate,
   onArchive,
+  onRefreshExternal,
+  onDeleteExternal,
+  onDeleteCollection,
+  onError,
   onBeginEdit,
   editingId,
   editingTitle,
@@ -2544,13 +2606,74 @@ function LibraryTable({
   providerLabel: (provider: string) => string
   onUpdate: (id: string, changes: Record<string, unknown>) => Promise<LibraryItemRecord>
   onArchive: (id: string) => Promise<LibraryItemRecord>
+  onRefreshExternal: (id: string) => Promise<LibraryItemRecord>
+  onDeleteExternal: (id: string) => Promise<void>
+  onDeleteCollection: (id: string) => Promise<void>
+  onError: (message: string) => void
   onBeginEdit: (item: LibraryItemRecord) => void
   editingId: string | null
   editingTitle: string
   onEditingTitle: (value: string) => void
   onSaveEdit: (id: string) => Promise<void>
 }) {
-  return <section className="panel library-management-panel"><div className="panel-heading"><div><span className="eyebrow">MANAGED RESOURCES</span><h2>已登记资源</h2></div><span className="soft-badge">{items.length} 项</span></div>{items.length === 0 ? <div className="empty-state compact"><FolderOpen size={22} /><strong>还没有资源</strong><span>扫描或导入后，资源会出现在这里。</span></div> : <div className="managed-library-list">{items.map((item) => <div className="managed-library-row" key={item.id}><div className={'managed-kind ' + kindMeta[item.kind].tone}>{(() => { const KindIcon = kindMeta[item.kind].icon; return <KindIcon size={16} /> })()}</div><div className="managed-library-copy">{editingId === item.id ? <input aria-label="编辑资源标题" value={editingTitle} onChange={(event) => onEditingTitle(event.target.value)} /> : <strong>{item.title}</strong>}<span>{libraryKindLabels[item.kind]} · {item.externalUrl ? providerLabel(item.acquisitionMode) : item.filePath ? formatFileSize(item.fileSize) : '文件不可用'} · {item.audience}</span><small>{item.filePath ?? item.externalUrl ?? '无入口'}</small></div><span className={'submission-status ' + (item.publicationStatus === 'published' ? 'transferred' : item.publicationStatus === 'archived' ? 'frozen' : 'review')}>{statusLabel(item.publicationStatus)}</span><div className="managed-library-actions">{editingId === item.id ? <button type="button" className="button button-primary small" disabled={busy} onClick={() => { void onSaveEdit(item.id) }}><Check size={14} />保存</button> : <button type="button" className="button button-quiet small" disabled={busy} onClick={() => onBeginEdit(item)}><PenTool size={14} />编辑</button>}{item.publicationStatus !== 'published' && item.publicationStatus !== 'archived' && <button type="button" className="button button-primary small" disabled={busy} onClick={() => { void onUpdate(item.id, { publication_status: 'published' }) }}><ShieldCheck size={14} />发布</button>}{item.publicationStatus !== 'archived' && <IconButton label="归档资源" onClick={() => { void onArchive(item.id) }}><X size={15} /></IconButton>}</div></div>)}</div>}</section>
+  const runAction = (action: () => Promise<unknown>, fallback: string) => {
+    onError('')
+    void action().catch((error) => onError(error instanceof Error ? error.message : fallback))
+  }
+
+  return (
+    <section className="panel library-management-panel">
+      <div className="panel-heading">
+        <div><span className="eyebrow">MANAGED RESOURCES</span><h2>已登记资源</h2></div>
+        <span className="soft-badge">{items.length} 项</span>
+      </div>
+      {items.length === 0 ? (
+        <div className="empty-state compact"><FolderOpen size={22} /><strong>还没有资源</strong><span>扫描或导入后，资源会出现在这里。</span></div>
+      ) : (
+        <div className="managed-library-list">
+          {items.map((item) => {
+            const KindIcon = kindMeta[item.kind].icon
+            const isPublished = item.publicationStatus === 'published'
+            const isHidden = item.publicationStatus === 'archived'
+            const isBilibili = item.acquisitionMode === 'external_bilibili'
+            return (
+              <div className="managed-library-row" key={item.id}>
+                <div className={'managed-kind ' + kindMeta[item.kind].tone}><KindIcon size={16} /></div>
+                <div className="managed-library-copy">
+                  {editingId === item.id ? <input aria-label="编辑资源标题" value={editingTitle} onChange={(event) => onEditingTitle(event.target.value)} /> : <strong>{item.title}</strong>}
+                  <span>{libraryKindLabels[item.kind]} · {item.externalUrl ? providerLabel(item.acquisitionMode) : item.filePath ? formatFileSize(item.fileSize) : '文件不可用'} · {item.audience}{item.collectionId ? ` · ${item.collectionTitle} 第 ${item.episodeIndex}/${item.episodeCount} 集` : ''}</span>
+                  <small>{item.filePath ?? item.externalUrl ?? '无入口'}</small>
+                </div>
+                <span className={'submission-status ' + (isPublished ? 'transferred' : isHidden ? 'frozen' : 'review')}>{statusLabel(item.publicationStatus)}</span>
+                <div className="managed-library-actions">
+                  {editingId === item.id ? (
+                    <button type="button" className="button button-primary small" disabled={busy} onClick={() => runAction(() => onSaveEdit(item.id), '标题保存失败')}><Check size={14} />保存</button>
+                  ) : (
+                    <button type="button" className="button button-quiet small" disabled={busy} onClick={() => onBeginEdit(item)}><PenTool size={14} />编辑</button>
+                  )}
+                  {isBilibili && <IconButton label="刷新 B站封面与信息" className={busy ? 'is-busy' : ''} disabled={busy} onClick={() => runAction(() => onRefreshExternal(item.id), 'B站信息刷新失败')}><RefreshCw size={15} /></IconButton>}
+                  {isPublished && <button type="button" className="button button-quiet small" disabled={busy} onClick={() => runAction(() => onUpdate(item.id, { publication_status: 'draft' }), '撤回发布失败')}><RotateCcw size={14} />撤回</button>}
+                  {!isPublished && !isHidden && <button type="button" className="button button-primary small" disabled={busy} onClick={() => runAction(() => onUpdate(item.id, { publication_status: 'published' }), '发布失败')}><ShieldCheck size={14} />发布</button>}
+                  {isHidden && <button type="button" className="button button-quiet small" disabled={busy} onClick={() => runAction(() => onUpdate(item.id, { publication_status: 'draft' }), '恢复资源失败')}><RotateCcw size={14} />恢复</button>}
+                  {!isHidden && <IconButton label="隐藏资源" disabled={busy} onClick={() => runAction(() => onArchive(item.id), '隐藏资源失败')}><EyeOff size={15} /></IconButton>}
+                  {item.externalUrl && <IconButton label="删除在线资源" className="resource-delete" disabled={busy} onClick={() => {
+                    if (window.confirm(`确认删除“${item.title}”？它将从 Lumi 中移除，后续自动同步也不会恢复。`)) {
+                      runAction(() => onDeleteExternal(item.id), '删除在线资源失败')
+                    }
+                  }}><Trash2 size={15} /></IconButton>}
+                  {item.collectionId && <button type="button" className="button button-quiet small resource-delete" disabled={busy} onClick={() => {
+                    if (window.confirm(`确认删除合集“${item.collectionTitle}”及 Lumi 中的全部分集？后续自动同步不会恢复。`)) {
+                      runAction(() => onDeleteCollection(item.collectionId!), '删除合集失败')
+                    }
+                  }}><Layers3 size={14} />删除合集</button>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function StorageSettingsView({
@@ -2801,7 +2924,7 @@ export default function App() {
     if (state.role === 'operator') {
       if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       if (activeNav === 'accounts') return <AccountManagementView registrations={store.registrations} users={store.managedUsers} onDecision={(id, decision) => { void store.decideRegistration(id, decision).then(() => notify(decision === 'approved' ? '账户已批准并可登录' : '注册申请已拒绝', decision === 'approved' ? 'success' : 'info')).catch(reportError) }} onStatus={(id, status) => { void store.updateManagedUser(id, status).then(() => notify(status === 'active' ? '账户已恢复' : '账户已停用')).catch(reportError) }} />
-      if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} bilibiliAccount={store.bilibiliAccount} operatorUsername={currentUser.username} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} onImportBilibiliAccount={store.importBilibiliAccount} onDisconnectBilibiliAccount={store.disconnectBilibiliAccount} />
+      if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} bilibiliAccount={store.bilibiliAccount} operatorUsername={currentUser.username} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onRefreshExternal={store.refreshExternalItem} onDeleteExternal={store.deleteExternalItem} onDeleteCollection={store.deleteExternalCollection} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} onImportBilibiliAccount={store.importBilibiliAccount} onSwitchBilibiliAccount={store.switchBilibiliAccount} onDisconnectBilibiliAccount={store.disconnectBilibiliAccount} />
       if (activeNav === 'settings') return <StorageSettingsView paths={store.storagePaths} busy={store.busy} onSave={store.saveStoragePaths} />
       return <OperatorDashboard jobs={state.jobs} submissions={state.submissions} sources={store.sources} assets={store.assets} systemStatus={store.systemStatus} downloadsPaused={store.downloadsPaused} onJob={(id, status) => { void store.updateJob(id, status).then(() => notify(status === 'paused' ? '任务已暂停' : '任务已重新排队')).catch(reportError) }} onPauseAll={() => { void store.pauseAll().then(() => notify('所有下载任务已暂停', 'warning')).catch(reportError) }} onResumeAll={() => { void store.resumeAll().then(() => notify('下载队列已恢复')).catch(reportError) }} onSync={() => { void store.syncNow().then(() => notify('同步完成，隔离区清单已刷新', 'info')).catch(reportError) }} onQueueBilibili={async (payload) => { await store.queueBilibili(payload); notify(payload.startNow ? 'B站任务已创建，将立即处理' : 'B站任务已加入夜间队列') }} onReviewAsset={async (id, payload) => { await store.reviewAsset(id, payload); notify('资源已审核入库，Client 刷新后即可访问') }} onOpen={handleOpenItem} focus={activeNav} />
     }
@@ -2848,7 +2971,7 @@ export default function App() {
           onLaunch={() => handleLaunch(selectedItem)}
         />
       )}
-      {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={() => setPlayback(null)} />}
+      {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={() => setPlayback(null)} onSelectEpisode={handleLaunch} />}
       {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>

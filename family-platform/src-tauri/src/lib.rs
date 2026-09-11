@@ -22,10 +22,26 @@ struct ExitState(AtomicBool);
 #[cfg(desktop)]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_skip_taskbar(false);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+#[cfg(desktop)]
+fn hide_window_to_tray(app: &tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不可用".to_string())?;
+    window
+        .set_skip_taskbar(true)
+        .map_err(|error| error.to_string())?;
+    window.hide().map_err(|error| error.to_string())?;
+    if window.is_minimized().unwrap_or(false) {
+        window.unminimize().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -39,16 +55,85 @@ fn exit_application(app: &tauri::AppHandle) {
 #[cfg(desktop)]
 #[tauri::command]
 fn respond_to_close(app: tauri::AppHandle, action: String) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "主窗口不可用".to_string())?;
     match action.as_str() {
         "exit" => exit_application(&app),
-        "minimize" => window.minimize().map_err(|error| error.to_string())?,
+        "minimize" => hide_window_to_tray(&app)?,
         "cancel" => {}
         _ => return Err("未知的关闭方式".to_string()),
     }
     Ok(())
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn shell_execute(target: &str, parameters: Option<&str>) -> Result<(), String> {
+    use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            window: *mut std::ffi::c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_command: i32,
+        ) -> isize;
+    }
+
+    let target_name = target;
+    let operation: Vec<u16> = OsStr::new("open").encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = OsStr::new(target_name).encode_wide().chain(Some(0)).collect();
+    let parameters: Option<Vec<u16>> = parameters
+        .map(|value| OsStr::new(value).encode_wide().chain(Some(0)).collect());
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            parameters.as_ref().map_or(std::ptr::null(), |value| value.as_ptr()),
+            std::ptr::null(),
+            1,
+        )
+    };
+    if result <= 32 {
+        return Err(format!("Windows 无法打开 {target_name}"));
+    }
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn open_bilibili_in_browser(browser: &str) -> Result<String, String> {
+    let url = "https://www.bilibili.com/";
+    let selected = match browser {
+        "edge" => shell_execute(&format!("microsoft-edge:{url}"), None),
+        "chrome" => shell_execute("chrome.exe", Some(url)),
+        "firefox" => shell_execute("firefox.exe", Some(url)),
+        _ => return Err("不支持的浏览器".to_string()),
+    };
+    if selected.is_ok() {
+        return Ok(browser.to_string());
+    }
+    shell_execute(url, None)?;
+    Ok("default".to_string())
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn open_bilibili_in_browser(browser: &str) -> Result<String, String> {
+    if !matches!(browser, "edge" | "chrome" | "firefox") {
+        return Err("不支持的浏览器".to_string());
+    }
+    let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    Command::new(program)
+        .arg("https://www.bilibili.com/")
+        .spawn()
+        .map(|_| "default".to_string())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn open_bilibili_login(browser: String) -> Result<String, String> {
+    open_bilibili_in_browser(&browser)
 }
 
 #[cfg(desktop)]
@@ -199,7 +284,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![respond_to_close])
+        .invoke_handler(tauri::generate_handler![respond_to_close, open_bilibili_login])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
@@ -211,10 +296,15 @@ pub fn run() {
                 }
                 api.prevent_close();
                 if app.config().identifier.ends_with(".server") {
-                    let _ = window.hide();
+                    let _ = hide_window_to_tray(app);
                 } else {
                     let _ = window.emit("lumi://close-requested", ());
                 }
+            }
+            if matches!(event, tauri::WindowEvent::Resized(_))
+                && window.is_minimized().unwrap_or(false)
+            {
+                let _ = hide_window_to_tray(window.app_handle());
             }
         });
 

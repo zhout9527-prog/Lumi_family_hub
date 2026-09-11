@@ -4665,6 +4665,22 @@ select:focus-visible,
 .managed-library-actions,
 .feed-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
 
+.managed-library-actions {
+  max-width: 430px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.icon-button.resource-delete {
+  color: #a94b3d;
+  border-color: #f2c7bf;
+  background: #fff7f4;
+}
+
+.icon-button.resource-delete:hover {
+  background: #ffede8;
+}
+
 .success-note {
   display: flex;
   align-items: center;
@@ -4714,12 +4730,60 @@ select:focus-visible,
 }
 
 .player-community {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   max-height: min(720px, calc(100dvh - 36px));
   overflow: hidden;
   color: #e4eee8;
   background: #141b17;
 }
+
+.player-collection {
+  display: grid;
+  min-height: 0;
+  max-height: 46%;
+  gap: 8px;
+  padding: 12px 10px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-collection > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.player-collection > div:first-child strong { color: #fff; font-size: 12px; }
+.player-collection > div:first-child span { flex: none; color: #91a69a; font-size: 10px; }
+
+.player-episode-list {
+  display: grid;
+  min-height: 0;
+  gap: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.player-episode-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #b8c8bf;
+  background: transparent;
+  text-align: left;
+}
+
+.player-episode-list button > span { color: #7f978a; font-size: 10px; }
+.player-episode-list button > strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.player-episode-list button:hover,
+.player-episode-list button:focus-visible,
+.player-episode-list button.active { border-color: rgba(255, 255, 255, 0.16); color: #fff; background: rgba(255, 255, 255, 0.1); }
 
 .community-tabs {
   display: grid;
@@ -4744,7 +4808,8 @@ select:focus-visible,
 }
 
 .community-list {
-  height: calc(100% - 59px);
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   overscroll-behavior: contain;
 }

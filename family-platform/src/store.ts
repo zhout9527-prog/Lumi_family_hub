@@ -5,6 +5,8 @@ import {
   completeItemApi,
   disconnectBilibiliAccountApi,
   addExternalItemApi,
+  deleteExternalItemApi,
+  deleteExternalCollectionApi,
   confirmTransferApi,
   createRequestApi,
   createSubmissionApi,
@@ -45,6 +47,7 @@ import {
   resetOperatorPasswordApi,
   resumeAllApi,
   retryJobApi,
+  refreshExternalItemApi,
   reviewAssetApi,
   setAuthToken,
   setApiBase,
@@ -54,6 +57,7 @@ import {
   syncInboxApi,
   systemStatusApi,
   syncExternalFeedApi,
+  switchBilibiliAccountApi,
   toggleFavoriteApi,
   updateManagedUserStatusApi,
   archiveLibraryItemApi,
@@ -588,17 +592,61 @@ export function useFamilyStore() {
   }
 
   const updateLibraryItem = async (id: string, changes: Record<string, unknown>) => {
-    const item = await updateLibraryItemApi(id, changes)
-    setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
-    await refreshBackend()
-    return item
+    setBusy(true)
+    try {
+      const item = await updateLibraryItemApi(id, changes)
+      setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
+      await refreshBackend()
+      return item
+    } finally {
+      setBusy(false)
+    }
   }
 
   const archiveLibraryItem = async (id: string) => {
-    const item = await archiveLibraryItemApi(id)
-    setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
-    await refreshBackend()
-    return item
+    setBusy(true)
+    try {
+      const item = await archiveLibraryItemApi(id)
+      setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
+      await refreshBackend()
+      return item
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const refreshExternalItem = async (id: string) => {
+    setBusy(true)
+    try {
+      const item = await refreshExternalItemApi(id)
+      setLibraryItems((current) => current.map((candidate) => candidate.id === id ? item : candidate))
+      await refreshBackend()
+      return item
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteExternalItem = async (id: string) => {
+    setBusy(true)
+    try {
+      await deleteExternalItemApi(id)
+      setLibraryItems((current) => current.filter((candidate) => candidate.id !== id))
+      await refreshBackend()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteExternalCollection = async (collectionId: string) => {
+    setBusy(true)
+    try {
+      await deleteExternalCollectionApi(collectionId)
+      setLibraryItems((current) => current.filter((candidate) => candidate.collectionId !== collectionId))
+      await refreshBackend()
+    } finally {
+      setBusy(false)
+    }
   }
 
   const addExternalItem = async (payload: ExternalItemDraft) => {
@@ -648,6 +696,16 @@ export function useFamilyStore() {
   ) => {
     await verifyBilibiliAdultApi(credentials)
     const status = await importBilibiliAccountApi(browser, credentials)
+    setBilibiliAccount(status)
+    return status
+  }
+
+  const switchBilibiliAccount = async (
+    browser: 'edge' | 'chrome' | 'firefox',
+    credentials: AdultCredentials,
+  ) => {
+    await verifyBilibiliAdultApi(credentials)
+    const status = await switchBilibiliAccountApi(browser, credentials)
     setBilibiliAccount(status)
     return status
   }
@@ -708,11 +766,15 @@ export function useFamilyStore() {
     importLocalLibrary,
     updateLibraryItem,
     archiveLibraryItem,
+    refreshExternalItem,
+    deleteExternalItem,
+    deleteExternalCollection,
     addExternalItem,
     createExternalFeed,
     syncExternalFeed,
     deleteExternalFeed,
     importBilibiliAccount,
+    switchBilibiliAccount,
     disconnectBilibiliAccount,
     clearAuthError: () => setAuthError(''),
   }

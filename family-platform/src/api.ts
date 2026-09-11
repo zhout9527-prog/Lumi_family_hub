@@ -7,6 +7,7 @@ import type {
   BilibiliAccountStatus,
   BilibiliInteractions,
   CloudSubmission,
+  ContentCollection,
   ContentItem,
   ContentRequest,
   DownloadJob,
@@ -46,6 +47,17 @@ export function isNativeShell(): boolean {
   if (typeof window === 'undefined') return false
   const tauriWindow = window as Window & { __TAURI_INTERNALS__?: unknown }
   return Boolean(tauriWindow.__TAURI_INTERNALS__) || window.location.hostname === 'tauri.localhost'
+}
+
+export async function openBilibiliLogin(browser: 'edge' | 'chrome' | 'firefox'): Promise<string> {
+  const url = 'https://www.bilibili.com/'
+  if (!isNativeShell()) {
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) throw new Error('浏览器阻止了新窗口，请允许 Lumi 打开 B站登录页')
+    return 'default'
+  }
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<string>('open_bilibili_login', { browser })
 }
 
 function defaultApiBase(): string {
@@ -213,6 +225,22 @@ interface ApiContent {
   playback_mode?: string
   launch_allowed?: boolean
   provider?: string
+  collection_id?: string | null
+  collection_title?: string | null
+  collection_kind?: string | null
+  episode_index?: number | null
+  episode_count?: number | null
+  section_title?: string | null
+}
+
+interface ApiContentCollection {
+  id: string
+  title: string
+  description: string
+  collection_kind: string
+  episode_count: number
+  current_episode_index: number
+  episodes: ApiContent[]
 }
 
 interface ApiContentRequest {
@@ -332,6 +360,12 @@ interface ApiLibraryItem {
   file_size: number
   file_available: boolean
   external_url?: string | null
+  collection_id?: string | null
+  collection_title?: string | null
+  collection_kind?: string | null
+  episode_index?: number | null
+  episode_count?: number | null
+  section_title?: string | null
   updated_at: string
 }
 
@@ -357,6 +391,7 @@ interface ApiExternalFeed {
 interface ApiBilibiliAccountStatus {
   connected: boolean
   account_name?: string | null
+  account_id?: string | null
   vip: boolean
   browser?: 'edge' | 'chrome' | 'firefox' | null
   updated_at?: string | null
@@ -481,6 +516,12 @@ export function mapContent(item: ApiContent): ContentItem {
     playbackMode: (item.playback_mode ?? (item.local_available ? 'local_asset' : 'none')) as ContentItem['playbackMode'],
     launchAllowed: item.launch_allowed ?? false,
     provider: item.provider ?? 'local',
+    collectionId: item.collection_id ?? undefined,
+    collectionTitle: item.collection_title ?? undefined,
+    collectionKind: item.collection_kind ?? undefined,
+    episodeIndex: item.episode_index ?? undefined,
+    episodeCount: item.episode_count ?? undefined,
+    sectionTitle: item.section_title ?? undefined,
   }
 }
 
@@ -517,6 +558,12 @@ export function mapLibraryItem(item: ApiLibraryItem): LibraryItemRecord {
     fileSize: item.file_size,
     fileAvailable: item.file_available,
     externalUrl: item.external_url ?? undefined,
+    collectionId: item.collection_id ?? undefined,
+    collectionTitle: item.collection_title ?? undefined,
+    collectionKind: item.collection_kind ?? undefined,
+    episodeIndex: item.episode_index ?? undefined,
+    episodeCount: item.episode_count ?? undefined,
+    sectionTitle: item.section_title ?? undefined,
     updatedAt: item.updated_at,
   }
 }
@@ -871,10 +918,24 @@ export async function launchContentApi(id: string): Promise<PlaybackResult> {
   return { ...result, expiresAt: result.expires_at }
 }
 
+export async function contentCollectionApi(id: string): Promise<ContentCollection> {
+  const result = await apiRequest<ApiContentCollection>(`/catalog/${encodeURIComponent(id)}/collection`)
+  return {
+    id: result.id,
+    title: result.title,
+    description: result.description,
+    collectionKind: result.collection_kind,
+    episodeCount: result.episode_count,
+    currentEpisodeIndex: result.current_episode_index,
+    episodes: result.episodes.map(mapContent),
+  }
+}
+
 export function mapBilibiliAccount(item?: ApiBilibiliAccountStatus): BilibiliAccountStatus {
   return {
     connected: Boolean(item?.connected),
     accountName: item?.account_name ?? undefined,
+    accountId: item?.account_id ?? undefined,
     vip: Boolean(item?.vip),
     browser: item?.browser ?? undefined,
     updatedAt: item?.updated_at ?? undefined,
@@ -898,6 +959,17 @@ export async function importBilibiliAccountApi(
   credentials: AdultCredentials,
 ): Promise<BilibiliAccountStatus> {
   const result = await apiRequest<ApiBilibiliAccountStatus>('/ops/bilibili-account/import', {
+    method: 'POST',
+    body: JSON.stringify({ ...adultCredentialBody(credentials), browser }),
+  }, { timeoutMs: 60000 })
+  return mapBilibiliAccount(result)
+}
+
+export async function switchBilibiliAccountApi(
+  browser: 'edge' | 'chrome' | 'firefox',
+  credentials: AdultCredentials,
+): Promise<BilibiliAccountStatus> {
+  const result = await apiRequest<ApiBilibiliAccountStatus>('/ops/bilibili-account/switch', {
     method: 'POST',
     body: JSON.stringify({ ...adultCredentialBody(credentials), browser }),
   }, { timeoutMs: 60000 })
@@ -1001,6 +1073,22 @@ export async function updateLibraryItemApi(id: string, changes: Record<string, u
 
 export async function archiveLibraryItemApi(id: string): Promise<LibraryItemRecord> {
   return mapLibraryItem(await apiRequest<ApiLibraryItem>(`/ops/library/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+}
+
+export async function refreshExternalItemApi(id: string): Promise<LibraryItemRecord> {
+  return mapLibraryItem(await apiRequest<ApiLibraryItem>(
+    `/ops/library/${encodeURIComponent(id)}/refresh-metadata`,
+    { method: 'POST' },
+    { timeoutMs: 60000 },
+  ))
+}
+
+export async function deleteExternalItemApi(id: string): Promise<void> {
+  await apiRequest<void>(`/ops/library/${encodeURIComponent(id)}/permanent`, { method: 'DELETE' })
+}
+
+export async function deleteExternalCollectionApi(id: string): Promise<void> {
+  await apiRequest(`/ops/library/collections/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 export async function addExternalItemApi(payload: ExternalItemDraft): Promise<LibraryItemRecord> {

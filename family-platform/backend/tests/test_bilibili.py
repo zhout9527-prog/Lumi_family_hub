@@ -24,6 +24,10 @@ def test_normalize_bilibili_url_removes_tracking_and_rejects_non_video() -> None
         normalize_bilibili_url("https://www.bilibili.com/video/BV18T3G6jEVM?p=2")
     except ValueError:
         raise AssertionError("a public video URL should be accepted")
+    assert normalize_bilibili_url(
+        "https://www.bilibili.com/video/BV18T3G6jEVM?p=2&vd_source=tracking",
+        preserve_page=True,
+    ).url == "https://www.bilibili.com/video/BV18T3G6jEVM?p=2"
 
     for invalid in (
         "http://www.bilibili.com/video/BV18T3G6jEVM",

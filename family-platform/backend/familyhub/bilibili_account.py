@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.cookiejar import Cookie, MozillaCookieJar
 from pathlib import Path
 from typing import Any
@@ -21,10 +25,18 @@ _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+_ACCOUNT_FILE_LOCK = threading.RLock()
 
 
 class BilibiliAccountError(RuntimeError):
     pass
+
+
+@contextmanager
+def bilibili_account_guard() -> Iterator[None]:
+    """串行化账号文件和数据库状态的整体切换。"""
+    with _ACCOUNT_FILE_LOCK:
+        yield
 
 
 def bilibili_cookie_path(settings: Settings) -> Path:
@@ -33,7 +45,10 @@ def bilibili_cookie_path(settings: Settings) -> Path:
 
 def active_bilibili_cookie_file(settings: Settings) -> Path | None:
     path = bilibili_cookie_path(settings)
-    return path if path.is_file() and path.stat().st_size > 0 else None
+    try:
+        return path if path.is_file() and path.stat().st_size > 0 else None
+    except OSError:
+        return None
 
 
 def _is_bilibili_cookie(cookie: Cookie) -> bool:
@@ -72,7 +87,7 @@ def _query_account(path: Path) -> dict[str, Any]:
     }
 
 
-def import_bilibili_cookies_from_browser(
+def _import_bilibili_cookies_from_browser(
     db: Session,
     settings: Settings,
     *,
@@ -107,19 +122,18 @@ def import_bilibili_cookies_from_browser(
 
     destination = bilibili_cookie_path(settings)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(".tmp")
+    temporary = destination.with_name(f".{destination.name}.{secrets.token_hex(8)}.tmp")
     jar = MozillaCookieJar(str(temporary))
     for cookie in selected:
         jar.set_cookie(cookie)
-    jar.save(ignore_discard=True, ignore_expires=True)
-    os.chmod(temporary, 0o600)
-    temporary.replace(destination)
-    os.chmod(destination, 0o600)
-
     try:
-        account = _query_account(destination)
-    except BilibiliAccountError:
-        destination.unlink(missing_ok=True)
+        jar.save(ignore_discard=True, ignore_expires=True)
+        os.chmod(temporary, 0o600)
+        # 先验证新账号再替换正式文件；切换失败时继续使用原账号。
+        account = _query_account(temporary)
+        temporary.replace(destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
         raise
     connected_at = utcnow()
     payload = {
@@ -140,7 +154,23 @@ def import_bilibili_cookies_from_browser(
     return payload
 
 
-def disconnect_bilibili_account(db: Session, settings: Settings, *, updated_by: str) -> dict[str, Any]:
+def import_bilibili_cookies_from_browser(
+    db: Session,
+    settings: Settings,
+    *,
+    browser: str,
+    updated_by: str,
+) -> dict[str, Any]:
+    with _ACCOUNT_FILE_LOCK:
+        return _import_bilibili_cookies_from_browser(
+            db,
+            settings,
+            browser=browser,
+            updated_by=updated_by,
+        )
+
+
+def _disconnect_bilibili_account(db: Session, settings: Settings, *, updated_by: str) -> dict[str, Any]:
     bilibili_cookie_path(settings).unlink(missing_ok=True)
     payload = {
         "connected": False,
@@ -160,14 +190,21 @@ def disconnect_bilibili_account(db: Session, settings: Settings, *, updated_by: 
     return payload
 
 
+def disconnect_bilibili_account(db: Session, settings: Settings, *, updated_by: str) -> dict[str, Any]:
+    with _ACCOUNT_FILE_LOCK:
+        return _disconnect_bilibili_account(db, settings, updated_by=updated_by)
+
+
 def bilibili_account_status(db: Session, settings: Settings) -> dict[str, Any]:
-    setting = db.get(SystemSetting, BILIBILI_ACCOUNT_SETTING_KEY)
-    stored = dict(setting.value_json) if setting and isinstance(setting.value_json, dict) else {}
-    connected = bool(stored.get("connected")) and active_bilibili_cookie_file(settings) is not None
-    return {
-        "connected": connected,
-        "account_name": str(stored.get("account_name"))[:120] if connected and stored.get("account_name") else None,
-        "vip": bool(stored.get("vip")) if connected else False,
-        "browser": str(stored.get("browser"))[:20] if connected and stored.get("browser") else None,
-        "updated_at": stored.get("updated_at") if connected else None,
-    }
+    with _ACCOUNT_FILE_LOCK:
+        setting = db.get(SystemSetting, BILIBILI_ACCOUNT_SETTING_KEY)
+        stored = dict(setting.value_json) if setting and isinstance(setting.value_json, dict) else {}
+        connected = bool(stored.get("connected")) and active_bilibili_cookie_file(settings) is not None
+        return {
+            "connected": connected,
+            "account_name": str(stored.get("account_name"))[:120] if connected and stored.get("account_name") else None,
+            "account_id": str(stored.get("account_id"))[:80] if connected and stored.get("account_id") else None,
+            "vip": bool(stored.get("vip")) if connected else False,
+            "browser": str(stored.get("browser"))[:20] if connected and stored.get("browser") else None,
+            "updated_at": stored.get("updated_at") if connected else None,
+        }

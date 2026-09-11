@@ -211,6 +211,22 @@ class ContentOut(ApiModel):
     playback_mode: str = "none"
     launch_allowed: bool = False
     provider: str = "local"
+    collection_id: str | None = None
+    collection_title: str | None = None
+    collection_kind: str | None = None
+    episode_index: int | None = None
+    episode_count: int | None = None
+    section_title: str | None = None
+
+
+class ContentCollectionOut(ApiModel):
+    id: str
+    title: str
+    description: str
+    collection_kind: str
+    episode_count: int
+    current_episode_index: int
+    episodes: list[ContentOut]
 
 
 class ContentRequestIn(BaseModel):
@@ -389,6 +405,7 @@ class BilibiliAccountImportIn(AdultVerificationIn):
 class BilibiliAccountStatusOut(BaseModel):
     connected: bool
     account_name: str | None = None
+    account_id: str | None = None
     vip: bool = False
     browser: str | None = None
     updated_at: datetime | None = None
@@ -473,6 +490,12 @@ class LibraryItemOut(ApiModel):
     file_size: int
     file_available: bool
     external_url: str | None
+    collection_id: str | None = None
+    collection_title: str | None = None
+    collection_kind: str | None = None
+    episode_index: int | None = None
+    episode_count: int | None = None
+    section_title: str | None = None
     updated_at: datetime
 
 

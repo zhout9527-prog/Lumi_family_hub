@@ -23,6 +23,30 @@ def test_health_login_logout_and_request_id(client: TestClient) -> None:
     assert client.get("/api/v1/me", headers=headers).status_code == 401
 
 
+def test_operator_sessions_stay_independent_across_devices(client: TestClient) -> None:
+    def server_login(device_name: str) -> dict[str, str]:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "operator-demo",
+                "password": "OperatorDemo2026",
+                "device_name": device_name,
+                "app_edition": "server",
+            },
+        )
+        assert response.status_code == 200, response.text
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    living_room = server_login("客厅管理端")
+    study = server_login("书房管理端")
+    assert client.get("/api/v1/me", headers=living_room).status_code == 200
+    assert client.get("/api/v1/me", headers=study).status_code == 200
+
+    assert client.post("/api/v1/auth/logout", headers=living_room).status_code == 204
+    assert client.get("/api/v1/me", headers=living_room).status_code == 401
+    assert client.get("/api/v1/me", headers=study).status_code == 200
+
+
 def test_role_switch_bootstrap_is_session_scoped_and_not_cacheable(client: TestClient) -> None:
     child = login(client, "child")
     child_bootstrap = client.get("/api/v1/bootstrap", headers=child)
@@ -410,3 +434,118 @@ def test_bilibili_account_management_requires_adult_reverification(client: TestC
 
     assert client.get("/api/v1/ops/bilibili-account", headers=guardian).status_code == 403
     assert client.get("/api/v1/ops/bilibili-account", headers=child).status_code == 403
+
+
+def test_bilibili_account_has_explicit_switch_endpoint(client: TestClient, monkeypatch) -> None:
+    from familyhub import main as familyhub_main
+
+    accounts = iter(
+        [
+            {"account_name": "家庭账号甲", "account_id": "1001", "vip": False},
+            {"account_name": "家庭账号乙", "account_id": "2002", "vip": True},
+        ]
+    )
+    calls: list[str] = []
+
+    def fake_import(_db, _settings, *, browser: str, updated_by: str):
+        account = next(accounts)
+        calls.append(browser)
+        return {
+            "connected": True,
+            **account,
+            "browser": browser,
+            "updated_at": "2026-09-11T12:00:00Z",
+        }
+
+    monkeypatch.setattr(familyhub_main, "import_bilibili_cookies_from_browser", fake_import)
+    operator = login(client, "operator")
+    credentials = {"username": "guardian-demo", "password": "GuardianDemo2026", "browser": "edge"}
+
+    connected = client.post("/api/v1/ops/bilibili-account/import", headers=operator, json=credentials)
+    assert connected.status_code == 200, connected.text
+    assert connected.json()["account_id"] == "1001"
+
+    switched = client.post(
+        "/api/v1/ops/bilibili-account/switch",
+        headers=operator,
+        json={**credentials, "browser": "chrome"},
+    )
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["account_name"] == "家庭账号乙"
+    assert switched.json()["account_id"] == "2002"
+    assert switched.json()["vip"] is True
+    assert calls == ["edge", "chrome"]
+
+    rejected = client.post(
+        "/api/v1/ops/bilibili-account/switch",
+        headers=operator,
+        json={"username": "child-demo", "password": "ChildDemo2026", "browser": "edge"},
+    )
+    assert rejected.status_code == 401
+
+
+def test_failed_bilibili_switch_keeps_previous_cookie_file(client: TestClient, monkeypatch) -> None:
+    import sys
+    from http.cookiejar import Cookie
+    from types import ModuleType
+
+    import pytest
+    from sqlalchemy import select
+
+    from familyhub import bilibili_account
+    from familyhub.models import User
+
+    cookie = Cookie(
+        version=0,
+        name="SESSDATA",
+        value="new-browser-session",
+        port=None,
+        port_specified=False,
+        domain=".bilibili.com",
+        domain_specified=True,
+        domain_initial_dot=True,
+        path="/",
+        path_specified=True,
+        secure=True,
+        expires=None,
+        discard=False,
+        comment=None,
+        comment_url=None,
+        rest={},
+        rfc2109=False,
+    )
+
+    class FakeYoutubeDL:
+        def __init__(self, _options):
+            self.cookiejar = [cookie]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    package = ModuleType("yt_dlp")
+    package.YoutubeDL = FakeYoutubeDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+    destination = bilibili_account.bilibili_cookie_path(client.app.state.settings)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(b"previous-account-cookie")
+
+    def invalid_account(_path):
+        raise bilibili_account.BilibiliAccountError("新账号验证失败")
+
+    monkeypatch.setattr(bilibili_account, "_query_account", invalid_account)
+    with client.app.state.session_factory() as db:
+        operator = db.scalar(select(User).where(User.username == "operator-demo"))
+        assert operator is not None
+        with pytest.raises(bilibili_account.BilibiliAccountError, match="新账号验证失败"):
+            bilibili_account.import_bilibili_cookies_from_browser(
+                db,
+                client.app.state.settings,
+                browser="edge",
+                updated_by=operator.id,
+            )
+
+    assert destination.read_bytes() == b"previous-account-cookie"
+    assert list(destination.parent.glob(f".{destination.name}.*.tmp")) == []

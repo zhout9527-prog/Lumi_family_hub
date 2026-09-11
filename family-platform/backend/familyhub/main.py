@@ -26,6 +26,7 @@ from .bilibili import BILIBILI_SOURCE_ID, download_bilibili_cover, normalize_bil
 from .bilibili_account import (
     BilibiliAccountError,
     active_bilibili_cookie_file,
+    bilibili_account_guard,
     bilibili_account_status,
     disconnect_bilibili_account,
     import_bilibili_cookies_from_browser,
@@ -36,7 +37,9 @@ from .download import DownloadRejected, write_manifest
 from .external import (
     ExternalCatalogError,
     cache_external_cover,
+    expand_bilibili_collections,
     extract_bilibili_entries,
+    fetch_bilibili_collection,
     fetch_bilibili_interactions,
     fetch_bilibili_public_metadata,
     load_external_feeds,
@@ -63,6 +66,8 @@ from .models import (
     AuditEvent,
     CloudInboxAsset,
     CommunitySubmission,
+    ContentCollection,
+    ContentCollectionEpisode,
     ContentEvent,
     ContentAsset,
     ContentItem,
@@ -91,6 +96,7 @@ from .schemas import (
     BilibiliInteractionsOut,
     BilibiliDownloadIn,
     CompleteIn,
+    ContentCollectionOut,
     ContentOut,
     ContentRequestIn,
     ContentRequestOut,
@@ -295,6 +301,95 @@ def _bilibili_job_for_content(db: Session, item: ContentItem) -> DownloadJob | N
     )
 
 
+def _is_external_bilibili_item(item: ContentItem) -> bool:
+    return item.acquisition_mode == "external_bilibili" and bool(item.launch_url)
+
+
+def _refresh_external_bilibili_metadata(db: Session, settings: Settings, item: ContentItem) -> None:
+    if not _is_external_bilibili_item(item) or not item.launch_url:
+        raise ExternalCatalogError("bilibili_metadata_missing")
+    entry = fetch_bilibili_public_metadata(
+        item.launch_url,
+        cookie_file=active_bilibili_cookie_file(settings),
+    )
+    placeholder_titles = {
+        entry.external_id.casefold(),
+        f"b站视频 {entry.external_id}".casefold(),
+    }
+    if item.title.strip().casefold() in placeholder_titles:
+        item.title = entry.title
+    if not item.description or item.description.startswith("已保存在线播放入口"):
+        item.description = entry.description or f"来自 {entry.uploader} 的 B站视频。"
+    item.duration_minutes = entry.duration_minutes
+    if not entry.cover_url:
+        raise ExternalCatalogError("bilibili_cover_download_failed")
+    cache_external_cover(db, settings, item=item, cover_url=entry.cover_url, provider="bilibili")
+    item.updated_at = utcnow()
+
+
+def _remove_cached_artwork(db: Session, settings: Settings, item_id: str) -> None:
+    image_root = load_storage_paths(db, settings, ensure=True)["image"].resolve()
+    for candidate in image_root.glob(f"{item_id}--cover.*"):
+        resolved = candidate.resolve()
+        if resolved.is_relative_to(image_root) and resolved.is_file() and not resolved.is_symlink():
+            resolved.unlink(missing_ok=True)
+
+
+def _collection_contexts(
+    db: Session,
+    item_ids: list[str],
+) -> dict[str, tuple[ContentCollectionEpisode, ContentCollection]]:
+    if not item_ids:
+        return {}
+    episodes = list(
+        db.scalars(
+            select(ContentCollectionEpisode).where(
+                ContentCollectionEpisode.content_id.in_(item_ids),
+                ContentCollectionEpisode.publication_status == "published",
+            )
+        ).all()
+    )
+    collection_ids = {episode.collection_id for episode in episodes}
+    collections = {
+        collection.id: collection
+        for collection in db.scalars(
+            select(ContentCollection).where(ContentCollection.id.in_(collection_ids))
+        ).all()
+    } if collection_ids else {}
+    return {
+        episode.content_id: (episode, collections[episode.collection_id])
+        for episode in episodes
+        if episode.content_id and episode.collection_id in collections
+    }
+
+
+def _expand_collection_launch_ids(db: Session, item_ids: set[str]) -> set[str]:
+    """一次家长授权覆盖同一合集，保证连续播放和选集不会逐集申请。"""
+
+    if not item_ids:
+        return set()
+    collection_ids = set(
+        db.scalars(
+            select(ContentCollectionEpisode.collection_id).where(
+                ContentCollectionEpisode.content_id.in_(item_ids),
+                ContentCollectionEpisode.publication_status == "published",
+            )
+        ).all()
+    )
+    if not collection_ids:
+        return item_ids
+    siblings = set(
+        db.scalars(
+            select(ContentCollectionEpisode.content_id).where(
+                ContentCollectionEpisode.collection_id.in_(collection_ids),
+                ContentCollectionEpisode.publication_status == "published",
+                ContentCollectionEpisode.content_id.is_not(None),
+            )
+        ).all()
+    )
+    return item_ids | {item_id for item_id in siblings if item_id}
+
+
 def _content_list(db: Session, user: User, query: str | None = None) -> list[ContentOut]:
     items = list(db.scalars(visible_content_query(user)).all())
     if query:
@@ -327,19 +422,24 @@ def _content_list(db: Session, user: User, query: str | None = None) -> list[Con
                 )
             ).all()
         )
+        launch_allowed_ids = _expand_collection_launch_ids(db, launch_allowed_ids)
     else:
         launch_allowed_ids = set(item_ids)
     downloaded_bilibili_ids = _downloaded_bilibili_content_ids(db, item_ids)
+    collection_contexts = _collection_contexts(db, item_ids)
     presented: list[ContentOut] = []
     for item in items:
+        episode, collection = collection_contexts.get(item.id, (None, None))
         output = present_content(
             item,
             favorites=favorites,
             completed=completed,
             local_ids=local_ids,
             launch_allowed_ids=launch_allowed_ids,
+            collection_episode=episode,
+            collection=collection,
         )
-        if item.id in downloaded_bilibili_ids and not output.cover_ref:
+        if _is_external_bilibili_item(item) or (not output.cover_ref and item.id in downloaded_bilibili_ids):
             output.cover_ref = f"/api/v1/artwork/{item.id}"
         presented.append(output)
     return presented
@@ -815,7 +915,10 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
             managed_item_payload(db, settings, item)
             for item in db.scalars(
                 select(ContentItem)
-                .where(ContentItem.household_id == user.household_id)
+                .where(
+                    ContentItem.household_id == user.household_id,
+                    ContentItem.publication_status != "deleted",
+                )
                 .order_by(ContentItem.updated_at.desc())
             ).all()
         ]
@@ -860,7 +963,65 @@ def import_bilibili_account(
     db: Db,
     settings: SettingsDep,
 ) -> BilibiliAccountStatusOut:
+    return _replace_bilibili_account(
+        payload,
+        request=request,
+        user=user,
+        db=db,
+        settings=settings,
+        action="bilibili_account.imported",
+    )
+
+
+@router.post("/ops/bilibili-account/switch", response_model=BilibiliAccountStatusOut, tags=["ops"])
+def switch_bilibili_account(
+    payload: BilibiliAccountImportIn,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> BilibiliAccountStatusOut:
+    return _replace_bilibili_account(
+        payload,
+        request=request,
+        user=user,
+        db=db,
+        settings=settings,
+        action="bilibili_account.switched",
+    )
+
+
+def _replace_bilibili_account(
+    payload: BilibiliAccountImportIn,
+    *,
+    request: Request,
+    user: SessionPrincipal,
+    db: Session,
+    settings: Settings,
+    action: str,
+) -> BilibiliAccountStatusOut:
+    with bilibili_account_guard():
+        return _replace_bilibili_account_locked(
+            payload,
+            request=request,
+            user=user,
+            db=db,
+            settings=settings,
+            action=action,
+        )
+
+
+def _replace_bilibili_account_locked(
+    payload: BilibiliAccountImportIn,
+    *,
+    request: Request,
+    user: SessionPrincipal,
+    db: Session,
+    settings: Settings,
+    action: str,
+) -> BilibiliAccountStatusOut:
     _require_server_loopback(request, settings)
+    previous = bilibili_account_status(db, settings)
     adult = _verify_adult_account(db, user, payload, settings)
     try:
         result = import_bilibili_cookies_from_browser(
@@ -875,10 +1036,15 @@ def import_bilibili_account(
         db,
         request=request,
         actor=user,
-        action="bilibili_account.imported",
+        action=action,
         resource_type="external_account",
         resource_id="bilibili",
-        metadata={"browser": payload.browser, "verified_by": adult.id},
+        metadata={
+            "browser": payload.browser,
+            "verified_by": adult.id,
+            "previous_account_id": previous.get("account_id"),
+            "account_id": result.get("account_id"),
+        },
     )
     db.commit()
     return BilibiliAccountStatusOut.model_validate(result)
@@ -893,19 +1059,20 @@ def disconnect_bilibili_account_route(
     settings: SettingsDep,
 ) -> BilibiliAccountStatusOut:
     _require_server_loopback(request, settings)
-    adult = _verify_adult_account(db, user, payload, settings)
-    result = disconnect_bilibili_account(db, settings, updated_by=user.id)
-    add_audit(
-        db,
-        request=request,
-        actor=user,
-        action="bilibili_account.disconnected",
-        resource_type="external_account",
-        resource_id="bilibili",
-        metadata={"verified_by": adult.id},
-    )
-    db.commit()
-    return BilibiliAccountStatusOut.model_validate(result)
+    with bilibili_account_guard():
+        adult = _verify_adult_account(db, user, payload, settings)
+        result = disconnect_bilibili_account(db, settings, updated_by=user.id)
+        add_audit(
+            db,
+            request=request,
+            actor=user,
+            action="bilibili_account.disconnected",
+            resource_type="external_account",
+            resource_id="bilibili",
+            metadata={"verified_by": adult.id},
+        )
+        db.commit()
+        return BilibiliAccountStatusOut.model_validate(result)
 
 
 @router.get("/catalog/curated", response_model=list[ContentOut], tags=["catalog"])
@@ -926,41 +1093,88 @@ def content_detail(item_id: str, user: CurrentUser, db: Db) -> ContentOut:
             )
         ).all()
     )
-    launch_allowed = user.role != "child" or bool(
-        db.scalar(
-            select(ContentRequest.id).where(
-                ContentRequest.requester_id == user.id,
-                ContentRequest.item_id == item.id,
-                ContentRequest.status == "approved",
-                ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow()),
-            )
+    approved_ids: set[str] = set()
+    if user.role == "child":
+        approved_ids = set(
+            db.scalars(
+                select(ContentRequest.item_id).where(
+                    ContentRequest.requester_id == user.id,
+                    ContentRequest.status == "approved",
+                    ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow()),
+                )
+            ).all()
         )
+    launch_allowed_ids = (
+        {item.id}
+        if user.role != "child"
+        else _expand_collection_launch_ids(db, approved_ids)
     )
+    episode, collection = _collection_contexts(db, [item.id]).get(item.id, (None, None))
     output = present_content(
         item,
         favorites=favorites,
         completed=completed,
         local_ids=local_ids,
-        launch_allowed_ids={item.id} if launch_allowed else set(),
+        launch_allowed_ids=launch_allowed_ids,
+        collection_episode=episode,
+        collection=collection,
     )
-    if not output.cover_ref and item.id in _downloaded_bilibili_content_ids(db, [item.id]):
+    if _is_external_bilibili_item(item) or (
+        not output.cover_ref and item.id in _downloaded_bilibili_content_ids(db, [item.id])
+    ):
         output.cover_ref = f"/api/v1/artwork/{item.id}"
     return output
+
+
+@router.get("/catalog/{item_id}/collection", response_model=ContentCollectionOut, tags=["catalog"])
+def content_collection(item_id: str, user: CurrentUser, db: Db) -> ContentCollectionOut:
+    current = require_visible_content(db, user, item_id)
+    current_episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == current.id).limit(1)
+    )
+    if current_episode is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="这个内容不属于合集")
+    collection = db.get(ContentCollection, current_episode.collection_id)
+    if collection is None or collection.publication_status != "active":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="合集不存在或已删除")
+    ordered = list(
+        db.scalars(
+            select(ContentCollectionEpisode)
+            .where(
+                ContentCollectionEpisode.collection_id == collection.id,
+                ContentCollectionEpisode.publication_status == "published",
+                ContentCollectionEpisode.content_id.is_not(None),
+            )
+            .order_by(ContentCollectionEpisode.episode_index, ContentCollectionEpisode.id)
+        ).all()
+    )
+    visible = {item.id: item for item in _content_list(db, user)}
+    episodes = [visible[episode.content_id] for episode in ordered if episode.content_id in visible]
+    return ContentCollectionOut(
+        id=collection.id,
+        title=collection.title,
+        description=collection.description,
+        collection_kind=collection.collection_kind,
+        episode_count=collection.episode_count,
+        current_episode_index=current_episode.episode_index,
+        episodes=episodes,
+    )
 
 
 @router.post("/catalog/{item_id}/launch", tags=["catalog"])
 def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
     item = require_visible_content(db, user, item_id)
     if user.role == "child":
-        approved = db.scalar(
-            select(ContentRequest.id).where(
-                ContentRequest.requester_id == user.id,
-                ContentRequest.item_id == item.id,
-                ContentRequest.status == "approved",
-                (ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow())),
-            )
+        approved_item_ids = set(
+            db.scalars(
+                select(ContentRequest.item_id).where(
+                    ContentRequest.requester_id == user.id,
+                    ContentRequest.status == "approved",
+                    (ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow())),
+                )
+            ).all()
         )
-        if approved is None:
+        if item.id not in _expand_collection_launch_ids(db, approved_item_ids):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要家长批准")
     add_audit(db, request=request, actor=user, action="content.launch", resource_type="content", resource_id=item.id)
     db.commit()
@@ -987,7 +1201,7 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="官方入口配置无效")
         if item.acquisition_mode == "external_bilibili":
             try:
-                reference = normalize_bilibili_url(item.launch_url)
+                reference = normalize_bilibili_url(item.launch_url, preserve_page=True)
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="B站播放入口已失效") from exc
             if not reference.external_id.upper().startswith("BV"):
@@ -1148,6 +1362,15 @@ def content_artwork(item_id: str, user: CurrentUser, db: Db, settings: SettingsD
     if artwork is None:
         with _artwork_backfill_lock:
             artwork = existing_artwork()
+            if artwork is None:
+                if _is_external_bilibili_item(item):
+                    try:
+                        _refresh_external_bilibili_metadata(db, settings, item)
+                    except ExternalCatalogError:
+                        pass
+                    else:
+                        db.commit()
+                        artwork = existing_artwork()
             if artwork is None:
                 job = _bilibili_job_for_content(db, item)
                 if job is None or not job.proof_url:
@@ -1488,7 +1711,10 @@ def update_storage_paths(
 def list_managed_library(user: Operator, db: Db, settings: SettingsDep) -> list[LibraryItemOut]:
     items = db.scalars(
         select(ContentItem)
-        .where(ContentItem.household_id == user.household_id)
+        .where(
+            ContentItem.household_id == user.household_id,
+            ContentItem.publication_status != "deleted",
+        )
         .order_by(ContentItem.updated_at.desc())
     ).all()
     return [LibraryItemOut.model_validate(managed_item_payload(db, settings, item)) for item in items]
@@ -1573,6 +1799,12 @@ def update_library_item(
     if asset is not None:
         asset.audience = item.audience
         asset.publication_status = item.publication_status
+    episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
+    )
+    if episode is not None:
+        episode.publication_status = item.publication_status
+        episode.updated_at = utcnow()
     add_audit(
         db,
         request=request,
@@ -1602,6 +1834,12 @@ def archive_library_item(
     asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
     if asset is not None:
         asset.publication_status = "archived"
+    episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
+    )
+    if episode is not None:
+        episode.publication_status = "archived"
+        episode.updated_at = utcnow()
     add_audit(db, request=request, actor=user, action="library.item_archived", resource_type="content", resource_id=item.id)
     db.commit()
     return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
@@ -1624,15 +1862,30 @@ def add_external_library_item(
     description = payload.description
     duration_minutes = 10
     external_id = None
+    collection_entries = []
     if provider == "bilibili":
         cookie_file = active_bilibili_cookie_file(settings)
         try:
-            reference = normalize_bilibili_url(raw_url)
+            reference = normalize_bilibili_url(raw_url, preserve_page=True)
             canonical = reference.url
             try:
-                entry = extract_bilibili_entries(canonical, cookie_file=cookie_file, max_items=1)[0]
+                collection = fetch_bilibili_collection(canonical, cookie_file=cookie_file)
             except ExternalCatalogError:
-                entry = fetch_bilibili_public_metadata(canonical, cookie_file=cookie_file)
+                collection = None
+            if collection is not None:
+                collection_entries = list(collection.episodes)
+                entry = next(
+                    (candidate for candidate in collection_entries if candidate.url == canonical),
+                    next(
+                        (candidate for candidate in collection_entries if candidate.external_id == reference.external_id),
+                        collection_entries[0],
+                    ),
+                )
+            else:
+                try:
+                    entry = extract_bilibili_entries(canonical, cookie_file=cookie_file, max_items=1)[0]
+                except ExternalCatalogError:
+                    entry = fetch_bilibili_public_metadata(canonical, cookie_file=cookie_file)
             raw_url = entry.url
             title = title or entry.title
             cover_url = cover_url or entry.cover_url
@@ -1641,7 +1894,7 @@ def add_external_library_item(
             external_id = entry.external_id
         except (ExternalCatalogError, ValueError):
             try:
-                reference = normalize_bilibili_url(raw_url)
+                reference = normalize_bilibili_url(raw_url, preserve_page=True)
             except ValueError as invalid:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(invalid)) from invalid
             raw_url = reference.url
@@ -1650,6 +1903,18 @@ def add_external_library_item(
             description = description or "已保存在线播放入口；Server 暂时未能读取标题和封面，可稍后编辑或重新同步。"
     elif not title:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="非 B 站在线资源需要填写标题")
+    if collection_entries:
+        upsert_bilibili_entries(
+            db,
+            settings,
+            user=user,
+            entries=collection_entries,
+            audience=payload.audience,
+            age_from=payload.age_from,
+            age_to=payload.age_to,
+            language=payload.language,
+        )
+        db.flush()
     item = upsert_external_item(
         db,
         user=user,
@@ -1665,6 +1930,7 @@ def add_external_library_item(
         description=description,
         duration_minutes=duration_minutes,
         external_id=external_id,
+        force_publish=True,
     )
     db.flush()
     if provider == "bilibili" and cover_url:
@@ -1685,6 +1951,128 @@ def add_external_library_item(
     db.commit()
     db.refresh(item)
     return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.post("/ops/library/{item_id}/refresh-metadata", response_model=LibraryItemOut, tags=["ops"])
+def refresh_external_library_metadata(
+    item_id: str,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> LibraryItemOut:
+    item = db.scalar(
+        select(ContentItem).where(
+            ContentItem.id == item_id,
+            ContentItem.household_id == user.household_id,
+            ContentItem.publication_status != "deleted",
+        )
+    )
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
+    if not _is_external_bilibili_item(item):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="只有 B站在线资源可以刷新平台元数据")
+    try:
+        _refresh_external_bilibili_metadata(db, settings, item)
+    except ExternalCatalogError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="B站暂时没有返回可用封面，请稍后重试") from exc
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.external_metadata_refreshed",
+        resource_type="content",
+        resource_id=item.id,
+    )
+    db.commit()
+    db.refresh(item)
+    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+
+
+@router.delete("/ops/library/{item_id}/permanent", status_code=status.HTTP_204_NO_CONTENT, tags=["ops"])
+def delete_external_library_item(
+    item_id: str,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> Response:
+    item = db.scalar(
+        select(ContentItem).where(ContentItem.id == item_id, ContentItem.household_id == user.household_id)
+    )
+    if item is None or item.publication_status == "deleted":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
+    if not item.launch_url:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地文件不能在这里删除，请使用隐藏或撤回")
+    item.publication_status = "deleted"
+    item.updated_at = utcnow()
+    episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
+    )
+    if episode is not None:
+        episode.publication_status = "deleted"
+        episode.updated_at = utcnow()
+    _remove_cached_artwork(db, settings, item.id)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.external_deleted",
+        resource_type="content",
+        resource_id=item.id,
+        metadata={"url": item.launch_url},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/ops/library/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["ops"])
+def delete_external_collection(
+    collection_id: str,
+    request: Request,
+    user: Operator,
+    db: Db,
+    settings: SettingsDep,
+) -> Response:
+    collection = db.scalar(
+        select(ContentCollection).where(
+            ContentCollection.id == collection_id,
+            ContentCollection.household_id == user.household_id,
+        )
+    )
+    if collection is None or collection.publication_status == "deleted":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="合集不存在")
+    episodes = list(
+        db.scalars(
+            select(ContentCollectionEpisode).where(ContentCollectionEpisode.collection_id == collection.id)
+        ).all()
+    )
+    collection.publication_status = "deleted"
+    collection.updated_at = utcnow()
+    deleted_ids: list[str] = []
+    for episode in episodes:
+        episode.publication_status = "deleted"
+        episode.updated_at = utcnow()
+        if not episode.content_id:
+            continue
+        item = db.get(ContentItem, episode.content_id)
+        if item is None or item.household_id != user.household_id:
+            continue
+        item.publication_status = "deleted"
+        item.updated_at = utcnow()
+        deleted_ids.append(item.id)
+        _remove_cached_artwork(db, settings, item.id)
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.external_collection_deleted",
+        resource_type="content_collection",
+        resource_id=collection.id,
+        metadata={"title": collection.title, "episode_count": len(deleted_ids)},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/ops/external-feeds", response_model=list[ExternalFeedOut], tags=["ops"])
@@ -1886,11 +2274,11 @@ def queue_bilibili_download(
     if not payload.rights_confirmed:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请先确认对该视频拥有下载和家庭使用权限")
     try:
-        reference = normalize_bilibili_url(str(payload.url))
+        reference = normalize_bilibili_url(str(payload.url), preserve_page=True)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     source = require_downloadable_source(db, user, BILIBILI_SOURCE_ID)
-    raw_key = idempotency_header or f"{user.household_id}:{reference.external_id}:{payload.max_height}"
+    raw_key = idempotency_header or f"{user.household_id}:{reference.url}:{payload.max_height}"
     idempotency_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
     existing = db.scalar(select(DownloadJob).where(DownloadJob.idempotency_key == idempotency_key))
     if existing:

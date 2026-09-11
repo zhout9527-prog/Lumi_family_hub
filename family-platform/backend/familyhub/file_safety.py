@@ -172,6 +172,7 @@ def _scan_with_defender(path: Path) -> tuple[str, str]:
             check=False,
             timeout=180,
             shell=False,
+            creationflags=0x0800_0000 if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError):
         return "unavailable", "Windows Defender 扫描未完成"
@@ -204,4 +205,3 @@ def scan_file(path: Path, *, max_bytes: int, use_defender: bool) -> ScanResult:
     if defender_status == "clean":
         return ScanResult("safe", mime_type, defender_reason)
     return ScanResult("review", mime_type, defender_reason)
-

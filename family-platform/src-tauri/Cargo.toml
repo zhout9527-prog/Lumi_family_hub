@@ -1,6 +1,6 @@
 [package]
 name = "lumi-family-hub"
-version = "0.4.2"
+version = "0.4.3"
 description = "Lumi Client and Lumi Server native shells"
 authors = ["Lumi Family"]
 edition = "2021"

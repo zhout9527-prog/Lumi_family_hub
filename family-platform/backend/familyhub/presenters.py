@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import ContentEvent, ContentItem, ContentRequest, Favorite, User
+from .models import ContentCollection, ContentCollectionEpisode, ContentEvent, ContentItem, ContentRequest, Favorite, User
 from .schemas import ContentOut, ContentRequestOut, SubmissionOut
 
 
@@ -27,6 +27,8 @@ def present_content(
     completed: set[str] | None = None,
     local_ids: set[str] | None = None,
     launch_allowed_ids: set[str] | None = None,
+    collection_episode: ContentCollectionEpisode | None = None,
+    collection: ContentCollection | None = None,
 ) -> ContentOut:
     local_available = item.id in (local_ids or set())
     provider = (
@@ -78,6 +80,12 @@ def present_content(
         playback_mode=playback_mode,
         launch_allowed=playable and item.id in (launch_allowed_ids or set()),
         provider=provider,
+        collection_id=collection.id if collection else None,
+        collection_title=collection.title if collection else None,
+        collection_kind=collection.collection_kind if collection else None,
+        episode_index=collection_episode.episode_index if collection_episode else None,
+        episode_count=collection.episode_count if collection else None,
+        section_title=collection_episode.section_title if collection_episode else None,
     )
 
 

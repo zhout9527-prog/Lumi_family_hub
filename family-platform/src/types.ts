@@ -17,6 +17,7 @@ export interface PlaybackResult {
 export interface BilibiliAccountStatus {
   connected: boolean
   accountName?: string
+  accountId?: string
   vip: boolean
   browser?: 'edge' | 'chrome' | 'firefox'
   updatedAt?: string
@@ -88,6 +89,22 @@ export interface ContentItem {
   playbackMode?: PlaybackMode
   launchAllowed?: boolean
   provider?: string
+  collectionId?: string
+  collectionTitle?: string
+  collectionKind?: 'ugc_season' | 'multi_page' | string
+  episodeIndex?: number
+  episodeCount?: number
+  sectionTitle?: string
+}
+
+export interface ContentCollection {
+  id: string
+  title: string
+  description: string
+  collectionKind: string
+  episodeCount: number
+  currentEpisodeIndex: number
+  episodes: ContentItem[]
 }
 
 export interface ContentRequest {
@@ -286,6 +303,12 @@ export interface LibraryItemRecord {
   fileSize: number
   fileAvailable: boolean
   externalUrl?: string
+  collectionId?: string
+  collectionTitle?: string
+  collectionKind?: string
+  episodeIndex?: number
+  episodeCount?: number
+  sectionTitle?: string
   updatedAt: string
 }
 

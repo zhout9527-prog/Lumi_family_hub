@@ -6,7 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .download import DownloadRejected
 from .file_safety import safe_filename, scan_file, sha256_file
@@ -45,8 +45,8 @@ class BilibiliDownloadResult:
     duration_seconds: int | None
 
 
-def normalize_bilibili_url(value: str) -> BilibiliReference:
-    """Accept only public Bilibili video pages and discard tracking parameters."""
+def normalize_bilibili_url(value: str, *, preserve_page: bool = False) -> BilibiliReference:
+    """接受公开视频页并清理追踪参数；需要时保留多 P 的 ``p`` 页码。"""
 
     parsed = urlparse(value.strip())
     hostname = (parsed.hostname or "").rstrip(".").lower()
@@ -66,7 +66,18 @@ def normalize_bilibili_url(value: str) -> BilibiliReference:
     if not match or not parsed.path.lower().startswith("/video/"):
         raise ValueError("链接中没有有效的 BV 视频编号")
     bvid = match.group(1)
-    canonical = f"https://www.bilibili.com/video/{bvid}"
+    query = ""
+    if preserve_page:
+        page_values = [value for key, value in parse_qsl(parsed.query) if key.casefold() == "p"]
+        if page_values:
+            try:
+                page = int(page_values[-1])
+            except ValueError as exc:
+                raise ValueError("B站分 P 页码无效") from exc
+            if page < 1 or page > 10000:
+                raise ValueError("B站分 P 页码超出范围")
+            query = urlencode({"p": page})
+    canonical = urlunparse(("https", "www.bilibili.com", f"/video/{bvid}", "", query, ""))
     return BilibiliReference(canonical, bvid)
 
 
@@ -125,7 +136,7 @@ def download_bilibili_to_quarantine(
 ) -> BilibiliDownloadResult:
     """下载单个家庭管理员确认有权保存的 B 站视频。"""
 
-    reference = normalize_bilibili_url(url)
+    reference = normalize_bilibili_url(url, preserve_page=True)
     if max_height not in {480, 720, 1080}:
         raise DownloadRejected("bilibili_quality_invalid")
     if not re.fullmatch(r"[0-9a-f]{32}", job_id):
@@ -214,7 +225,7 @@ def download_bilibili_to_quarantine(
 
     webpage = str(info.get("webpage_url") or reference.url)
     try:
-        normalized_page = normalize_bilibili_url(webpage)
+        normalized_page = normalize_bilibili_url(webpage, preserve_page=True)
     except ValueError as exc:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise DownloadRejected("bilibili_extractor_redirect_rejected") from exc
@@ -279,7 +290,7 @@ def download_bilibili_cover(
 ) -> Path:
     """只读取公开元数据并缓存原视频封面，用于兼容旧版已发布资源。"""
 
-    reference = normalize_bilibili_url(url)
+    reference = normalize_bilibili_url(url, preserve_page=True)
     if not re.fullmatch(r"[0-9a-f]{32}", content_id):
         raise DownloadRejected("bilibili_content_id_invalid")
     try:

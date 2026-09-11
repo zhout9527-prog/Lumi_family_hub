@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .file_safety import is_within, safe_filename, sha256_file
-from .models import ContentAsset, ContentItem, SystemSetting, User, new_id, utcnow
+from .models import (
+    ContentAsset,
+    ContentCollection,
+    ContentCollectionEpisode,
+    ContentItem,
+    SystemSetting,
+    User,
+    new_id,
+    utcnow,
+)
 
 
 STORAGE_SETTING_KEY = "storage_paths"
@@ -312,6 +321,10 @@ def managed_item_payload(db: Session, settings: Settings, item: ContentItem) -> 
             size = path.stat().st_size
         except OSError:
             size = 0
+    episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
+    )
+    collection = db.get(ContentCollection, episode.collection_id) if episode else None
     return {
         "id": item.id,
         "title": item.title,
@@ -332,6 +345,12 @@ def managed_item_payload(db: Session, settings: Settings, item: ContentItem) -> 
         "file_size": size,
         "file_available": bool(path and path.is_file()),
         "external_url": item.launch_url,
+        "collection_id": collection.id if collection else None,
+        "collection_title": collection.title if collection else None,
+        "collection_kind": collection.collection_kind if collection else None,
+        "episode_index": episode.episode_index if episode else None,
+        "episode_count": collection.episode_count if collection else None,
+        "section_title": episode.section_title if episode else None,
         "updated_at": item.updated_at,
     }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import zlib
 from dataclasses import dataclass
@@ -15,11 +16,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .bilibili_account import active_bilibili_cookie_file
-from .bilibili import normalize_bilibili_url
+from .bilibili import BilibiliReference, normalize_bilibili_url
 from .config import Settings
 from .file_safety import is_within, scan_file
 from .library import external_item_id, load_storage_paths
-from .models import ContentItem, ContentSource, SystemSetting, User, new_id, utcnow
+from .models import (
+    ContentCollection,
+    ContentCollectionEpisode,
+    ContentItem,
+    ContentSource,
+    SystemSetting,
+    User,
+    new_id,
+    utcnow,
+)
 
 
 EXTERNAL_FEEDS_SETTING_KEY = "external_feeds"
@@ -47,6 +57,29 @@ class ExternalEntry:
     duration_minutes: int
     description: str
     uploader: str
+    # 以下字段用于还原 B 站 UGC 合集和多 P 视频；旧调用方可不填写。
+    collection_id: str | None = None
+    collection_external_id: str | None = None
+    collection_title: str | None = None
+    collection_description: str | None = None
+    collection_cover_url: str | None = None
+    collection_kind: str | None = None
+    episode_index: int | None = None
+    episode_count: int | None = None
+    section_title: str | None = None
+    page_number: int = 1
+
+
+@dataclass(frozen=True)
+class ExternalCollection:
+    collection_id: str
+    external_id: str
+    title: str
+    description: str
+    cover_url: str | None
+    source_url: str
+    collection_kind: str
+    episodes: tuple[ExternalEntry, ...]
 
 
 @dataclass(frozen=True)
@@ -78,7 +111,7 @@ def normalize_bilibili_catalog_url(value: str) -> str:
         raise ValueError("B站链接不能包含账号信息、自定义端口或片段")
     if hostname in {"bilibili.com", "www.bilibili.com", "m.bilibili.com", "b23.tv"}:
         try:
-            return normalize_bilibili_url(value).url
+            return normalize_bilibili_url(value, preserve_page=True).url
         except ValueError:
             pass
 
@@ -108,6 +141,25 @@ def _https_bilibili_image_url(value: str | None) -> str | None:
     if parsed.username or parsed.password or parsed.port or parsed.fragment:
         return None
     return urlunparse(("https", hostname, parsed.path, "", parsed.query, ""))
+
+
+def _cover_image_suffix(content_type: str, body: bytes) -> str | None:
+    normalized = content_type.split(";", 1)[0].strip().casefold()
+    declared = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }.get(normalized)
+    if declared:
+        return declared
+    if body.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if body.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if len(body) >= 12 and body.startswith(b"RIFF") and body[8:12] == b"WEBP":
+        return ".webp"
+    return None
 
 
 def _bilibili_cookie_header(cookie_file: Path | None) -> str:
@@ -140,8 +192,14 @@ def _bilibili_request(url: str, *, cookie_file: Path | None = None, accept: str 
     return Request(url, headers=headers)
 
 
-def fetch_bilibili_public_metadata(url: str, *, cookie_file: Path | None = None) -> ExternalEntry:
-    reference = normalize_bilibili_url(url)
+def _fetch_bilibili_view_data(
+    url: str,
+    *,
+    cookie_file: Path | None = None,
+) -> tuple[BilibiliReference, dict[str, Any]]:
+    """读取一次 B 站 view 接口，同时返回规范引用和原始数据。"""
+
+    reference = normalize_bilibili_url(url, preserve_page=True)
     if not reference.external_id.upper().startswith("BV"):
         raise ExternalCatalogError("bilibili_metadata_failed")
     endpoint = f"https://api.bilibili.com/x/web-interface/view?bvid={reference.external_id}"
@@ -153,18 +211,188 @@ def fetch_bilibili_public_metadata(url: str, *, cookie_file: Path | None = None)
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, dict) or payload.get("code") != 0:
         raise ExternalCatalogError("bilibili_metadata_failed")
+    return reference, data
+
+
+def _collection_key(kind: str, external_id: str) -> str:
+    digest = hashlib.sha256(f"bilibili:{kind}:{external_id}".encode("utf-8")).hexdigest()[:32]
+    return f"bilibili-collection-{digest}"
+
+
+def _seconds_to_minutes(value: Any, default: int = 10) -> int:
+    return max(1, round(float(value) / 60)) if isinstance(value, (int, float)) else default
+
+
+def _episode_entry(
+    *,
+    reference: BilibiliReference,
+    title: str,
+    cover_url: str | None,
+    duration: Any,
+    description: str,
+    uploader: str,
+    collection_id: str,
+    collection_external_id: str,
+    collection_title: str,
+    collection_description: str,
+    collection_cover_url: str | None,
+    collection_kind: str,
+    episode_index: int,
+    episode_count: int,
+    section_title: str = "",
+    page_number: int = 1,
+) -> ExternalEntry:
+    page_url = normalize_bilibili_url(reference.url, preserve_page=True).url
+    return ExternalEntry(
+        external_id=reference.external_id,
+        title=title.strip()[:240] or reference.external_id,
+        url=page_url,
+        cover_url=cover_url,
+        duration_minutes=_seconds_to_minutes(duration),
+        description=description.strip()[:4000],
+        uploader=uploader.strip()[:120] or "B站",
+        collection_id=collection_id,
+        collection_external_id=collection_external_id,
+        collection_title=collection_title[:240],
+        collection_description=collection_description[:4000],
+        collection_cover_url=collection_cover_url,
+        collection_kind=collection_kind,
+        episode_index=episode_index,
+        episode_count=episode_count,
+        section_title=section_title[:240],
+        page_number=page_number,
+    )
+
+
+def fetch_bilibili_public_metadata(url: str, *, cookie_file: Path | None = None) -> ExternalEntry:
+    reference, data = _fetch_bilibili_view_data(url, cookie_file=cookie_file)
     duration = data.get("duration")
     return ExternalEntry(
         external_id=reference.external_id,
         title=str(data.get("title") or reference.external_id).strip()[:240],
         url=reference.url,
         cover_url=_https_bilibili_image_url(str(data.get("pic") or "")),
-        duration_minutes=max(1, round(float(duration) / 60)) if isinstance(duration, (int, float)) else 10,
+        duration_minutes=_seconds_to_minutes(duration),
         description=str(data.get("desc") or "").strip()[:4000],
         uploader=str((data.get("owner") or {}).get("name") or "B站").strip()[:120]
         if isinstance(data.get("owner"), dict)
         else "B站",
     )
+
+
+def fetch_bilibili_collection(url: str, *, cookie_file: Path | None = None) -> ExternalCollection | None:
+    """从任意合集分集还原完整 UGC 合集；没有合集时识别多 P 页面。"""
+
+    reference, data = _fetch_bilibili_view_data(url, cookie_file=cookie_file)
+    owner = (data.get("owner") or {}).get("name") if isinstance(data.get("owner"), dict) else "B站"
+    owner = str(owner or "B站")
+    main_cover = _https_bilibili_image_url(str(data.get("pic") or ""))
+    ugc = data.get("ugc_season")
+    if isinstance(ugc, dict) and isinstance(ugc.get("sections"), list):
+        season_id = str(ugc.get("id") or "").strip()
+        sections = ugc.get("sections") or []
+        raw_episodes: list[tuple[dict[str, Any], str]] = []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            section_title = str(section.get("title") or "").strip()
+            for episode in section.get("episodes") or []:
+                if isinstance(episode, dict):
+                    raw_episodes.append((episode, section_title))
+        if season_id and raw_episodes:
+            collection_id = _collection_key("ugc_season", season_id)
+            season_title = str(ugc.get("title") or data.get("title") or season_id).strip()
+            season_description = str(ugc.get("intro") or data.get("desc") or "").strip()
+            season_cover = _https_bilibili_image_url(str(ugc.get("cover") or "")) or main_cover
+            episodes: list[ExternalEntry] = []
+            for index, (episode, section_title) in enumerate(raw_episodes, start=1):
+                arc = episode.get("arc") if isinstance(episode.get("arc"), dict) else episode
+                bvid = str(arc.get("bvid") or episode.get("bvid") or "").strip()
+                if not _BVID.fullmatch(bvid):
+                    continue
+                page = episode.get("page") if isinstance(episode.get("page"), dict) else {}
+                episode_reference = BilibiliReference(
+                    url=f"https://www.bilibili.com/video/{bvid}",
+                    external_id=bvid,
+                )
+                episode_cover = _https_bilibili_image_url(str(arc.get("pic") or "")) or season_cover
+                episode_title = str(arc.get("title") or arc.get("name") or episode.get("title") or bvid)
+                episodes.append(
+                    _episode_entry(
+                        reference=episode_reference,
+                        title=episode_title,
+                        cover_url=episode_cover,
+                        duration=arc.get("duration") or page.get("duration"),
+                        description=str(arc.get("desc") or season_description),
+                        uploader=str((arc.get("author") or {}).get("name") or owner)
+                        if isinstance(arc.get("author"), dict)
+                        else owner,
+                        collection_id=collection_id,
+                        collection_external_id=season_id,
+                        collection_title=season_title,
+                        collection_description=season_description,
+                        collection_cover_url=season_cover,
+                        collection_kind="ugc_season",
+                        episode_index=index,
+                        episode_count=len(raw_episodes),
+                        section_title=section_title,
+                    )
+                )
+            if episodes:
+                return ExternalCollection(
+                    collection_id=collection_id,
+                    external_id=season_id,
+                    title=season_title[:240],
+                    description=season_description[:4000],
+                    cover_url=season_cover,
+                    source_url=reference.url,
+                    collection_kind="ugc_season",
+                    episodes=tuple(episodes),
+                )
+
+    pages = data.get("pages") if isinstance(data.get("pages"), list) else []
+    if len(pages) > 1:
+        collection_id = _collection_key("multi_page", reference.external_id)
+        title = str(data.get("title") or reference.external_id).strip()
+        description = str(data.get("desc") or "").strip()
+        episodes: list[ExternalEntry] = []
+        for index, page in enumerate(pages, start=1):
+            if not isinstance(page, dict):
+                continue
+            page_number = int(page.get("page") or index)
+            page_url = f"https://www.bilibili.com/video/{reference.external_id}?p={page_number}"
+            page_reference = BilibiliReference(url=page_url, external_id=reference.external_id)
+            episodes.append(
+                _episode_entry(
+                    reference=page_reference,
+                    title=str(page.get("part") or f"第 {page_number} P"),
+                    cover_url=main_cover,
+                    duration=page.get("duration") or data.get("duration"),
+                    description=description,
+                    uploader=owner,
+                    collection_id=collection_id,
+                    collection_external_id=reference.external_id,
+                    collection_title=title,
+                    collection_description=description,
+                    collection_cover_url=main_cover,
+                    collection_kind="multi_page",
+                    episode_index=index,
+                    episode_count=len(pages),
+                    page_number=page_number,
+                )
+            )
+        if episodes:
+            return ExternalCollection(
+                collection_id=collection_id,
+                external_id=reference.external_id,
+                title=title[:240],
+                description=description[:4000],
+                cover_url=main_cover,
+                source_url=reference.url,
+                collection_kind="multi_page",
+                episodes=tuple(episodes),
+            )
+    return None
 
 
 def cache_external_cover(
@@ -187,19 +415,16 @@ def cache_external_cover(
     temporary = (image_root / f".{item.id}--cover.tmp").resolve()
     if not is_within(temporary, image_root):
         raise ExternalCatalogError("bilibili_cover_path_invalid")
+    candidate: Path | None = None
     try:
-        with urlopen(_bilibili_request(source_url, accept="image/avif,image/webp,image/png,image/jpeg"), timeout=20) as response:
+        with urlopen(_bilibili_request(source_url, accept="image/jpeg,image/png,image/webp,*/*;q=0.1"), timeout=20) as response:
             content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().casefold()
-            suffix = {
-                "image/jpeg": ".jpg",
-                "image/png": ".png",
-                "image/webp": ".webp",
-            }.get(content_type)
-            if suffix is None:
-                raise ExternalCatalogError("bilibili_cover_format_invalid")
             body = response.read(_MAX_COVER_BYTES + 1)
         if not body or len(body) > _MAX_COVER_BYTES:
             raise ExternalCatalogError("bilibili_cover_size_invalid")
+        suffix = _cover_image_suffix(content_type, body)
+        if suffix is None:
+            raise ExternalCatalogError("bilibili_cover_format_invalid")
         temporary.write_bytes(body)
         candidate = temporary.with_suffix(suffix)
         temporary.replace(candidate)
@@ -207,12 +432,19 @@ def cache_external_cover(
             candidate.unlink(missing_ok=True)
             raise ExternalCatalogError("bilibili_cover_format_invalid")
         destination = image_root / f"{item.id}--cover{suffix}"
+        for old_cover in image_root.glob(f"{item.id}--cover.*"):
+            if old_cover != candidate and old_cover != destination and old_cover.is_file():
+                old_cover.unlink(missing_ok=True)
         candidate.replace(destination)
     except ExternalCatalogError:
         temporary.unlink(missing_ok=True)
+        if candidate is not None:
+            candidate.unlink(missing_ok=True)
         raise
     except OSError as exc:
         temporary.unlink(missing_ok=True)
+        if candidate is not None:
+            candidate.unlink(missing_ok=True)
         raise ExternalCatalogError("bilibili_cover_download_failed") from exc
     item.cover_ref = f"/api/v1/artwork/{item.id}"
     return item.cover_ref
@@ -293,15 +525,31 @@ def extract_bilibili_entries(
         duration = raw.get("duration")
         duration_minutes = max(1, round(float(duration) / 60)) if isinstance(duration, (int, float)) else 10
         title = str(raw.get("title") or external_id).strip()[:240]
+        description = str(raw.get("description") or "").strip()[:4000]
+        uploader = str(raw.get("uploader") or raw.get("channel") or "B站").strip()[:120]
+        normalized_cover = _https_bilibili_image_url(cover_url)
+        if normalized_cover is None or title.casefold() == external_id.casefold():
+            try:
+                enriched = fetch_bilibili_public_metadata(webpage_url, cookie_file=cookie_file)
+            except ExternalCatalogError:
+                enriched = None
+            if enriched is not None:
+                normalized_cover = normalized_cover or enriched.cover_url
+                if title.casefold() == external_id.casefold():
+                    title = enriched.title
+                if not isinstance(duration, (int, float)):
+                    duration_minutes = enriched.duration_minutes
+                description = description or enriched.description
+                uploader = uploader if uploader != "B站" else enriched.uploader
         entries.append(
             ExternalEntry(
                 external_id=external_id,
                 title=title,
                 url=webpage_url,
-                cover_url=_https_bilibili_image_url(cover_url),
+                cover_url=normalized_cover,
                 duration_minutes=duration_minutes,
-                description=str(raw.get("description") or "").strip()[:4000],
-                uploader=str(raw.get("uploader") or raw.get("channel") or "B站").strip()[:120],
+                description=description,
+                uploader=uploader,
             )
         )
         if len(entries) >= max_items:
@@ -334,7 +582,8 @@ def _single_bilibili_info(url: str, *, cookie_file: Path | None, get_comments: b
         options["cookiefile"] = str(cookie_file)
     try:
         with YoutubeDL(options) as downloader:
-            info = downloader.extract_info(normalize_bilibili_url(url).url + "?p=1", download=False)
+            # 保留用户选择的多 P 页；没有页码时让 yt-dlp 读取默认页。
+            info = downloader.extract_info(normalize_bilibili_url(url, preserve_page=True).url, download=False)
     except DownloadError as exc:
         message = str(exc).casefold()
         code = "bilibili_login_required" if "cookie" in message or "login" in message else "bilibili_metadata_failed"
@@ -412,15 +661,31 @@ def resolve_bilibili_playback(url: str, *, cookie_file: Path | None = None) -> B
 
 
 def fetch_bilibili_interactions(url: str, *, cookie_file: Path | None = None) -> dict[str, Any]:
-    reference = normalize_bilibili_url(url)
+    reference = normalize_bilibili_url(url, preserve_page=True)
+    page_number = 1
+    try:
+        page_number = max(1, int(dict(parse_qsl(urlparse(reference.url).query)).get("p", "1")))
+    except ValueError:
+        page_number = 1
     endpoint = f"https://api.bilibili.com/x/web-interface/view?bvid={reference.external_id}"
     try:
         with urlopen(_bilibili_request(endpoint, cookie_file=cookie_file), timeout=20) as response:
             payload = json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
         data = payload.get("data") if isinstance(payload, dict) else None
         pages = data.get("pages") if isinstance(data, dict) else None
-        first_page = pages[0] if isinstance(pages, list) and pages and isinstance(pages[0], dict) else {}
-        cid = str(first_page.get("cid") or data.get("cid") or "") if isinstance(data, dict) else ""
+        selected_page = (
+            next(
+                (
+                    page
+                    for page in pages
+                    if isinstance(page, dict) and int(page.get("page") or 0) == page_number
+                ),
+                pages[0] if pages else {},
+            )
+            if isinstance(pages, list)
+            else {}
+        )
+        cid = str(selected_page.get("cid") or data.get("cid") or "") if isinstance(data, dict) else ""
     except (OSError, ValueError, json.JSONDecodeError):
         cid = ""
 
@@ -523,6 +788,7 @@ def upsert_external_item(
     description: str = "",
     duration_minutes: int = 10,
     external_id: str | None = None,
+    force_publish: bool = False,
 ) -> ContentItem:
     source = _ensure_external_source(db, provider)
     existing = db.scalar(
@@ -539,10 +805,15 @@ def upsert_external_item(
     item.duration_minutes = max(1, duration_minutes)
     item.description = description.strip() or "由家庭管理员添加的在线内容。"
     item.tags = ["在线内容", "B站" if provider == "bilibili" else provider]
-    item.cover_ref = cover_url
+    if provider == "bilibili":
+        # B站图片有防盗链，统一经 Server 缓存和鉴权输出，避免各端直接加载失败。
+        item.cover_ref = f"/api/v1/artwork/{item.id}"
+    elif cover_url:
+        item.cover_ref = cover_url
     item.launch_url = url
     item.acquisition_mode = mode
-    item.publication_status = "published"
+    if existing is None or force_publish:
+        item.publication_status = "published"
     item.audience = audience
     item.stimulation_level = "reviewed"
     item.offline_activity = "看完后和家人聊一聊最喜欢的部分"
@@ -565,7 +836,41 @@ def upsert_bilibili_entries(
     language: str,
 ) -> int:
     count = 0
+    cover_budget = 12
+    collections: dict[str, ContentCollection] = {}
+    incoming_collection_urls: dict[str, set[str]] = {}
     for entry in entries:
+        collection: ContentCollection | None = None
+        if entry.collection_id:
+            collection = collections.get(entry.collection_id) or db.get(ContentCollection, entry.collection_id)
+            if collection is None:
+                collection = ContentCollection(
+                    id=entry.collection_id,
+                    household_id=user.household_id,
+                    provider="bilibili",
+                    external_id=entry.collection_external_id or entry.collection_id,
+                    title=entry.collection_title or entry.title,
+                    description=entry.collection_description or "",
+                    cover_url=entry.collection_cover_url,
+                    source_url=entry.url,
+                    collection_kind=entry.collection_kind or "ugc_season",
+                    episode_count=entry.episode_count or 0,
+                )
+                db.add(collection)
+                db.flush()
+            elif collection.household_id != user.household_id:
+                continue
+            if collection.publication_status == "deleted":
+                # 用户删除过的整个合集不因后台定时同步而复活。
+                continue
+            collection.title = (entry.collection_title or collection.title)[:240]
+            collection.description = (entry.collection_description or collection.description)[:4000]
+            collection.cover_url = entry.collection_cover_url or collection.cover_url
+            collection.collection_kind = entry.collection_kind or collection.collection_kind
+            collection.episode_count = entry.episode_count or collection.episode_count
+            collection.updated_at = utcnow()
+            collections[entry.collection_id] = collection
+            incoming_collection_urls.setdefault(entry.collection_id, set()).add(entry.url)
         item = upsert_external_item(
             db,
             user=user,
@@ -582,14 +887,96 @@ def upsert_bilibili_entries(
             external_id=entry.external_id,
         )
         db.flush()
-        if entry.cover_url:
+        if item.publication_status == "deleted":
+            if collection is not None:
+                episode = db.get(ContentCollectionEpisode, _episode_key(collection.id, entry.url))
+                if episode is not None:
+                    episode.publication_status = "deleted"
+            continue
+        if collection is not None:
+            item.subtitle = f"{collection.title} · 第 {entry.episode_index or 1} 集"[:300]
+            item.tags = list(dict.fromkeys([*(item.tags or []), "合集", collection.title]))
+            episode_id = _episode_key(collection.id, entry.url)
+            episode = db.get(ContentCollectionEpisode, episode_id)
+            if episode is None:
+                episode = ContentCollectionEpisode(
+                    id=episode_id,
+                    collection_id=collection.id,
+                    content_id=item.id,
+                    external_id=entry.external_id,
+                    title=entry.title,
+                    source_url=entry.url,
+                )
+                db.add(episode)
+            episode.content_id = item.id
+            episode.external_id = entry.external_id
+            episode.page_number = max(1, entry.page_number)
+            episode.episode_index = max(1, entry.episode_index or 1)
+            episode.section_title = entry.section_title or ""
+            episode.title = entry.title[:240]
+            episode.source_url = entry.url
+            episode.cover_url = entry.cover_url
+            episode.duration_minutes = max(1, entry.duration_minutes)
+            episode.publication_status = item.publication_status
+            episode.updated_at = utcnow()
+        if entry.cover_url and cover_budget > 0:
             try:
                 cache_external_cover(db, settings, item=item, cover_url=entry.cover_url, provider="bilibili")
+                cover_budget -= 1
             except ExternalCatalogError:
                 # 元数据同步不能因为单张封面临时不可用而整体失败。
                 pass
         count += 1
+    for collection_id, incoming_urls in incoming_collection_urls.items():
+        for episode in db.scalars(
+            select(ContentCollectionEpisode).where(
+                ContentCollectionEpisode.collection_id == collection_id,
+                ContentCollectionEpisode.publication_status != "deleted",
+            )
+        ).all():
+            if episode.source_url not in incoming_urls:
+                episode.publication_status = "unavailable"
+                episode.updated_at = utcnow()
     return count
+
+
+def _episode_key(collection_id: str, url: str) -> str:
+    digest = hashlib.sha256(f"{collection_id}:{url}".encode("utf-8")).hexdigest()[:32]
+    return f"bilibili-episode-{digest}"
+
+
+def expand_bilibili_collections(
+    entries: list[ExternalEntry],
+    *,
+    cookie_file: Path | None = None,
+) -> list[ExternalEntry]:
+    """将收藏夹中的任意一集扩展为原合集，并按平台顺序去重。"""
+
+    expanded: list[ExternalEntry] = []
+    seen_urls: set[str] = set()
+    seen_collections: set[str] = set()
+    for seed in entries:
+        if seed.url in seen_urls:
+            continue
+        collection: ExternalCollection | None = None
+        try:
+            collection = fetch_bilibili_collection(seed.url, cookie_file=cookie_file)
+        except (ExternalCatalogError, OSError, ValueError):
+            # 单条元数据仍然可用时，合集接口失败不能阻断整个收藏夹同步。
+            collection = None
+        if collection is not None and collection.collection_id not in seen_collections:
+            seen_collections.add(collection.collection_id)
+            candidates = collection.episodes[:200]
+        elif collection is not None:
+            candidates = ()
+        else:
+            candidates = (seed,)
+        for entry in candidates:
+            if entry.url in seen_urls:
+                continue
+            seen_urls.add(entry.url)
+            expanded.append(entry)
+    return expanded
 
 
 def load_external_feeds(db: Session) -> list[dict[str, Any]]:
@@ -620,6 +1007,7 @@ def sync_external_feed(db: Session, settings: Settings, *, user: User, feed: dic
         cookie_file=cookie,
         max_items=int(feed.get("max_items") or 50),
     )
+    entries = expand_bilibili_collections(entries, cookie_file=cookie)
     count = upsert_bilibili_entries(
         db,
         settings,
@@ -630,7 +1018,9 @@ def sync_external_feed(db: Session, settings: Settings, *, user: User, feed: dic
         age_to=int(feed.get("age_to") or 99),
         language=str(feed.get("language") or "中文"),
     )
-    feed["last_synced_at"] = utcnow().isoformat()
+    completed_at = utcnow().isoformat()
+    feed["last_attempt_at"] = completed_at
+    feed["last_synced_at"] = completed_at
     feed["last_error"] = None
     feed["item_count"] = count
     return count

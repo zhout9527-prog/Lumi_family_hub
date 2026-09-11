@@ -152,6 +152,64 @@ class ContentItem(Base):
     source: Mapped[ContentSource | None] = relationship()
 
 
+class ContentCollection(Base):
+    """外部平台的合集主记录；分集通过 ContentCollectionEpisode 关联。"""
+
+    __tablename__ = "content_collections"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    household_id: Mapped[str] = mapped_column(String(40), index=True, default="home")
+    provider: Mapped[str] = mapped_column(String(40), index=True, default="bilibili")
+    external_id: Mapped[str] = mapped_column(String(200), index=True)
+    title: Mapped[str] = mapped_column(String(240))
+    description: Mapped[str] = mapped_column(Text, default="")
+    cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    source_url: Mapped[str] = mapped_column(String(1000))
+    collection_kind: Mapped[str] = mapped_column(String(40), default="ugc_season")
+    episode_count: Mapped[int] = mapped_column(Integer, default=0)
+    publication_status: Mapped[str] = mapped_column(String(24), index=True, default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    episodes: Mapped[list["ContentCollectionEpisode"]] = relationship(
+        back_populates="collection",
+        cascade="all, delete-orphan",
+        order_by="ContentCollectionEpisode.episode_index",
+    )
+
+
+class ContentCollectionEpisode(Base):
+    """合集中的一个可播放分集，支持同一 BV 的多 P 页面。"""
+
+    __tablename__ = "content_collection_episodes"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        ForeignKey("content_collections.id", ondelete="CASCADE"), index=True
+    )
+    content_id: Mapped[str | None] = mapped_column(
+        ForeignKey("content_items.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    external_id: Mapped[str] = mapped_column(String(200), index=True)
+    page_number: Mapped[int] = mapped_column(Integer, default=1)
+    episode_index: Mapped[int] = mapped_column(Integer, default=1)
+    section_title: Mapped[str] = mapped_column(String(240), default="")
+    title: Mapped[str] = mapped_column(String(240))
+    source_url: Mapped[str] = mapped_column(String(1000))
+    cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=1)
+    publication_status: Mapped[str] = mapped_column(String(24), index=True, default="published")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    collection: Mapped[ContentCollection] = relationship(back_populates="episodes")
+    content: Mapped[ContentItem | None] = relationship()
+
+    __table_args__ = (
+        Index("ix_collection_episode_order", "collection_id", "episode_index"),
+    )
+
+
 class ContentRequest(Base):
     __tablename__ = "content_requests"
 

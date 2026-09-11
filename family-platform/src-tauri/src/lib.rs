@@ -149,7 +149,7 @@ fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     let is_server = app.config().identifier.ends_with(".server");
     let menu = MenuBuilder::new(app)
         .text("show", "打开 Lumi")
-        .text("quit", "退出")
+        .text("quit", if is_server { "退出并停止服务" } else { "退出" })
         .build()?;
     let mut builder = TrayIconBuilder::with_id("lumi-main")
         .menu(&menu)
@@ -273,7 +273,8 @@ fn start_server_core(app: &tauri::App) -> io::Result<Option<Child>> {
         .env("FAMILYHUB_ENVIRONMENT", "production")
         .env("FAMILYHUB_SEED_DEMO", "false")
         .env("FAMILYHUB_API_HOST", "0.0.0.0")
-        .env("FAMILYHUB_API_PORT", SERVER_API_PORT.to_string());
+        .env("FAMILYHUB_API_PORT", SERVER_API_PORT.to_string())
+        .env("FAMILYHUB_PARENT_PID", std::process::id().to_string());
     #[cfg(target_os = "windows")]
     command.creation_flags(0x0800_0000);
     command.spawn().map(Some)
@@ -312,12 +313,12 @@ pub fn run() {
         });
 
     let app = builder
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(desktop)]
             {
-                app.manage(ExitState(AtomicBool::new(false)));
-                let child = if app.config().identifier.ends_with(".server") {
-                    match start_server_core(app) {
+                _app.manage(ExitState(AtomicBool::new(false)));
+                let child = if _app.config().identifier.ends_with(".server") {
+                    match start_server_core(_app) {
                         Ok(child) => child,
                         Err(error) => {
                             // 让 GUI 保持打开并显示离线状态，避免 Windows 上只闪退而
@@ -329,18 +330,18 @@ pub fn run() {
                 } else {
                     None
                 };
-                app.manage(ServerProcess(Mutex::new(child)));
-                install_tray(app)?;
+                _app.manage(ServerProcess(Mutex::new(child)));
+                install_tray(_app)?;
             }
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building Lumi application");
 
-    app.run(|app_handle, event| {
+    app.run(|_app_handle, _event| {
         #[cfg(desktop)]
-        if matches!(event, tauri::RunEvent::Exit) {
-            if let Some(state) = app_handle.try_state::<ServerProcess>() {
+        if matches!(_event, tauri::RunEvent::Exit) {
+            if let Some(state) = _app_handle.try_state::<ServerProcess>() {
                 if let Ok(mut child) = state.0.lock() {
                     if let Some(process) = child.as_mut() {
                         let _ = process.kill();

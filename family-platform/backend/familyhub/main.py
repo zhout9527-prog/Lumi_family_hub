@@ -76,6 +76,7 @@ from .models import (
     DownloadJob,
     Favorite,
     OperatorRecovery,
+    SessionScope,
     SessionToken,
     SystemSetting,
     User,
@@ -388,6 +389,22 @@ def _expand_collection_launch_ids(db: Session, item_ids: set[str]) -> set[str]:
         ).all()
     )
     return item_ids | {item_id for item_id in siblings if item_id}
+
+
+def _require_child_launch_approval(db: Session, user: SessionPrincipal, item_id: str) -> None:
+    if user.role != "child":
+        return
+    approved_item_ids = set(
+        db.scalars(
+            select(ContentRequest.item_id).where(
+                ContentRequest.requester_id == user.id,
+                ContentRequest.status == "approved",
+                ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow()),
+            )
+        ).all()
+    )
+    if item_id not in _expand_collection_launch_ids(db, approved_item_ids):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要家长批准")
 
 
 def _content_list(db: Session, user: User, query: str | None = None) -> list[ContentOut]:
@@ -811,7 +828,7 @@ def register_account(payload: RegistrationIn, request: Request, db: Db, settings
     if not limiter.allow(client, time.monotonic()):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="注册申请过于频繁，请稍后再试")
     if payload.requested_role == "child" and payload.child_age is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="儿童账号需要填写年龄")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="儿童账号需要填写年龄")
     if db.scalar(select(User.id).where(User.username == payload.username)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这个登录账号已存在")
     existing = db.scalar(
@@ -1164,18 +1181,7 @@ def content_collection(item_id: str, user: CurrentUser, db: Db) -> ContentCollec
 @router.post("/catalog/{item_id}/launch", tags=["catalog"])
 def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
     item = require_visible_content(db, user, item_id)
-    if user.role == "child":
-        approved_item_ids = set(
-            db.scalars(
-                select(ContentRequest.item_id).where(
-                    ContentRequest.requester_id == user.id,
-                    ContentRequest.status == "approved",
-                    (ContentRequest.expires_at.is_(None) | (ContentRequest.expires_at > utcnow())),
-                )
-            ).all()
-        )
-        if item.id not in _expand_collection_launch_ids(db, approved_item_ids):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要家长批准")
+    _require_child_launch_approval(db, user, item.id)
     add_audit(db, request=request, actor=user, action="content.launch", resource_type="content", resource_id=item.id)
     db.commit()
     asset = db.scalar(
@@ -1189,7 +1195,12 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
         asset_path = resolve_asset_path(db, settings, asset)
         if asset_path is None or not asset_path.is_file():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地资源文件不可用")
-        raw_ticket, grant = request.app.state.playback_tickets.issue(user_id=user.id, content_id=item.id)
+        raw_ticket, grant = request.app.state.playback_tickets.issue(
+            user_id=user.id,
+            session_id=request.state.session_token.id,
+            content_id=item.id,
+            metadata={"stream": "local_asset"},
+        )
         return PlaybackOut(
             mode="local_asset",
             url=f"/api/v1/media/{item.id}?ticket={raw_ticket}",
@@ -1220,6 +1231,7 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
             raw_ticket, grant = request.app.state.playback_tickets.issue(
                 user_id=user.id,
+                session_id=request.state.session_token.id,
                 content_id=item.id,
                 metadata={"stream": "bilibili_hls"},
             )
@@ -1236,14 +1248,33 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
     return PlaybackOut(mode="local_service", service=service)
 
 
-def _resolve_online_grant(request: Request, db: Session, item_id: str, ticket: str):
+def _require_playback_grant(
+    request: Request,
+    db: Session,
+    item_id: str,
+    ticket: str,
+    *,
+    stream: str,
+):
     grant = request.app.state.playback_tickets.resolve(ticket, content_id=item_id)
-    if grant is None or grant.metadata.get("stream") != "bilibili_hls":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="在线播放凭证无效或已过期")
+    if grant is None or grant.metadata.get("stream") != stream:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="播放凭证无效或已过期")
+    session = db.get(SessionToken, grant.session_id)
+    if (
+        session is None
+        or session.user_id != grant.user_id
+        or session.revoked_at is not None
+        or session.expires_at <= utcnow()
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="播放会话已失效")
     user = db.get(User, grant.user_id)
-    item = db.get(ContentItem, item_id)
-    if user is None or user.status != "active" or item is None or item.household_id != user.household_id:
+    if user is None or user.status != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="播放权限已失效")
+    scope = db.get(SessionScope, session.id)
+    effective_role = scope.effective_role if scope and scope.effective_role in {"child", "guardian", "operator"} else user.role
+    principal = SessionPrincipal.from_user(user, effective_role)
+    item = require_visible_content(db, principal, item_id)
+    _require_child_launch_approval(db, principal, item.id)
     return grant
 
 
@@ -1254,7 +1285,7 @@ def stream_bilibili_playlist(
     db: Db,
     ticket: str = Query(min_length=32, max_length=200),
 ):
-    _resolve_online_grant(request, db, item_id, ticket)
+    _require_playback_grant(request, db, item_id, ticket, stream="bilibili_hls")
     playlist = request.app.state.bilibili_hls.playlist(item_id, ticket)
     if playlist is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="在线播放缓存已失效，请重新打开视频")
@@ -1273,7 +1304,7 @@ def stream_bilibili_segment(
     db: Db,
     ticket: str = Query(min_length=32, max_length=200),
 ):
-    _resolve_online_grant(request, db, item_id, ticket)
+    _require_playback_grant(request, db, item_id, ticket, stream="bilibili_hls")
     segment = request.app.state.bilibili_hls.segment(item_id, segment_name)
     if segment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="视频分片尚未就绪")
@@ -1313,13 +1344,7 @@ def stream_local_asset(
     settings: SettingsDep,
     ticket: str = Query(min_length=32, max_length=200),
 ):
-    grant = request.app.state.playback_tickets.resolve(ticket, content_id=item_id)
-    if grant is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="播放凭证无效或已过期")
-    user = db.get(User, grant.user_id)
-    item = db.get(ContentItem, item_id)
-    if user is None or user.status != "active" or item is None or item.household_id != user.household_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="播放权限已失效")
+    _require_playback_grant(request, db, item_id, ticket, stream="local_asset")
     asset = db.scalar(
         select(ContentAsset).where(
             ContentAsset.content_id == item_id,
@@ -1558,7 +1583,7 @@ def confirm_transfer(submission_id: str, payload: TransferConfirmIn, request: Re
     if submission is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="候选记录不存在")
     if not payload.confirmed:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="必须由家长明确确认已在官方客户端预览并转存")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="必须由家长明确确认已在官方客户端预览并转存")
     submission.transfer_status = "confirmed"
     submission.provider = payload.provider
     submission.transferred_by = user.id
@@ -2184,9 +2209,9 @@ def validate_source(source_id: str, payload: SourceValidateIn, request: Request,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="来源不存在")
     expiry = _naive_utc(payload.review_expire_at)
     if expiry <= utcnow():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="复核到期时间必须在未来")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="复核到期时间必须在未来")
     if not payload.terms_confirmed or not payload.rights_confirmed or not source.terms_url or not source.license_note:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="条款和权利依据未完成")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="条款和权利依据未完成")
     source.reviewed_at = utcnow()
     source.review_expire_at = expiry
     source.allow_download = source.kind in {"direct_http", "cloud_inbox", "owned_file"}
@@ -2222,7 +2247,7 @@ def queue_direct_download(
     source = require_downloadable_source(db, user, payload.source_id)
     download_url = str(payload.url)
     if not url_matches_source(download_url, source):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="URL 必须是来源白名单下的同域 HTTPS 地址")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="URL 必须是来源白名单下的同域 HTTPS 地址")
     raw_key = idempotency_header or f"{user.household_id}:{source.id}:{payload.external_id}:{payload.content_kind}"
     idempotency_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
     existing = db.scalar(select(DownloadJob).where(DownloadJob.idempotency_key == idempotency_key))
@@ -2272,11 +2297,11 @@ def queue_bilibili_download(
     if not settings.bilibili_download_enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="B站下载连接器未启用")
     if not payload.rights_confirmed:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请先确认对该视频拥有下载和家庭使用权限")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="请先确认对该视频拥有下载和家庭使用权限")
     try:
         reference = normalize_bilibili_url(str(payload.url), preserve_page=True)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     source = require_downloadable_source(db, user, BILIBILI_SOURCE_ID)
     raw_key = idempotency_header or f"{user.household_id}:{reference.url}:{payload.max_height}"
     idempotency_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()

@@ -391,7 +391,7 @@ function variantsFor(abi) {
 function removeOldAndroidArtifacts(keepVersion) {
   if (!existsSync(artifactRoot)) return
   const escapedVersion = keepVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const keepPattern = new RegExp(`^lumi-client-${escapedVersion}-`, 'i')
+  const keepPattern = new RegExp(`^lumi-client(?:-tv)?-${escapedVersion}-`, 'i')
   const managedPattern = /^lumi-(?:client(?:-tv)?|family-hub)-\d+\.\d+\.\d+-.*\.(?:apk|aab)$/i
   for (const entry of readdirSync(artifactRoot, { withFileTypes: true })) {
     if (!entry.isFile() || !managedPattern.test(entry.name) || keepPattern.test(entry.name)) continue

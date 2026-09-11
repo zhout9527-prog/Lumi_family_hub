@@ -13,6 +13,7 @@ from .models import utcnow
 @dataclass(frozen=True)
 class PlaybackGrant:
     user_id: str
+    session_id: str
     content_id: str
     expires_at: datetime
     metadata: dict[str, Any]
@@ -30,12 +31,14 @@ class PlaybackTickets:
         self,
         *,
         user_id: str,
+        session_id: str,
         content_id: str,
         metadata: dict[str, Any] | None = None,
     ) -> tuple[str, PlaybackGrant]:
         raw = secrets.token_urlsafe(32)
         grant = PlaybackGrant(
             user_id=user_id,
+            session_id=session_id,
             content_id=content_id,
             expires_at=utcnow() + self.lifetime,
             metadata=dict(metadata or {}),

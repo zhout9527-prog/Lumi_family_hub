@@ -63,9 +63,16 @@ def test_storage_paths_scan_publish_and_stream(client: TestClient, tmp_path: Pat
     assert media.status_code == 200
     assert media.content == b"mock-mp4-content"
 
+    assert client.post("/api/v1/auth/logout", headers=guardian).status_code == 204
+    assert client.get(launch.json()["url"]).status_code == 401
+    guardian = login(client, "guardian")
+    fresh_launch = client.post(f"/api/v1/catalog/{local['id']}/launch", headers=guardian)
+    assert fresh_launch.status_code == 200
+
     archived = client.delete(f"/api/v1/ops/library/{local['id']}", headers=operator)
     assert archived.status_code == 200
     assert archived.json()["publication_status"] == "archived"
+    assert client.get(fresh_launch.json()["url"]).status_code == 404
     assert all(item["id"] != local["id"] for item in client.get("/api/v1/catalog/curated", headers=guardian).json())
 
 

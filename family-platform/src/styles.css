@@ -5405,6 +5405,64 @@ select:focus-visible,
   font-size: 15px;
 }
 
+html.mobile-mode .player-backdrop {
+  padding: 0;
+}
+
+html.mobile-mode .media-player.has-custom-video,
+html.mobile-mode .media-player.has-custom-video.has-community {
+  width: 100vw;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
+html.mobile-mode .player-experience {
+  display: block;
+  max-height: 100dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+html.mobile-mode .player-experience .lumi-video-player {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  max-height: 100dvh;
+}
+
+html.mobile-mode .player-community {
+  height: min(44dvh, 360px);
+  max-height: none;
+}
+
+html.mobile-mode:fullscreen .player-backdrop {
+  background: #000;
+  backdrop-filter: none;
+}
+
+html.mobile-mode:fullscreen .media-player.has-custom-video,
+html.mobile-mode:fullscreen .media-player.has-custom-video.has-community,
+html.mobile-mode:fullscreen .player-experience,
+html.mobile-mode:fullscreen .lumi-video-player {
+  width: 100vw;
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+
+html.mobile-mode:fullscreen .player-experience {
+  overflow: hidden;
+}
+
+html.mobile-mode:fullscreen .player-experience .lumi-video-player {
+  position: relative;
+}
+
+html.mobile-mode:fullscreen .player-community {
+  display: none;
+}
+
 @media (max-width: 720px) {
   .player-backdrop {
     padding: 0;

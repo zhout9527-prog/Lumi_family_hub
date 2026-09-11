@@ -60,11 +60,11 @@ def apply_asset_review(
     if asset.scan_status == "blocked":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="被格式策略冻结的文件不能发布")
     if not payload.rights_confirmed or not payload.security_confirmed:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布必须确认权利与安全检查")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="发布必须确认权利与安全检查")
     if not payload.title or not payload.content_kind:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="发布信息不完整")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="发布信息不完整")
     if payload.age_to < payload.age_from:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="适龄范围无效")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="适龄范围无效")
     storage_paths = load_storage_paths(db, settings, ensure=True)
     source_path = (storage_paths["quarantine"] / asset.quarantine_ref).resolve()
     if not source_path.is_file():

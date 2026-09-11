@@ -14,6 +14,79 @@ function check(condition, message) {
 
 async function createContext(browser, options) {
   const context = await browser.newContext(options)
+  // 播放器手势和遥控器测试使用确定性的媒体时钟，不依赖公网视频或正式家庭片库。
+  await context.addInitScript(() => {
+    const states = new WeakMap()
+    const stateFor = (element) => {
+      if (!states.has(element)) {
+        states.set(element, { paused: true, currentTime: 0, volume: 1, playbackRate: 1 })
+      }
+      return states.get(element)
+    }
+    const media = HTMLMediaElement.prototype
+    Object.defineProperties(media, {
+      paused: { configurable: true, get() { return stateFor(this).paused } },
+      duration: { configurable: true, get() { return 120 } },
+      currentTime: {
+        configurable: true,
+        get() { return stateFor(this).currentTime },
+        set(value) {
+          stateFor(this).currentTime = Math.max(0, Math.min(120, Number(value) || 0))
+          this.dispatchEvent(new Event('timeupdate'))
+        },
+      },
+      volume: {
+        configurable: true,
+        get() { return stateFor(this).volume },
+        set(value) {
+          stateFor(this).volume = Math.max(0, Math.min(1, Number(value) || 0))
+          this.dispatchEvent(new Event('volumechange'))
+        },
+      },
+      playbackRate: {
+        configurable: true,
+        get() { return stateFor(this).playbackRate },
+        set(value) {
+          stateFor(this).playbackRate = Number(value) || 1
+          this.dispatchEvent(new Event('ratechange'))
+        },
+      },
+    })
+    media.play = function play() {
+      stateFor(this).paused = false
+      this.dispatchEvent(new Event('play'))
+      return Promise.resolve()
+    }
+    media.pause = function pause() {
+      stateFor(this).paused = true
+      this.dispatchEvent(new Event('pause'))
+    }
+  })
+  await context.route('**/api/v1/bootstrap', async (route) => {
+    const response = await route.fetch()
+    const payload = await response.json()
+    const testVideo = payload.catalog?.find((item) => item.id === 'great-movie')
+    if (testVideo) {
+      testVideo.title = '千与千寻'
+      testVideo.subtitle = '播放器自动测试条目'
+      testVideo.tags = ['动画', '宫崎骏']
+      testVideo.local_available = true
+      testVideo.playable = true
+      testVideo.playback_mode = 'local_asset'
+      testVideo.launch_allowed = true
+    }
+    await route.fulfill({ response, json: payload })
+  })
+  await context.route('**/api/v1/catalog/great-movie/launch', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ mode: 'local_asset', url: 'https://media.lumi.test/player-sample.mp4' }),
+  }))
+  await context.route('https://media.lumi.test/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'video/mp4',
+    body: '',
+  }))
   if (apiBase) {
     await context.route('**/api/v1/**', (route) => {
       const requestUrl = new URL(route.request().url())
@@ -138,7 +211,19 @@ try {
   check(await mobile.locator('video').evaluate((video) => video.playbackRate) === 2, '手机长按锁定倍速没有生效')
   await mobile.getByRole('button', { name: /2倍速已锁定/ }).click()
   check(await mobile.locator('video').evaluate((video) => video.playbackRate) === 1, '手机倍速解锁后没有恢复正常速度')
+  await mobile.getByRole('button', { name: '全屏' }).click({ force: true })
+  await mobile.waitForFunction(() => Boolean(document.fullscreenElement))
+  const fullscreenPlayer = await mobile.locator('.lumi-video-player').boundingBox()
+  check(fullscreenPlayer && fullscreenPlayer.width >= 389 && fullscreenPlayer.height >= 843, '手机播放器没有覆盖全屏')
   await mobile.screenshot({ path: `${artifactsPath}player-mobile-${runId}.png` })
+  const nativeBackHandled = await mobile.evaluate(() => {
+    const event = new Event('lumi:native-back', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  check(nativeBackHandled, '手机系统返回没有被播放器接管')
+  await mobile.locator('.lumi-video-player').waitFor({ state: 'detached' })
+  await mobile.waitForFunction(() => !document.fullscreenElement)
   await mobileContext.close()
 
   const tvContext = await createContext(browser, {

@@ -52,6 +52,20 @@ function rateLabel(rate: number): string {
   return rate === 1 ? '正常' : `${rate}x`
 }
 
+type LockableScreenOrientation = ScreenOrientation & {
+  lock?: (orientation: 'landscape') => Promise<void>
+  unlock?: () => void
+}
+
+function unlockScreenOrientation(): void {
+  const orientation = window.screen.orientation as LockableScreenOrientation
+  try {
+    orientation.unlock?.()
+  } catch {
+    // 原生壳会在退出全屏时恢复方向，这里只处理支持标准接口的浏览器。
+  }
+}
+
 export function VideoPlayer({
   item,
   url,
@@ -88,7 +102,7 @@ export function VideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true)
   const [selectedRate, setSelectedRate] = useState(1)
   const [rateMenuOpen, setRateMenuOpen] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(() => Boolean(document.fullscreenElement))
   const [lockedBoost, setLockedBoost] = useState(false)
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
@@ -138,17 +152,38 @@ export function VideoPlayer({
   const toggleFullscreen = useCallback(async () => {
     const root = rootRef.current
     if (!root) return
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen()
+      } finally {
+        unlockScreenOrientation()
+      }
+      return
+    }
     try {
-      if (document.fullscreenElement) await document.exitFullscreen()
-      else await root.requestFullscreen()
+      await root.requestFullscreen()
     } catch {
       const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null
       video?.webkitEnterFullscreen?.()
+      return
     }
-  }, [])
+    if (profile === 'mobile') {
+      const orientation = window.screen.orientation as LockableScreenOrientation
+      try {
+        await orientation.lock?.('landscape')
+      } catch {
+        // Android 原生全屏容器还会执行横屏切换，不让浏览器差异中断播放。
+      }
+    }
+  }, [profile])
 
   useEffect(() => {
-    const update = () => setFullscreen(Boolean(document.fullscreenElement))
+    const update = () => {
+      const active = Boolean(document.fullscreenElement)
+      setFullscreen(active)
+      if (!active) unlockScreenOrientation()
+    }
+    update()
     document.addEventListener('fullscreenchange', update)
     return () => document.removeEventListener('fullscreenchange', update)
   }, [])

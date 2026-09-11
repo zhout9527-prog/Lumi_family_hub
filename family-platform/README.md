@@ -54,20 +54,22 @@ Windows/Android/Android TV Client（儿童、家长）
 日常使用不要求安装 Python、Node.js 或编译工具。优先运行：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.3_x64-setup.exe
+artifacts\windows\Lumi-Server_0.5.4_x64-setup.exe
 ```
 
 不想安装时，完整保留并运行便携目录；其中两个 EXE 缺一不可：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.3_x64-portable\
+artifacts\windows\Lumi-Server_0.5.4_x64-portable\
   lumi-server.exe
   lumi-server-core\
     lumi-server-core.exe
     （Server Core 运行库文件）
 ```
 
-`artifacts\windows\lumi-server_0.5.3_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
+`artifacts\windows\lumi-server_0.5.4_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
+
+关闭 Server 主窗口右上角的叉号只会把它收进系统托盘，家庭服务仍会运行；需要让手机和其他 Client 断开时，请在托盘菜单选择“退出并停止服务”。即使 GUI 被任务管理器强制结束，Core 也会检测父进程退出并停止，不再留下单独监听 `2521` 的后台进程。
 
 首次打开 Server 会在本机创建数据目录并显示“创建首个运维账户”。密码至少 10 位，并且必须填写密保问题和答案；按钮只在提交期间禁用，输入不符合要求时会显示明确提示。创建后，用该账户登录 Server。已有账户可从登录页进入“找回密码”，也可创建另一个运维账户作为备用。家庭成员在 Client 的“注册申请”页提交儿童或家长账户，运维人员在 Server 的“账户管理”中批准，获批账户随后才能登录 Client。运维账户也可以登录 Client，但服务端只签发 `guardian` 范围的会话，不能从 Client 调用运维接口。界面中的称呼始终取服务器账户的显示名称，不写死某个孩子名字。
 
@@ -89,7 +91,7 @@ npm run build
 
 ## 原生客户端与跨平台发布
 
-前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.5.3`、Client `0.4.4`。
+前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.5.4`、Client `0.4.5`。
 
 | 目标 | 产物 | 最低系统 | 说明 |
 | --- | --- | --- | --- |

@@ -70,13 +70,23 @@ import { TvSearchKeyboard } from './TvSearchKeyboard'
 import { VideoPlayer } from './VideoPlayer'
 import { PosterWall } from './PosterWall'
 import { GamesView, TetrisGame } from './TetrisGame'
-import { contentCollectionApi, contentInteractionsApi, openBilibiliLogin } from './api'
+import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin } from './api'
 import './styles.css'
 
 type NoticeTone = 'success' | 'info' | 'warning'
 
 function passwordCharacters(value: string): string {
   return value.replace(/[^A-Za-z0-9]/g, '')
+}
+
+function leavePlaybackFullscreen(): void {
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
+  const orientation = window.screen.orientation as ScreenOrientation & { unlock?: () => void }
+  try {
+    orientation.unlock?.()
+  } catch {
+    // 个别 WebView 不支持主动解除方向锁，原生全屏回调仍会恢复进入前方向。
+  }
 }
 
 interface NavItem {
@@ -2723,11 +2733,56 @@ export default function App() {
 
   useTvSpatialNavigation(DEVICE_PROFILE === 'tv')
 
+  const closePlayback = useCallback(() => {
+    leavePlaybackFullscreen()
+    setPlayback(null)
+  }, [])
+
   useEffect(() => {
     setActiveNav(state.role === 'operator' ? 'ops' : 'explore')
     setSelectedItem(null)
+    closePlayback()
     setTetrisOpen(false)
-  }, [state.role, store.user?.id])
+    setMobileOpen(false)
+  }, [closePlayback, state.role, store.user?.id])
+
+  useEffect(() => {
+    const handleNativeBack = (event: Event) => {
+      if (playback) {
+        event.preventDefault()
+        closePlayback()
+        return
+      }
+      if (tetrisOpen) {
+        event.preventDefault()
+        setTetrisOpen(false)
+        return
+      }
+      if (selectedItem) {
+        event.preventDefault()
+        setSelectedItem(null)
+        return
+      }
+      if (mobileOpen) {
+        event.preventDefault()
+        setMobileOpen(false)
+        return
+      }
+      if (query || videoOnly) {
+        event.preventDefault()
+        setQuery('')
+        setVideoOnly(false)
+        return
+      }
+      const home = state.role === 'operator' ? 'ops' : 'explore'
+      if (activeNav !== home) {
+        event.preventDefault()
+        setActiveNav(home)
+      }
+    }
+    window.addEventListener('lumi:native-back', handleNativeBack)
+    return () => window.removeEventListener('lumi:native-back', handleNativeBack)
+  }, [activeNav, closePlayback, mobileOpen, playback, query, selectedItem, state.role, tetrisOpen, videoOnly])
 
   const items = store.catalog
 
@@ -2830,6 +2885,9 @@ export default function App() {
   }
 
   const handleLaunch = (item: ContentItem) => {
+    if (item.kind === 'video' && DEVICE_PROFILE === 'mobile' && isNativeShell() && !document.fullscreenElement) {
+      void document.documentElement.requestFullscreen().catch(() => undefined)
+    }
     setSelectedItem(null)
     if (item.kind === 'video') setPlayback({ item, url: '', mode: 'loading' })
     void store.launchContent(item.id).then((result) => {
@@ -2848,10 +2906,10 @@ export default function App() {
         setPlayback({ item, url: '', mode: result.mode, service: result.service })
         return
       }
-      setPlayback(null)
+      closePlayback()
       notify('该内容暂时没有可用的播放入口', 'info')
     }).catch((error) => {
-      setPlayback(null)
+      closePlayback()
       reportError(error)
     })
   }
@@ -2971,7 +3029,7 @@ export default function App() {
           onLaunch={() => handleLaunch(selectedItem)}
         />
       )}
-      {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={() => setPlayback(null)} onSelectEpisode={handleLaunch} />}
+      {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={closePlayback} onSelectEpisode={handleLaunch} />}
       {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>

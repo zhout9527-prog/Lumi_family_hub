@@ -45,7 +45,13 @@ const first = content('episode-1', 1, '认识天空')
 const second = content('episode-2', 2, '认识海洋')
 const browser = await chromium.launch({ executablePath: edgePath, headless: true })
 try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'zh-CN' })
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    locale: 'zh-CN',
+    isMobile: true,
+    hasTouch: true,
+    userAgent: 'Mozilla/5.0 (Linux; Android 16; 24129PN74C) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36',
+  })
   await context.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
@@ -63,6 +69,7 @@ try {
   await page.getByLabel('账号').fill('guardian-demo')
   await page.getByLabel('密码', { exact: true }).fill('GuardianDemo2026')
   await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.locator('.search-box').click()
   await page.getByLabel('搜索全部家庭资源').fill('认识天空')
   const card = page.locator('.content-card').filter({ hasText: '认识天空' }).first()
   await card.waitFor()
@@ -74,7 +81,20 @@ try {
   await page.keyboard.press('Enter')
   await page.locator('.player-episode-list button.active').filter({ hasText: '认识海洋' }).waitFor()
   check(await page.locator('.lumi-video-player').count() === 1, '切换分集后播放器被关闭')
-  console.log(JSON.stringify({ status: 'ok', collection: true, episodes: 2, keyboardSelection: true }))
+  check(await page.evaluate(() => document.documentElement.classList.contains('mobile-mode')), '手机环境没有启用手机播放器布局')
+  await page.getByRole('button', { name: '全屏' }).click({ force: true })
+  await page.waitForFunction(() => Boolean(document.fullscreenElement))
+  const fullscreenPlayer = await page.locator('.lumi-video-player').boundingBox()
+  check(fullscreenPlayer && fullscreenPlayer.width >= 389 && fullscreenPlayer.height >= 843, '手机播放器没有覆盖全屏')
+  const nativeBackHandled = await page.evaluate(() => {
+    const event = new Event('lumi:native-back', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  check(nativeBackHandled, '手机系统返回没有先关闭播放器')
+  await page.locator('.lumi-video-player').waitFor({ state: 'detached' })
+  await page.waitForFunction(() => !document.fullscreenElement)
+  console.log(JSON.stringify({ status: 'ok', collection: true, episodes: 2, keyboardSelection: true, mobileFullscreen: true, nativeBack: true }))
   await context.close()
 } finally {
   await browser.close()

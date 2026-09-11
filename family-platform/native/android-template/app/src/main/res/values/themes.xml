@@ -1,3 +1,9 @@
 <resources>
-    <style name="Theme.lumi_family_hub" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <style name="Theme.lumi_family_hub" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">#F4F7F2</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">#F4F7F2</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
 </resources>

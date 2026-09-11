@@ -16,11 +16,14 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.DialogInterface
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.*
 import android.widget.EditText
 import androidx.activity.result.ActivityResult
@@ -28,6 +31,9 @@ import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -47,6 +53,9 @@ class RustWebChromeClient(appActivity: WryActivity) : WebChromeClient() {
   private var activityLauncher: ActivityResultLauncher<Intent>
   private var permissionListener: PermissionListener? = null
   private var activityListener: ActivityResultListener? = null
+  private var customView: View? = null
+  private var customViewCallback: CustomViewCallback? = null
+  private var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
   init {
     activity = appActivity
@@ -80,8 +89,24 @@ class RustWebChromeClient(appActivity: WryActivity) : WebChromeClient() {
    * @see [](https://developer.android.com/reference/android/webkit/WebChromeClient.onShowCustomView
   ) */
   override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-    callback.onCustomViewHidden()
-    super.onShowCustomView(view, callback)
+    if (customView != null) {
+      callback.onCustomViewHidden()
+      return
+    }
+    val decorView = activity.window.decorView as ViewGroup
+    customView = view
+    customViewCallback = callback
+    originalOrientation = activity.requestedOrientation
+    view.setBackgroundColor(Color.BLACK)
+    decorView.addView(
+      view,
+      ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    )
+    WindowCompat.getInsetsController(activity.window, view).apply {
+      systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      hide(WindowInsetsCompat.Type.systemBars())
+    }
+    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
   }
 
   /**
@@ -90,7 +115,15 @@ class RustWebChromeClient(appActivity: WryActivity) : WebChromeClient() {
    * Do not remove this method--@see #onShowCustomView(View, CustomViewCallback).
    */
   override fun onHideCustomView() {
-    super.onHideCustomView()
+    val view = customView ?: return
+    val decorView = activity.window.decorView as ViewGroup
+    decorView.removeView(view)
+    WindowCompat.getInsetsController(activity.window, decorView).show(WindowInsetsCompat.Type.systemBars())
+    activity.requestedOrientation = originalOrientation
+    customView = null
+    val callback = customViewCallback
+    customViewCallback = null
+    callback?.onCustomViewHidden()
   }
 
   override fun onPermissionRequest(request: PermissionRequest) {

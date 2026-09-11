@@ -98,6 +98,8 @@ npm run build
 | Android 手机 Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 小米 15 使用 ARM64 APK；已适配状态栏安全区 |
 | Android TV Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 同一 Client 带 Leanback 启动类别 |
 
+Android 的通用 APK 同时支持手机和电视。构建目录会额外生成文件名带 `tv` 的安装别名，方便拷贝到电视时辨认；它与同版本通用 APK 内容相同，安装后由设备自动选择触控或遥控器界面。
+
 Tauri 官方目前将 Android 最低支持版本定为 API 24；项目配置也固定为 `minSdkVersion: 24`。这意味着 Android 6 及更早设备不能安装。Android TV 的具体可用性还取决于电视厂商 WebView/系统实现，建议至少 Android TV 9（API 28）用于家庭部署。
 
 本机当前已具备 Node.js，可完成 Web 构建；原生发布还需安装 Rust stable-msvc、Visual Studio Build Tools（Desktop development with C++）、Android Studio SDK/NDK/JDK 17。检查命令：

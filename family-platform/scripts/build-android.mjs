@@ -392,7 +392,7 @@ function removeOldAndroidArtifacts(keepVersion) {
   if (!existsSync(artifactRoot)) return
   const escapedVersion = keepVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const keepPattern = new RegExp(`^lumi-client-${escapedVersion}-`, 'i')
-  const managedPattern = /^lumi-(?:client|family-hub)-\d+\.\d+\.\d+-.*\.(?:apk|aab)$/i
+  const managedPattern = /^lumi-(?:client(?:-tv)?|family-hub)-\d+\.\d+\.\d+-.*\.(?:apk|aab)$/i
   for (const entry of readdirSync(artifactRoot, { withFileTypes: true })) {
     if (!entry.isFile() || !managedPattern.test(entry.name) || keepPattern.test(entry.name)) continue
     rmSync(join(artifactRoot, entry.name), { force: true })
@@ -505,6 +505,7 @@ async function main() {
     }
     mkdirSync(artifactRoot, { recursive: true })
     console.log(`Android ${options.abi} artifacts:`)
+    let primaryArtifact = null
     for (const [index, artifact] of artifacts.slice(0, 5).entries()) {
       const suffix = index === 0 ? '' : `-${index + 1}`
       const destination = join(
@@ -512,7 +513,16 @@ async function main() {
         `lumi-client-${release.versionName}-${options.abi}-${options.buildType}${suffix}.${options.format}`,
       )
       await copyNativeArtifact(artifact, destination)
+      if (index === 0) primaryArtifact = destination
       console.log(`  ${destination}`)
+    }
+    if (options.format === 'apk' && primaryArtifact) {
+      const tvDestination = join(
+        artifactRoot,
+        `lumi-client-tv-${release.versionName}-${options.abi}-${options.buildType}.apk`,
+      )
+      await copyNativeArtifact(primaryArtifact, tvDestination)
+      console.log(`  ${tvDestination} (Android TV 安装别名)`)
     }
     if (options.buildType === 'release') {
       console.warn('Release artifacts require an independent Android release signing key before distribution or OTA use.')

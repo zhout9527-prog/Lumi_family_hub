@@ -6745,6 +6745,10 @@ html.mobile-mode:fullscreen .player-community {
     grid-template-columns: 1fr;
   }
 
+  .game-launch-grid-list .game-launch-card {
+    grid-template-columns: 1fr;
+  }
+
   .game-launch-grid-list {
     grid-template-columns: 1fr;
   }

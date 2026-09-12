@@ -1378,6 +1378,17 @@ def launch_content(item_id: str, request: Request, user: CurrentUser, db: Db):
                 service=stream.quality,
                 expires_at=grant.expires_at,
             )
+        if item.acquisition_mode == "external_quark":
+            try:
+                metadata = fetch_quark_share_metadata(item.launch_url)
+            except ExternalCatalogError:
+                metadata = None
+            if metadata is not None and metadata.preview_url:
+                return PlaybackOut(
+                    mode="direct_stream",
+                    url=metadata.preview_url,
+                    service="夸克公开预览",
+                )
         if item.acquisition_mode == "direct_stream":
             return PlaybackOut(mode="direct_stream", url=item.launch_url)
         return PlaybackOut(mode="external_link", url=item.launch_url)

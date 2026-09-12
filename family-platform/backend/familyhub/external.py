@@ -99,6 +99,8 @@ class ExternalPageMetadata:
     title: str
     description: str
     cover_url: str | None
+    preview_url: str | None = None
+    preview_content_type: str | None = None
 
 
 class _MetadataParser(HTMLParser):
@@ -153,6 +155,37 @@ def normalize_quark_share_url(value: str) -> str:
     return urlunparse(("https", hostname, path, "", query, ""))
 
 
+def _quark_public_preview(metadata: dict[str, str]) -> tuple[str | None, str | None]:
+    candidates = (
+        ("og:video:secure_url", "og:video:type"),
+        ("og:video:url", "og:video:type"),
+        ("og:video", "og:video:type"),
+        ("twitter:player:stream", "twitter:player:stream:content_type"),
+    )
+    video_suffixes = {".mp4", ".m4v", ".webm", ".mov", ".m3u8"}
+    for url_key, type_key in candidates:
+        candidate = metadata.get(url_key, "").strip()
+        content_type = metadata.get(type_key, "").strip().casefold()
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.port
+            or parsed.fragment
+        ):
+            continue
+        is_video_type = content_type.startswith("video/") or "mpegurl" in content_type
+        if not is_video_type and Path(parsed.path).suffix.casefold() not in video_suffixes:
+            # og:video 也可能指向网页播放器；只有明确的媒体类型或扩展名才交给 <video>。
+            continue
+        return candidate[:4000], content_type[:120] or None
+    return None, None
+
+
 def fetch_quark_share_metadata(value: str) -> ExternalPageMetadata:
     url = normalize_quark_share_url(value)
     request = Request(
@@ -200,10 +233,13 @@ def fetch_quark_share_metadata(value: str) -> ExternalPageMetadata:
             or parsed_cover.fragment
         ):
             cover = ""
+    preview_url, preview_content_type = _quark_public_preview(parser.metadata)
     return ExternalPageMetadata(
         title=title[:240],
         description=description[:4000],
         cover_url=cover[:1000] or None,
+        preview_url=preview_url,
+        preview_content_type=preview_content_type,
     )
 
 

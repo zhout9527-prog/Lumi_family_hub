@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from familyhub import external
-from familyhub.external import ExternalCatalogError, ExternalCollection, ExternalEntry
+from familyhub.external import ExternalCatalogError, ExternalCollection, ExternalEntry, ExternalPageMetadata
 from familyhub import main as familyhub_main
 
 from .conftest import login
@@ -100,6 +100,81 @@ def test_external_direct_item_is_published_and_launchable(client: TestClient) ->
     assert launch.status_code == 200
     assert launch.json()["mode"] == "direct_stream"
     assert launch.json()["url"] == "https://media.example.com/english-story.mp4"
+
+
+def test_quark_public_preview_is_opened_in_lumi_player(client: TestClient, monkeypatch) -> None:
+    metadata = ExternalPageMetadata(
+        title="公开分享视频",
+        description="公开预览",
+        cover_url="https://cdn.example.com/cover.jpg",
+        preview_url="https://cdn.example.com/preview/video.mp4?token=temporary",
+        preview_content_type="video/mp4",
+    )
+    monkeypatch.setattr(familyhub_main, "fetch_quark_share_metadata", lambda *_args, **_kwargs: metadata)
+    operator = login(client, "operator")
+    created = client.post(
+        "/api/v1/ops/library/external",
+        headers=operator,
+        json={
+            "url": "https://pan.quark.cn/s/example",
+            "provider": "quark",
+            "kind": "video",
+            "audience": "family",
+            "age_from": 4,
+            "age_to": 99,
+            "language": "中文",
+            "tags": ["电影"],
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    guardian = login(client, "guardian")
+    launch = client.post(f"/api/v1/catalog/{created.json()['id']}/launch", headers=guardian)
+    assert launch.status_code == 200, launch.text
+    assert launch.json()["mode"] == "direct_stream"
+    assert launch.json()["url"] == metadata.preview_url
+    assert launch.json()["service"] == "夸克公开预览"
+
+
+def test_quark_share_without_public_stream_falls_back_to_official_page(client: TestClient, monkeypatch) -> None:
+    metadata = ExternalPageMetadata(title="需要转存的视频", description="", cover_url=None)
+    monkeypatch.setattr(familyhub_main, "fetch_quark_share_metadata", lambda *_args, **_kwargs: metadata)
+    operator = login(client, "operator")
+    created = client.post(
+        "/api/v1/ops/library/external",
+        headers=operator,
+        json={
+            "url": "https://pan.quark.cn/s/needs-login",
+            "provider": "quark",
+            "kind": "video",
+            "audience": "adult",
+            "age_from": 18,
+            "age_to": 99,
+            "language": "中文",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    guardian = login(client, "guardian")
+    launch = client.post(f"/api/v1/catalog/{created.json()['id']}/launch", headers=guardian)
+    assert launch.status_code == 200, launch.text
+    assert launch.json()["mode"] == "external_link"
+    assert launch.json()["url"] == "https://pan.quark.cn/s/needs-login"
+
+
+def test_quark_preview_metadata_only_accepts_explicit_https_media() -> None:
+    assert external._quark_public_preview(
+        {
+            "og:video:secure_url": "https://cdn.example.com/signed/play?token=temporary",
+            "og:video:type": "video/mp4",
+        }
+    ) == ("https://cdn.example.com/signed/play?token=temporary", "video/mp4")
+    assert external._quark_public_preview(
+        {"og:video": "https://pan.quark.cn/player/example", "og:video:type": "text/html"}
+    ) == (None, None)
+    assert external._quark_public_preview(
+        {"twitter:player:stream": "http://cdn.example.com/video.mp4"}
+    ) == (None, None)
 
 
 def test_bilibili_item_can_be_saved_when_metadata_is_temporarily_unavailable(

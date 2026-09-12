@@ -44,6 +44,13 @@ interface GestureSession {
   startMuted: boolean
 }
 
+interface ProgressGesture {
+  pointerId: number
+  startX: number
+  startTime: number
+  duration: number
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value))
 }
@@ -109,6 +116,7 @@ export function VideoPlayer({
   const keyHoldIntervalRef = useRef<number | null>(null)
   const heldKeyRef = useRef<string | null>(null)
   const gestureRef = useRef<GestureSession | null>(null)
+  const progressGestureRef = useRef<ProgressGesture | null>(null)
   const progressWasPlayingRef = useRef(false)
   const selectedRateRef = useRef(1)
   const initialPositionPendingRef = useRef(true)
@@ -505,16 +513,42 @@ export function VideoPlayer({
     setBuffered(video.buffered.end(video.buffered.length - 1))
   }
 
-  const beginProgressSeek = () => {
+  const beginProgressSeek = (event: ReactPointerEvent<HTMLInputElement>) => {
     const video = videoRef.current
     if (!video) return
     progressWasPlayingRef.current = !video.paused
     video.pause()
+    if (profile === 'mobile' && video.duration > 0) {
+      progressGestureRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startTime: video.currentTime,
+        duration: video.duration,
+      }
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* 兼容旧版 WebView */ }
+    }
   }
 
-  const finishProgressSeek = () => {
+  const moveProgressSeek = (event: ReactPointerEvent<HTMLInputElement>) => {
+    const gesture = progressGestureRef.current
+    const video = videoRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId || !video) return
+    const width = Math.max(180, event.currentTarget.clientWidth)
+    const delta = seekDeltaForSwipe((event.clientX - gesture.startX) / width, gesture.duration)
+    const next = clamp(Math.round(gesture.startTime + (event.clientX < gesture.startX ? -delta : delta)), 0, gesture.duration)
+    event.preventDefault()
+    setSeekPreview(next)
+    setCurrentTime(next)
+    video.currentTime = next
+    flashNotice(`定位到 ${formatTime(next)}`)
+  }
+
+  const finishProgressSeek = (event?: ReactPointerEvent<HTMLInputElement>) => {
+    if (event && progressGestureRef.current && progressGestureRef.current.pointerId !== event.pointerId) return
     if (progressWasPlayingRef.current) void videoRef.current?.play()
     progressWasPlayingRef.current = false
+    progressGestureRef.current = null
+    setSeekPreview(null)
   }
 
   const togglePictureInPicture = async () => {
@@ -618,9 +652,11 @@ export function VideoPlayer({
             value={seekPreview ?? currentTime}
             aria-label="播放进度"
             onPointerDown={beginProgressSeek}
+            onPointerMove={moveProgressSeek}
             onPointerUp={finishProgressSeek}
             onPointerCancel={finishProgressSeek}
             onChange={(event) => {
+              if (progressGestureRef.current) return
               const next = Number(event.target.value)
               if (videoRef.current) videoRef.current.currentTime = next
               setCurrentTime(next)

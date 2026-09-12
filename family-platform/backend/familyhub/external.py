@@ -6,6 +6,7 @@ import re
 import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -37,7 +38,9 @@ _BILIBILI_HOSTS = {"bilibili.com", "www.bilibili.com", "m.bilibili.com", "space.
 _BVID = re.compile(r"^BV[0-9A-Za-z]{10}$", re.IGNORECASE)
 _DIRECT_MEDIA_SUFFIXES = {".mp4", ".m4v", ".webm", ".mov", ".m3u8", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".pdf", ".epub"}
 _BILIBILI_IMAGE_HOST_SUFFIXES = (".hdslb.com", ".biliimg.com")
+_QUARK_SHARE_HOSTS = {"pan.quark.cn"}
 _MAX_COVER_BYTES = 12 * 1024 * 1024
+_MAX_EXTERNAL_PAGE_BYTES = 2 * 1024 * 1024
 _BILIBILI_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -91,6 +94,40 @@ class BilibiliPlayback:
     quality_label: str
 
 
+@dataclass(frozen=True)
+class ExternalPageMetadata:
+    title: str
+    description: str
+    cover_url: str | None
+
+
+class _MetadataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.metadata: dict[str, str] = {}
+        self.title_parts: list[str] = []
+        self._inside_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {key.casefold(): value or "" for key, value in attrs}
+        if tag.casefold() == "title":
+            self._inside_title = True
+        if tag.casefold() != "meta":
+            return
+        key = (attributes.get("property") or attributes.get("name") or "").casefold()
+        content = attributes.get("content", "").strip()
+        if key and content and key not in self.metadata:
+            self.metadata[key] = content
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "title":
+            self._inside_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._inside_title and data.strip():
+            self.title_parts.append(data.strip())
+
+
 def provider_for_url(value: str) -> str:
     hostname = (urlparse(value).hostname or "").rstrip(".").lower()
     if hostname in _BILIBILI_HOSTS:
@@ -100,6 +137,74 @@ def provider_for_url(value: str) -> str:
     if hostname == "quark.cn" or hostname.endswith(".quark.cn"):
         return "quark"
     return "direct" if Path(urlparse(value).path).suffix.lower() in _DIRECT_MEDIA_SUFFIXES else "other"
+
+
+def normalize_quark_share_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    hostname = (parsed.hostname or "").rstrip(".").casefold()
+    if parsed.scheme != "https" or hostname not in _QUARK_SHARE_HOSTS:
+        raise ValueError("只支持 pan.quark.cn 的 HTTPS 分享链接")
+    if parsed.username or parsed.password or parsed.port or parsed.fragment:
+        raise ValueError("夸克分享链接不能包含账号信息、自定义端口或片段")
+    path = parsed.path.rstrip("/")
+    if not re.fullmatch(r"/s/[0-9A-Za-z_-]{4,160}", path):
+        raise ValueError("夸克分享链接格式无效")
+    query = urlencode([(key, item) for key, item in parse_qsl(parsed.query) if key in {"pwd"}])
+    return urlunparse(("https", hostname, path, "", query, ""))
+
+
+def fetch_quark_share_metadata(value: str) -> ExternalPageMetadata:
+    url = normalize_quark_share_url(value)
+    request = Request(
+        url,
+        headers={
+            "User-Agent": _BILIBILI_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+        },
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            final_url = str(response.geturl())
+            final_host = (urlparse(final_url).hostname or "").rstrip(".").casefold()
+            if final_host not in _QUARK_SHARE_HOSTS:
+                raise ExternalCatalogError("quark_share_redirect_invalid")
+            content_type = str(response.headers.get("Content-Type") or "").casefold()
+            if "text/html" not in content_type:
+                raise ExternalCatalogError("quark_share_page_invalid")
+            body = response.read(_MAX_EXTERNAL_PAGE_BYTES + 1)
+    except ExternalCatalogError:
+        raise
+    except OSError as exc:
+        raise ExternalCatalogError("quark_share_metadata_failed") from exc
+    if not body or len(body) > _MAX_EXTERNAL_PAGE_BYTES:
+        raise ExternalCatalogError("quark_share_page_invalid")
+    parser = _MetadataParser()
+    try:
+        parser.feed(body.decode("utf-8", errors="replace"))
+    except (UnicodeError, ValueError) as exc:
+        raise ExternalCatalogError("quark_share_page_invalid") from exc
+    title = (parser.metadata.get("og:title") or " ".join(parser.title_parts)).strip()
+    for suffix in (" - 夸克网盘", "_夸克网盘", " | 夸克网盘"):
+        if title.endswith(suffix):
+            title = title[: -len(suffix)].strip()
+    description = (parser.metadata.get("og:description") or parser.metadata.get("description") or "").strip()
+    cover = (parser.metadata.get("og:image") or "").strip()
+    if cover:
+        parsed_cover = urlparse(cover)
+        if (
+            parsed_cover.scheme != "https"
+            or not parsed_cover.hostname
+            or parsed_cover.username
+            or parsed_cover.password
+            or parsed_cover.port
+            or parsed_cover.fragment
+        ):
+            cover = ""
+    return ExternalPageMetadata(
+        title=title[:240],
+        description=description[:4000],
+        cover_url=cover[:1000] or None,
+    )
 
 
 def normalize_bilibili_catalog_url(value: str) -> str:
@@ -786,6 +891,7 @@ def upsert_external_item(
     age_to: int = 99,
     language: str = "中文",
     description: str = "",
+    tags: list[str] | None = None,
     duration_minutes: int = 10,
     external_id: str | None = None,
     force_publish: bool = False,
@@ -794,27 +900,50 @@ def upsert_external_item(
     existing = db.scalar(
         select(ContentItem).where(ContentItem.household_id == user.household_id, ContentItem.launch_url == url)
     )
-    mode = "external_bilibili" if provider == "bilibili" else "direct_stream" if provider == "direct" else "external_link"
+    update_editorial_policy = existing is None or force_publish
+    mode = (
+        "external_bilibili"
+        if provider == "bilibili"
+        else "external_quark"
+        if provider == "quark"
+        else "direct_stream"
+        if provider == "direct"
+        else "external_link"
+    )
     item = existing or ContentItem(id=external_item_id(url), household_id=user.household_id, kind=kind, title=title)
-    item.kind = kind
+    if update_editorial_policy:
+        item.kind = kind
     item.title = title.strip()[:240]
-    item.subtitle = (f"{provider.upper()} 在线播放" if provider != "bilibili" else "B站在线收藏")[:300]
-    item.language = language.strip()[:120] or "中文"
-    item.age_from = age_from
-    item.age_to = age_to
+    item.subtitle = (
+        "B站在线收藏"
+        if provider == "bilibili"
+        else "夸克网盘分享"
+        if provider == "quark"
+        else f"{provider.upper()} 在线播放"
+    )[:300]
+    if update_editorial_policy:
+        item.language = language.strip()[:120] or "中文"
+        item.age_from = age_from
+        item.age_to = age_to
     item.duration_minutes = max(1, duration_minutes)
     item.description = description.strip() or "由家庭管理员添加的在线内容。"
-    item.tags = ["在线内容", "B站" if provider == "bilibili" else provider]
+    if update_editorial_policy:
+        item.tags = list(dict.fromkeys([
+            "在线内容",
+            "B站" if provider == "bilibili" else provider,
+            *(tags or []),
+        ]))
     if provider == "bilibili":
         # B站图片有防盗链，统一经 Server 缓存和鉴权输出，避免各端直接加载失败。
         item.cover_ref = f"/api/v1/artwork/{item.id}"
     elif cover_url:
-        item.cover_ref = cover_url
+        item.cover_ref = cover_url[:500]
     item.launch_url = url
     item.acquisition_mode = mode
     if existing is None or force_publish:
         item.publication_status = "published"
-    item.audience = audience
+    if update_editorial_policy:
+        item.audience = audience
     item.stimulation_level = "reviewed"
     item.offline_activity = "看完后和家人聊一聊最喜欢的部分"
     item.source_id = source.id
@@ -834,6 +963,7 @@ def upsert_bilibili_entries(
     age_from: int,
     age_to: int,
     language: str,
+    tags: list[str] | None = None,
 ) -> int:
     count = 0
     cover_budget = 12
@@ -883,6 +1013,7 @@ def upsert_bilibili_entries(
             age_to=age_to,
             language=language,
             description=entry.description or f"来自 {entry.uploader} 的 B站视频。",
+            tags=tags,
             duration_minutes=entry.duration_minutes,
             external_id=entry.external_id,
         )
@@ -1017,6 +1148,7 @@ def sync_external_feed(db: Session, settings: Settings, *, user: User, feed: dic
         age_from=int(feed.get("age_from") or 0),
         age_to=int(feed.get("age_to") or 99),
         language=str(feed.get("language") or "中文"),
+        tags=list(feed.get("tags") or []),
     )
     completed_at = utcnow().isoformat()
     feed["last_attempt_at"] = completed_at
@@ -1072,6 +1204,7 @@ def new_external_feed(payload: dict[str, Any]) -> dict[str, Any]:
         "age_from": int(payload.get("age_from") or 0),
         "age_to": int(payload.get("age_to") or 99),
         "language": str(payload.get("language") or "中文")[:120],
+        "tags": list(payload.get("tags") or []),
         "max_items": max(1, min(int(payload.get("max_items") or 50), 200)),
         "sync_interval_hours": max(1, min(int(payload.get("sync_interval_hours") or 24), 168)),
         "enabled": True,

@@ -111,7 +111,7 @@ def apply_asset_review(
         age_to=payload.age_to,
         duration_minutes=10,
         description=payload.review_note,
-        tags=["家庭审核", "本地内容"],
+        tags=list(dict.fromkeys(["家庭审核", "本地内容", *payload.tags])),
         acquisition_mode="licensed_ingest",
         publication_status="published",
         audience=payload.audience,

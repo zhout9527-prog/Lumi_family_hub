@@ -42,9 +42,11 @@ from .external import (
     fetch_bilibili_collection,
     fetch_bilibili_interactions,
     fetch_bilibili_public_metadata,
+    fetch_quark_share_metadata,
     load_external_feeds,
     new_external_feed,
     normalize_bilibili_catalog_url,
+    normalize_quark_share_url,
     provider_for_url,
     save_external_feeds,
     resolve_bilibili_playback,
@@ -407,7 +409,13 @@ def _require_child_launch_approval(db: Session, user: SessionPrincipal, item_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要家长批准")
 
 
-def _content_list(db: Session, user: User, query: str | None = None) -> list[ContentOut]:
+def _content_list(
+    db: Session,
+    user: User,
+    query: str | None = None,
+    *,
+    collapse_collections: bool = True,
+) -> list[ContentOut]:
     items = list(db.scalars(visible_content_query(user)).all())
     if query:
         needle = query.strip().casefold()
@@ -458,8 +466,134 @@ def _content_list(db: Session, user: User, query: str | None = None) -> list[Con
         )
         if _is_external_bilibili_item(item) or (not output.cover_ref and item.id in downloaded_bilibili_ids):
             output.cover_ref = f"/api/v1/artwork/{item.id}"
+        if collection is not None and collection.description:
+            output.description = collection.description
         presented.append(output)
-    return presented
+    return _collapse_collection_cards(presented) if collapse_collections else presented
+
+
+def _collapse_collection_cards(items: list[ContentOut]) -> list[ContentOut]:
+    """目录只展示一个合集入口，分集仍由合集详情接口完整返回。"""
+
+    grouped: dict[str, list[ContentOut]] = {}
+    for item in items:
+        if item.collection_id:
+            grouped.setdefault(item.collection_id, []).append(item)
+    collapsed: list[ContentOut] = []
+    emitted: set[str] = set()
+    for item in items:
+        if not item.collection_id:
+            collapsed.append(item)
+            continue
+        if item.collection_id in emitted:
+            continue
+        emitted.add(item.collection_id)
+        episodes = grouped[item.collection_id]
+        representative = min(episodes, key=lambda entry: (entry.episode_index or 10**9, entry.id))
+        card = representative.model_copy(deep=True)
+        episode_count = max(
+            [len(episodes), *(entry.episode_count or 0 for entry in episodes)],
+        )
+        card.title = representative.collection_title or representative.title
+        card.collection_title = card.title
+        card.subtitle = f"合集 · {episode_count} 集"
+        card.duration_minutes = sum(entry.duration_minutes for entry in episodes)
+        card.tags = list(dict.fromkeys([*(tag for entry in episodes for tag in entry.tags), "合集"]))
+        card.featured = any(entry.featured for entry in episodes)
+        card.favorite = any(entry.favorite for entry in episodes)
+        card.completed = bool(episodes) and all(entry.completed for entry in episodes)
+        card.local_available = any(entry.local_available for entry in episodes)
+        card.playable = any(entry.playable for entry in episodes)
+        card.launch_allowed = any(entry.launch_allowed for entry in episodes)
+        card.episode_index = None
+        card.section_title = None
+        card.collection_card = True
+        collapsed.append(card)
+    return collapsed
+
+
+def _managed_library_payloads(
+    db: Session,
+    settings: Settings,
+    items: list[ContentItem],
+) -> list[dict[str, Any]]:
+    """运维列表按合集聚合，内部仍保留每一分集的独立播放记录。"""
+
+    item_ids = [item.id for item in items]
+    episode_by_content: dict[str, ContentCollectionEpisode] = {}
+    if item_ids:
+        episode_by_content = {
+            episode.content_id: episode
+            for episode in db.scalars(
+                select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id.in_(item_ids))
+            ).all()
+            if episode.content_id
+        }
+    collection_ids = {episode.collection_id for episode in episode_by_content.values()}
+    collections = {
+        collection.id: collection
+        for collection in db.scalars(
+            select(ContentCollection).where(ContentCollection.id.in_(collection_ids))
+        ).all()
+    } if collection_ids else {}
+    grouped: dict[str, list[ContentItem]] = {}
+    for item in items:
+        episode = episode_by_content.get(item.id)
+        if episode and episode.collection_id in collections:
+            grouped.setdefault(episode.collection_id, []).append(item)
+
+    result: list[dict[str, Any]] = []
+    emitted: set[str] = set()
+    for item in items:
+        episode = episode_by_content.get(item.id)
+        if episode is None or episode.collection_id not in collections:
+            result.append(managed_item_payload(db, settings, item))
+            continue
+        collection_id = episode.collection_id
+        if collection_id in emitted:
+            continue
+        emitted.add(collection_id)
+        collection = collections[collection_id]
+        siblings = grouped[collection_id]
+        representative = min(
+            siblings,
+            key=lambda entry: (
+                episode_by_content[entry.id].episode_index,
+                episode_by_content[entry.id].id,
+            ),
+        )
+        payload = managed_item_payload(db, settings, representative)
+        statuses = {entry.publication_status for entry in siblings}
+        payload.update(
+            {
+                "title": collection.title,
+                "subtitle": f"B站合集 · {max(collection.episode_count, len(siblings))} 集",
+                "description": collection.description or representative.description,
+                "tags": list(dict.fromkeys([*(tag for entry in siblings for tag in (entry.tags or [])), "合集"])),
+                "age_from": min(entry.age_from for entry in siblings),
+                "age_to": max(entry.age_to for entry in siblings),
+                "featured": any(entry.featured for entry in siblings),
+                "publication_status": (
+                    statuses.pop()
+                    if len(statuses) == 1
+                    else "published"
+                    if "published" in statuses
+                    else "draft"
+                    if "draft" in statuses
+                    else "archived"
+                ),
+                "file_size": sum(managed_item_payload(db, settings, entry)["file_size"] for entry in siblings),
+                "file_available": any(
+                    managed_item_payload(db, settings, entry)["file_available"] for entry in siblings
+                ),
+                "episode_index": None,
+                "section_title": None,
+                "collection_card": True,
+                "updated_at": max(entry.updated_at for entry in siblings),
+            }
+        )
+        result.append(payload)
+    return result
 
 
 def _requests_for_household(db: Session, household_id: str) -> list[ContentRequest]:
@@ -928,17 +1062,20 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
                 .order_by(User.created_at.desc())
             ).all()
         ]
-        result["library_items"] = [
-            managed_item_payload(db, settings, item)
-            for item in db.scalars(
-                select(ContentItem)
-                .where(
-                    ContentItem.household_id == user.household_id,
-                    ContentItem.publication_status != "deleted",
-                )
-                .order_by(ContentItem.updated_at.desc())
-            ).all()
-        ]
+        result["library_items"] = _managed_library_payloads(
+            db,
+            settings,
+            list(
+                db.scalars(
+                    select(ContentItem)
+                    .where(
+                        ContentItem.household_id == user.household_id,
+                        ContentItem.publication_status != "deleted",
+                    )
+                    .order_by(ContentItem.updated_at.desc())
+                ).all()
+            ),
+        )
         result["storage_paths"] = storage_paths_payload(load_storage_paths(db, settings, ensure=True))
         result["external_feeds"] = load_external_feeds(db)
         result["bilibili_account"] = bilibili_account_status(db, settings)
@@ -1165,7 +1302,7 @@ def content_collection(item_id: str, user: CurrentUser, db: Db) -> ContentCollec
             .order_by(ContentCollectionEpisode.episode_index, ContentCollectionEpisode.id)
         ).all()
     )
-    visible = {item.id: item for item in _content_list(db, user)}
+    visible = {item.id: item for item in _content_list(db, user, collapse_collections=False)}
     episodes = [visible[episode.content_id] for episode in ordered if episode.content_id in visible]
     return ContentCollectionOut(
         id=collection.id,
@@ -1742,7 +1879,7 @@ def list_managed_library(user: Operator, db: Db, settings: SettingsDep) -> list[
         )
         .order_by(ContentItem.updated_at.desc())
     ).all()
-    return [LibraryItemOut.model_validate(managed_item_payload(db, settings, item)) for item in items]
+    return [LibraryItemOut.model_validate(item) for item in _managed_library_payloads(db, settings, list(items))]
 
 
 @router.post("/ops/library/scan", response_model=LibraryScanOut, tags=["ops"])
@@ -1775,6 +1912,7 @@ def import_local_library_item(
         age_to=payload.age_to,
         language=payload.language,
         description=payload.description,
+        tags=payload.tags,
         copy_to_library=payload.copy_to_library,
         publish=payload.publish,
     )
@@ -1789,7 +1927,7 @@ def import_local_library_item(
     )
     db.commit()
     db.refresh(item)
-    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+    return LibraryItemOut.model_validate(_managed_library_payloads(db, settings, [item])[0])
 
 
 @router.patch("/ops/library/{item_id}", response_model=LibraryItemOut, tags=["ops"])
@@ -1804,43 +1942,101 @@ def update_library_item(
     item = db.scalar(select(ContentItem).where(ContentItem.id == item_id, ContentItem.household_id == user.household_id))
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
+    current_episode = db.scalar(
+        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
+    )
+    collection = db.get(ContentCollection, current_episode.collection_id) if current_episode else None
+    collection_episodes = (
+        list(
+            db.scalars(
+                select(ContentCollectionEpisode)
+                .where(ContentCollectionEpisode.collection_id == collection.id)
+                .order_by(ContentCollectionEpisode.episode_index, ContentCollectionEpisode.id)
+            ).all()
+        )
+        if collection and collection.household_id == user.household_id
+        else []
+    )
+    sibling_ids = [episode.content_id for episode in collection_episodes if episode.content_id]
+    siblings = (
+        list(
+            db.scalars(
+                select(ContentItem).where(
+                    ContentItem.id.in_(sibling_ids),
+                    ContentItem.household_id == user.household_id,
+                    ContentItem.publication_status != "deleted",
+                )
+            ).all()
+        )
+        if sibling_ids
+        else [item]
+    )
+    if not siblings:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="合集已没有可管理的分集")
     changes = payload.model_dump(exclude_unset=True)
     age_from = changes.get("age_from", item.age_from)
     age_to = changes.get("age_to", item.age_to)
     if age_to < age_from:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="适龄范围无效")
-    asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
     next_status = changes.get("publication_status", item.publication_status)
-    if next_status == "published" and asset is not None:
-        path = resolve_asset_path(db, settings, asset)
-        if path is None or not path.is_file():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地文件不可用，不能发布")
-    if next_status == "published" and asset is None and not item.launch_url:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="资源没有可用的播放入口")
-    for field in ("title", "subtitle", "language", "age_from", "age_to", "description", "audience", "featured", "publication_status"):
-        if field in changes and changes[field] is not None:
-            setattr(item, field, changes[field].strip() if isinstance(changes[field], str) else changes[field])
-    item.updated_at = utcnow()
-    if asset is not None:
-        asset.audience = item.audience
-        asset.publication_status = item.publication_status
-    episode = db.scalar(
-        select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
-    )
-    if episode is not None:
-        episode.publication_status = item.publication_status
-        episode.updated_at = utcnow()
+    assets = {
+        asset.content_id: asset
+        for asset in db.scalars(select(ContentAsset).where(ContentAsset.content_id.in_([entry.id for entry in siblings]))).all()
+    }
+    if next_status == "published":
+        for sibling in siblings:
+            asset = assets.get(sibling.id)
+            if asset is not None:
+                path = resolve_asset_path(db, settings, asset)
+                if path is None or not path.is_file():
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本地文件不可用，不能发布")
+            elif not sibling.launch_url:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="资源没有可用的播放入口")
+
+    shared_fields = ("language", "age_from", "age_to", "tags", "audience", "featured", "publication_status")
+    now = utcnow()
+    for sibling in siblings:
+        if collection is None:
+            for field in ("title", "subtitle", "description"):
+                if field in changes and changes[field] is not None:
+                    value = changes[field]
+                    setattr(sibling, field, value.strip() if isinstance(value, str) else value)
+        for field in shared_fields:
+            if field in changes and changes[field] is not None:
+                value = changes[field]
+                setattr(sibling, field, value.strip() if isinstance(value, str) else value)
+        sibling.updated_at = now
+        asset = assets.get(sibling.id)
+        if asset is not None:
+            asset.audience = sibling.audience
+            asset.publication_status = sibling.publication_status
+    if collection is not None:
+        if changes.get("title") is not None:
+            collection.title = changes["title"].strip()
+            for episode in collection_episodes:
+                sibling = next((entry for entry in siblings if entry.id == episode.content_id), None)
+                if sibling is not None:
+                    sibling.subtitle = f"{collection.title} · 第 {episode.episode_index} 集"[:300]
+        if changes.get("description") is not None:
+            collection.description = changes["description"].strip()
+        collection.updated_at = now
+    for episode in collection_episodes:
+        sibling = next((entry for entry in siblings if entry.id == episode.content_id), None)
+        if sibling is not None:
+            episode.publication_status = sibling.publication_status
+            episode.updated_at = now
     add_audit(
         db,
         request=request,
         actor=user,
-        action="library.item_updated",
-        resource_type="content",
-        resource_id=item.id,
-        metadata={"fields": sorted(changes)},
+        action="library.collection_updated" if collection else "library.item_updated",
+        resource_type="content_collection" if collection else "content",
+        resource_id=collection.id if collection else item.id,
+        metadata={"fields": sorted(changes), "affected_items": len(siblings)},
     )
     db.commit()
-    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+    managed = _managed_library_payloads(db, settings, siblings)
+    return LibraryItemOut.model_validate(managed[0])
 
 
 @router.delete("/ops/library/{item_id}", response_model=LibraryItemOut, tags=["ops"])
@@ -1854,20 +2050,52 @@ def archive_library_item(
     item = db.scalar(select(ContentItem).where(ContentItem.id == item_id, ContentItem.household_id == user.household_id))
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
-    item.publication_status = "archived"
-    item.updated_at = utcnow()
-    asset = db.scalar(select(ContentAsset).where(ContentAsset.content_id == item.id))
-    if asset is not None:
-        asset.publication_status = "archived"
     episode = db.scalar(
         select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == item.id).limit(1)
     )
-    if episode is not None:
-        episode.publication_status = "archived"
-        episode.updated_at = utcnow()
-    add_audit(db, request=request, actor=user, action="library.item_archived", resource_type="content", resource_id=item.id)
+    collection = db.get(ContentCollection, episode.collection_id) if episode else None
+    episodes = (
+        list(db.scalars(select(ContentCollectionEpisode).where(ContentCollectionEpisode.collection_id == collection.id)).all())
+        if collection and collection.household_id == user.household_id
+        else [episode] if episode else []
+    )
+    sibling_ids = [entry.content_id for entry in episodes if entry and entry.content_id]
+    siblings = (
+        list(
+            db.scalars(
+                select(ContentItem).where(
+                    ContentItem.id.in_(sibling_ids),
+                    ContentItem.household_id == user.household_id,
+                    ContentItem.publication_status != "deleted",
+                )
+            ).all()
+        )
+        if sibling_ids
+        else [item]
+    )
+    now = utcnow()
+    for sibling in siblings:
+        sibling.publication_status = "archived"
+        sibling.updated_at = now
+    if siblings:
+        for asset in db.scalars(select(ContentAsset).where(ContentAsset.content_id.in_([entry.id for entry in siblings]))).all():
+            asset.publication_status = "archived"
+    for collection_episode in episodes:
+        if collection_episode is not None and collection_episode.content_id in {entry.id for entry in siblings}:
+            collection_episode.publication_status = "archived"
+            collection_episode.updated_at = now
+    add_audit(
+        db,
+        request=request,
+        actor=user,
+        action="library.collection_archived" if collection else "library.item_archived",
+        resource_type="content_collection" if collection else "content",
+        resource_id=collection.id if collection else item.id,
+        metadata={"affected_items": len(siblings)},
+    )
     db.commit()
-    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+    managed = _managed_library_payloads(db, settings, siblings)
+    return LibraryItemOut.model_validate(managed[0])
 
 
 @router.post("/ops/library/external", response_model=LibraryItemOut, status_code=status.HTTP_201_CREATED, tags=["ops"])
@@ -1926,6 +2154,21 @@ def add_external_library_item(
             external_id = reference.external_id
             title = title or f"B站视频 {reference.external_id}"
             description = description or "已保存在线播放入口；Server 暂时未能读取标题和封面，可稍后编辑或重新同步。"
+    elif provider == "quark":
+        try:
+            raw_url = normalize_quark_share_url(raw_url)
+        except ValueError as invalid:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(invalid)) from invalid
+        try:
+            metadata = fetch_quark_share_metadata(raw_url)
+        except ExternalCatalogError:
+            metadata = None
+        if metadata is not None:
+            title = title or metadata.title
+            cover_url = cover_url or metadata.cover_url
+            description = description or metadata.description
+        title = title or "夸克网盘分享"
+        description = description or "保留原始夸克分享入口；能否直接预览由分享权限和夸克登录状态决定。"
     elif not title:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="非 B 站在线资源需要填写标题")
     if collection_entries:
@@ -1938,6 +2181,7 @@ def add_external_library_item(
             age_from=payload.age_from,
             age_to=payload.age_to,
             language=payload.language,
+            tags=payload.tags,
         )
         db.flush()
     item = upsert_external_item(
@@ -1953,6 +2197,7 @@ def add_external_library_item(
         age_to=payload.age_to,
         language=payload.language,
         description=description,
+        tags=payload.tags,
         duration_minutes=duration_minutes,
         external_id=external_id,
         force_publish=True,
@@ -1975,7 +2220,7 @@ def add_external_library_item(
     )
     db.commit()
     db.refresh(item)
-    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+    return LibraryItemOut.model_validate(_managed_library_payloads(db, settings, [item])[0])
 
 
 @router.post("/ops/library/{item_id}/refresh-metadata", response_model=LibraryItemOut, tags=["ops"])
@@ -2011,7 +2256,7 @@ def refresh_external_library_metadata(
     )
     db.commit()
     db.refresh(item)
-    return LibraryItemOut.model_validate(managed_item_payload(db, settings, item))
+    return LibraryItemOut.model_validate(_managed_library_payloads(db, settings, [item])[0])
 
 
 @router.delete("/ops/library/{item_id}/permanent", status_code=status.HTTP_204_NO_CONTENT, tags=["ops"])

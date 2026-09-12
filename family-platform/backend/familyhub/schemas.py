@@ -17,6 +17,29 @@ def require_ascii_password(value: str) -> str:
     return value
 
 
+def normalize_content_tags(value: list[str] | None) -> list[str]:
+    """统一清理人工标签，保证筛选与搜索使用同一份稳定数据。"""
+
+    if not value:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        tag = " ".join(str(raw).strip().split())
+        if not tag:
+            continue
+        if len(tag) > 30:
+            raise ValueError("单个标签不能超过 30 个字符")
+        key = tag.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(tag)
+        if len(normalized) > 20:
+            raise ValueError("标签最多 20 个")
+    return normalized
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -217,6 +240,7 @@ class ContentOut(ApiModel):
     episode_index: int | None = None
     episode_count: int | None = None
     section_title: str | None = None
+    collection_card: bool = False
 
 
 class ContentCollectionOut(ApiModel):
@@ -454,8 +478,11 @@ class LocalLibraryImportIn(BaseModel):
     age_to: int = Field(default=99, ge=0, le=99)
     language: str = Field(default="中文", max_length=120)
     description: str = Field(default="", max_length=4000)
+    tags: list[str] = Field(default_factory=list)
     copy_to_library: bool = True
     publish: bool = False
+
+    _normalize_tags = field_validator("tags")(normalize_content_tags)
 
 
 class LibraryItemUpdateIn(BaseModel):
@@ -465,9 +492,12 @@ class LibraryItemUpdateIn(BaseModel):
     age_from: int | None = Field(default=None, ge=0, le=99)
     age_to: int | None = Field(default=None, ge=0, le=99)
     description: str | None = Field(default=None, max_length=4000)
+    tags: list[str] | None = None
     audience: Literal["child", "family", "adult"] | None = None
     featured: bool | None = None
     publication_status: Literal["draft", "published", "archived"] | None = None
+
+    _normalize_tags = field_validator("tags")(normalize_content_tags)
 
 
 class LibraryItemOut(ApiModel):
@@ -496,6 +526,7 @@ class LibraryItemOut(ApiModel):
     episode_index: int | None = None
     episode_count: int | None = None
     section_title: str | None = None
+    collection_card: bool = False
     updated_at: datetime
 
 
@@ -516,6 +547,9 @@ class ExternalItemIn(BaseModel):
     age_to: int = Field(default=99, ge=0, le=99)
     language: str = Field(default="中文", max_length=120)
     description: str = Field(default="", max_length=4000)
+    tags: list[str] = Field(default_factory=list)
+
+    _normalize_tags = field_validator("tags")(normalize_content_tags)
 
     @field_validator("url")
     @classmethod
@@ -546,8 +580,11 @@ class ExternalFeedIn(BaseModel):
     age_from: int = Field(default=3, ge=0, le=99)
     age_to: int = Field(default=12, ge=0, le=99)
     language: str = Field(default="中文", max_length=120)
+    tags: list[str] = Field(default_factory=list)
     max_items: int = Field(default=50, ge=1, le=200)
     sync_interval_hours: int = Field(default=24, ge=1, le=168)
+
+    _normalize_tags = field_validator("tags")(normalize_content_tags)
 
 
 class ExternalFeedOut(ApiModel):
@@ -560,6 +597,7 @@ class ExternalFeedOut(ApiModel):
     age_from: int
     age_to: int
     language: str
+    tags: list[str] = Field(default_factory=list)
     max_items: int
     sync_interval_hours: int
     enabled: bool
@@ -580,9 +618,12 @@ class AssetReviewIn(BaseModel):
     age_from: int = Field(default=0, ge=0, le=18)
     age_to: int = Field(default=99, ge=0, le=99)
     language: str = Field(default="中文", max_length=120)
+    tags: list[str] = Field(default_factory=list)
     # 仅作为可选的来源/授权备注保存。家庭自有文件、已获授权的下载文件
     # 不应被强制要求提供一个公开 URL；真正的发布门槛是上面的两项人工确认。
     license_ref: str | None = Field(default=None, max_length=1000)
+
+    _normalize_tags = field_validator("tags")(normalize_content_tags)
 
 
 class CompleteIn(BaseModel):

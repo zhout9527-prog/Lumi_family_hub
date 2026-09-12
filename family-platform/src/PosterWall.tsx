@@ -5,6 +5,7 @@ import { matchesContentSearch } from './search'
 import type { ContentItem } from './types'
 
 type PosterFilter = 'all' | 'local' | 'online'
+type AudienceFilter = 'adult-family' | 'child' | 'all'
 
 function isLocalVideo(item: ContentItem): boolean {
   return Boolean(item.localAvailable || item.playbackMode === 'local_asset')
@@ -36,6 +37,8 @@ export function PosterWall({
   onFavorite: (id: string) => void
 }) {
   const [filter, setFilter] = useState<PosterFilter>('all')
+  const [audience, setAudience] = useState<AudienceFilter>('adult-family')
+  const [tag, setTag] = useState('all')
   const [query, setQuery] = useState('')
   const videos = useMemo(
     () => items.filter((item) => item.kind === 'video' && item.playable),
@@ -44,10 +47,18 @@ export function PosterWall({
   const visible = useMemo(
     () => videos.filter((item) => {
       const local = isLocalVideo(item)
-      return (filter === 'all' || (filter === 'local' ? local : !local)) && matchesContentSearch(item, query)
+      const audienceMatches = audience === 'all'
+        || (audience === 'child' ? item.audience === 'child' : item.audience !== 'child')
+      return audienceMatches
+        && (tag === 'all' || item.tags.includes(tag))
+        && (filter === 'all' || (filter === 'local' ? local : !local))
+        && matchesContentSearch(item, query)
     }),
-    [filter, query, videos],
+    [audience, filter, query, tag, videos],
   )
+  const tagOptions = useMemo(() => Array.from(new Set(videos.flatMap((item) => item.tags)))
+    .filter((value) => !['在线内容', '本地馆藏', 'B站', '合集'].includes(value))
+    .slice(0, 12), [videos])
   const localCount = videos.filter(isLocalVideo).length
 
   return (
@@ -75,6 +86,17 @@ export function PosterWall({
           <input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索海报墙" placeholder="搜索片名、语言或标签" />
         </label>
       </div>
+      <div className="content-filter-bar poster-content-filters">
+        <div className="audience-filter" role="group" aria-label="海报墙受众筛选">
+          <button type="button" className={audience === 'adult-family' ? 'active' : ''} onClick={() => setAudience('adult-family')}>家长与全家</button>
+          <button type="button" className={audience === 'child' ? 'active' : ''} onClick={() => setAudience('child')}>儿童</button>
+          <button type="button" className={audience === 'all' ? 'active' : ''} onClick={() => setAudience('all')}>全部</button>
+        </div>
+        {tagOptions.length > 0 && <div className="tag-filter" role="group" aria-label="海报标签筛选">
+          <button type="button" className={tag === 'all' ? 'active' : ''} onClick={() => setTag('all')}>全部标签</button>
+          {tagOptions.map((value) => <button type="button" key={value} className={tag === value ? 'active' : ''} onClick={() => setTag(value)}>{value}</button>)}
+        </div>}
+      </div>
 
       {visible.length ? (
         <div className="poster-grid" aria-live="polite">
@@ -98,6 +120,7 @@ export function PosterWall({
                       {local ? <HardDrive size={12} /> : <Cloud size={12} />}
                       {local ? '本地' : '在线'}
                     </span>
+                    {item.collectionCard && <span className="poster-collection-count">合集 · {item.episodeCount ?? 0} 集</span>}
                   </span>
                   <span className="poster-copy">
                     <strong>{item.title}</strong>

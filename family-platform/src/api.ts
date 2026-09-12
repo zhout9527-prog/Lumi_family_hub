@@ -238,12 +238,14 @@ interface ApiContent {
   playback_mode?: string
   launch_allowed?: boolean
   provider?: string
+  audience: string
   collection_id?: string | null
   collection_title?: string | null
   collection_kind?: string | null
   episode_index?: number | null
   episode_count?: number | null
   section_title?: string | null
+  collection_card?: boolean
 }
 
 interface ApiContentCollection {
@@ -379,6 +381,7 @@ interface ApiLibraryItem {
   episode_index?: number | null
   episode_count?: number | null
   section_title?: string | null
+  collection_card?: boolean
   updated_at: string
 }
 
@@ -392,6 +395,7 @@ interface ApiExternalFeed {
   age_from: number
   age_to: number
   language: string
+  tags: string[]
   max_items: number
   sync_interval_hours: number
   enabled: boolean
@@ -505,6 +509,7 @@ export function mapContent(item: ApiContent): ContentItem {
     direct_http: '开放授权来源',
     local_library: '家庭本地馆藏',
     external_bilibili: 'B站在线收藏',
+    external_quark: '夸克官方分享',
     direct_stream: '开放媒体直链',
     external_link: '第三方官方页面',
   }
@@ -529,12 +534,14 @@ export function mapContent(item: ApiContent): ContentItem {
     playbackMode: (item.playback_mode ?? (item.local_available ? 'local_asset' : 'none')) as ContentItem['playbackMode'],
     launchAllowed: item.launch_allowed ?? false,
     provider: item.provider ?? 'local',
+    audience: item.audience,
     collectionId: item.collection_id ?? undefined,
     collectionTitle: item.collection_title ?? undefined,
     collectionKind: item.collection_kind ?? undefined,
     episodeIndex: item.episode_index ?? undefined,
     episodeCount: item.episode_count ?? undefined,
     sectionTitle: item.section_title ?? undefined,
+    collectionCard: item.collection_card ?? false,
   }
 }
 
@@ -577,6 +584,7 @@ export function mapLibraryItem(item: ApiLibraryItem): LibraryItemRecord {
     episodeIndex: item.episode_index ?? undefined,
     episodeCount: item.episode_count ?? undefined,
     sectionTitle: item.section_title ?? undefined,
+    collectionCard: item.collection_card ?? false,
     updatedAt: item.updated_at,
   }
 }
@@ -592,6 +600,7 @@ export function mapExternalFeed(item: ApiExternalFeed): ExternalFeed {
     ageFrom: item.age_from,
     ageTo: item.age_to,
     language: item.language,
+    tags: item.tags ?? [],
     maxItems: item.max_items,
     syncIntervalHours: item.sync_interval_hours,
     enabled: item.enabled,
@@ -916,6 +925,7 @@ export async function reviewAssetApi(id: string, payload: AssetReviewDraft): Pro
       age_from: payload.ageFrom,
       age_to: payload.ageTo,
       language: payload.language,
+      tags: payload.tags,
       license_ref: payload.licenseRef?.trim() || null,
     }),
   })
@@ -1071,6 +1081,7 @@ export async function importLocalLibraryApi(payload: LocalImportDraft): Promise<
       age_to: payload.ageTo,
       language: payload.language,
       description: payload.description,
+      tags: payload.tags,
       copy_to_library: payload.copyToLibrary,
       publish: payload.publish,
     }),
@@ -1118,6 +1129,7 @@ export async function addExternalItemApi(payload: ExternalItemDraft): Promise<Li
       age_to: payload.ageTo,
       language: payload.language,
       description: payload.description,
+      tags: payload.tags,
     }),
   }, { timeoutMs: 60000 }))
 }
@@ -1137,6 +1149,7 @@ export async function createExternalFeedApi(payload: ExternalFeedDraft): Promise
       age_from: payload.ageFrom,
       age_to: payload.ageTo,
       language: payload.language,
+      tags: payload.tags,
       max_items: payload.maxItems,
       sync_interval_hours: payload.syncIntervalHours,
     }),

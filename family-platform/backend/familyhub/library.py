@@ -204,6 +204,7 @@ def register_local_file(
     age_to: int = 99,
     language: str = "中文",
     description: str = "",
+    tags: list[str] | None = None,
     copy_to_library: bool = True,
     publish: bool = False,
 ) -> ContentItem:
@@ -255,7 +256,7 @@ def register_local_file(
         age_to=age_to,
         duration_minutes=10,
         description=description.strip(),
-        tags=["本地馆藏", "待审核"] if not publish else ["本地馆藏"],
+        tags=list(dict.fromkeys(["本地馆藏", *(tags or []), *(["待审核"] if not publish else [])])),
         acquisition_mode="local_library",
         publication_status=publication_status,
         audience=audience,
@@ -351,6 +352,7 @@ def managed_item_payload(db: Session, settings: Settings, item: ContentItem) -> 
         "episode_index": episode.episode_index if episode else None,
         "episode_count": collection.episode_count if collection else None,
         "section_title": episode.section_title if episode else None,
+        "collection_card": False,
         "updated_at": item.updated_at,
     }
 

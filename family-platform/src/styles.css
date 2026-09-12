@@ -931,6 +931,22 @@ select:focus-visible,
   padding: 8px 8px 0;
 }
 
+.collection-count-badge {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: 5px;
+  color: #ffffff;
+  background: rgba(24, 38, 31, 0.82);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .cover {
   position: relative;
   width: 100%;
@@ -2575,6 +2591,56 @@ select:focus-visible,
 .library-summary strong {
   color: var(--ink);
   font-size: 14px;
+}
+
+.content-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 0 0 14px;
+  scrollbar-width: none;
+}
+
+.content-filter-bar::-webkit-scrollbar { display: none; }
+
+.audience-filter,
+.tag-filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+}
+
+.audience-filter {
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.audience-filter button,
+.tag-filter button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tag-filter button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.audience-filter button.active,
+.tag-filter button.active {
+  color: #ffffff;
+  border-color: #31463b;
+  background: #31463b;
 }
 
 .summary-divider {
@@ -4718,14 +4784,17 @@ select:focus-visible,
 }
 
 .media-player.has-custom-video.has-community {
-  width: min(1500px, calc(100vw - 36px));
+  width: min(1200px, calc(100vw - 36px));
   max-height: calc(100dvh - 36px);
 }
 
 .player-experience {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  overscroll-behavior: contain;
   background: #000;
 }
 
@@ -4733,69 +4802,67 @@ select:focus-visible,
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: min(720px, calc(100dvh - 36px));
-  overflow: hidden;
+  min-height: 240px;
   color: #e4eee8;
   background: #141b17;
 }
 
-.player-collection {
+.player-media-info {
   display: grid;
-  min-height: 0;
-  max-height: 46%;
-  gap: 8px;
-  padding: 12px 10px 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 18px;
+  padding: 18px 20px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.player-collection > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.player-collection > div:first-child strong { color: #fff; font-size: 12px; }
-.player-collection > div:first-child span { flex: none; color: #91a69a; font-size: 10px; }
+.player-media-info h2 { margin: 3px 0 0; color: #fff; font-size: 18px; }
+.player-media-info .eyebrow { color: #8fa69a; }
+.player-media-info .soft-badge { align-self: center; color: #dfece5; background: rgba(255, 255, 255, 0.1); }
+.player-media-info p { grid-column: 1 / -1; max-width: 880px; margin: 4px 0 0; color: #aebfb5; font-size: 12px; line-height: 1.6; }
 
 .player-episode-list {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   min-height: 0;
-  gap: 4px;
+  max-height: 280px;
+  gap: 7px;
   overflow: auto;
+  padding: 14px 18px 20px;
   overscroll-behavior: contain;
 }
 
 .player-episode-list button {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  min-height: 34px;
-  padding: 5px 7px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  min-height: 50px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
   color: #b8c8bf;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.035);
   text-align: left;
 }
 
-.player-episode-list button > span { color: #7f978a; font-size: 10px; }
-.player-episode-list button > strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.player-episode-list button > span { grid-row: 1 / span 2; color: #7f978a; font-size: 11px; }
+.player-episode-list button > strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.player-episode-list button > small { grid-column: 2; overflow: hidden; color: #82968b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .player-episode-list button:hover,
 .player-episode-list button:focus-visible,
 .player-episode-list button.active { border-color: rgba(255, 255, 255, 0.16); color: #fff; background: rgba(255, 255, 255, 0.1); }
 
 .community-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  padding: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 10px 18px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .community-tabs button {
-  min-height: 34px;
-  border-radius: 5px;
+  min-width: 104px;
+  min-height: 38px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: #9caf9f;
   background: transparent;
   font-size: 11px;
@@ -4804,11 +4871,13 @@ select:focus-visible,
 .community-tabs button.active,
 .community-tabs button:focus-visible {
   color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  border-bottom-color: #f08a74;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .community-list {
   min-height: 0;
+  max-height: 320px;
   flex: 1;
   overflow: auto;
   overscroll-behavior: contain;
@@ -4893,6 +4962,8 @@ select:focus-visible,
   height: 100%;
   object-fit: contain;
   background: #000;
+  filter: brightness(var(--video-brightness, 1));
+  transition: filter 120ms linear;
 }
 
 .video-gesture-zone {
@@ -4905,11 +4976,14 @@ select:focus-visible,
 .video-danmaku-layer {
   position: absolute;
   z-index: 2;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--danmaku-area-height, 50%);
   overflow: hidden;
   pointer-events: none;
   text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
-  font-size: clamp(13px, 1.7vw, 22px);
+  font-size: 18px;
   font-weight: 650;
 }
 
@@ -4939,7 +5013,8 @@ select:focus-visible,
 .video-top-controls button,
 .video-bottom-controls button,
 .video-bottom-controls input,
-.video-bottom-controls .video-rate-menu {
+.video-bottom-controls .video-rate-menu,
+.video-bottom-controls .video-danmaku-menu {
   pointer-events: auto;
 }
 
@@ -5054,6 +5129,12 @@ select:focus-visible,
   backdrop-filter: blur(8px);
 }
 
+.video-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .boost-lock {
   display: flex;
   align-items: center;
@@ -5139,11 +5220,24 @@ select:focus-visible,
   flex: 1;
 }
 
-.video-rate-control {
+.video-rate-control,
+.video-danmaku-control {
   position: relative;
 }
 
-.video-rate-menu {
+.video-danmaku-control {
+  display: flex;
+  align-items: center;
+}
+
+.danmaku-area-button {
+  min-width: 45px;
+  padding-right: 7px;
+  padding-left: 7px;
+}
+
+.video-rate-menu,
+.video-danmaku-menu {
   position: absolute;
   right: 0;
   bottom: 45px;
@@ -5158,7 +5252,13 @@ select:focus-visible,
   backdrop-filter: blur(10px);
 }
 
-.video-rate-menu button {
+.video-danmaku-menu {
+  right: 0;
+  bottom: 45px;
+}
+
+.video-rate-menu button,
+.video-danmaku-menu button {
   display: flex;
   height: 36px;
   align-items: center;
@@ -5172,7 +5272,10 @@ select:focus-visible,
 
 .video-rate-menu button:hover,
 .video-rate-menu button:focus-visible,
-.video-rate-menu button.active {
+.video-rate-menu button.active,
+.video-danmaku-menu button:hover,
+.video-danmaku-menu button:focus-visible,
+.video-danmaku-menu button.active {
   color: #fff;
   background: rgba(255, 255, 255, 0.13);
 }
@@ -5395,12 +5498,14 @@ select:focus-visible,
   font-size: 14px;
 }
 
-.tv-mode .lumi-video-player.profile-tv .video-rate-menu {
+.tv-mode .lumi-video-player.profile-tv .video-rate-menu,
+.tv-mode .lumi-video-player.profile-tv .video-danmaku-menu {
   width: 170px;
   bottom: 58px;
 }
 
-.tv-mode .lumi-video-player.profile-tv .video-rate-menu button {
+.tv-mode .lumi-video-player.profile-tv .video-rate-menu button,
+.tv-mode .lumi-video-player.profile-tv .video-danmaku-menu button {
   height: 48px;
   font-size: 15px;
 }
@@ -5431,7 +5536,8 @@ html.mobile-mode .player-experience .lumi-video-player {
 }
 
 html.mobile-mode .player-community {
-  height: min(44dvh, 360px);
+  height: auto;
+  min-height: min(44dvh, 360px);
   max-height: none;
 }
 
@@ -5492,7 +5598,8 @@ html.mobile-mode:fullscreen .player-community {
   }
 
   .player-community {
-    height: min(44dvh, 360px);
+    height: auto;
+    min-height: min(44dvh, 360px);
     max-height: none;
   }
 
@@ -5534,8 +5641,13 @@ html.mobile-mode:fullscreen .player-community {
     height: 58px;
   }
 
-  .video-rate-menu {
+  .video-rate-menu,
+  .video-danmaku-menu {
     right: -38px;
+  }
+
+  .video-danmaku-layer {
+    font-size: 14px;
   }
 
   .search-kind-filter {
@@ -5765,6 +5877,26 @@ html.mobile-mode:fullscreen .player-community {
 
 .poster-source.online {
   background: rgba(52, 91, 126, 0.82);
+}
+
+.poster-collection-count {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  color: #ffffff;
+  background: rgba(24, 38, 31, 0.82);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.poster-content-filters {
+  margin-top: -10px;
+}
+
+.managed-tag-line {
+  color: #637b6e;
 }
 
 .poster-copy {

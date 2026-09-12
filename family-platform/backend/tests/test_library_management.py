@@ -124,6 +124,7 @@ def test_bilibili_item_can_be_saved_when_metadata_is_temporarily_unavailable(
             "age_from": 4,
             "age_to": 12,
             "language": "中文",
+            "tags": ["自然科普", "亲子"],
         },
     )
     assert created.status_code == 201, created.text
@@ -454,6 +455,7 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
             "age_from": 4,
             "age_to": 12,
             "language": "中文",
+            "tags": ["自然科普", "亲子"],
             "max_items": 20,
             "sync_interval_hours": 1,
         },
@@ -463,13 +465,34 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
 
     guardian = login(client, "guardian")
     catalog = client.get("/api/v1/catalog/curated", headers=guardian).json()
-    episodes = [item for item in catalog if item.get("collection_id") == collection_id]
-    assert sorted(item["episode_index"] for item in episodes) == [1, 2, 3]
-    selected = next(item for item in episodes if item["episode_index"] == 2)
-    detail = client.get(f"/api/v1/catalog/{selected['id']}/collection", headers=guardian)
+    collection_cards = [item for item in catalog if item.get("collection_id") == collection_id]
+    assert len(collection_cards) == 1
+    collection_card = collection_cards[0]
+    assert collection_card["collection_card"] is True
+    assert collection_card["title"] == "完整自然课"
+    assert collection_card["episode_count"] == 3
+    assert "自然科普" in collection_card["tags"]
+    detail = client.get(f"/api/v1/catalog/{collection_card['id']}/collection", headers=guardian)
     assert detail.status_code == 200, detail.text
     assert detail.json()["title"] == "完整自然课"
     assert [item["episode_index"] for item in detail.json()["episodes"]] == [1, 2, 3]
+    episodes = detail.json()["episodes"]
+    selected = episodes[1]
+
+    managed = client.get("/api/v1/ops/library", headers=operator).json()
+    managed_cards = [item for item in managed if item.get("collection_id") == collection_id]
+    assert len(managed_cards) == 1
+    assert managed_cards[0]["collection_card"] is True
+    updated = client.patch(
+        f"/api/v1/ops/library/{managed_cards[0]['id']}",
+        headers=operator,
+        json={"tags": ["自然科普", "六岁精选"], "age_from": 5, "age_to": 9},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["tags"] == ["自然科普", "六岁精选", "合集"]
+    detail = client.get(f"/api/v1/catalog/{selected['id']}/collection", headers=guardian).json()
+    assert all(item["tags"] == ["自然科普", "六岁精选"] for item in detail["episodes"])
+    assert all(item["age_from"] == 5 and item["age_to"] == 9 for item in detail["episodes"])
     child = login(client, "child")
     request = client.post(
         "/api/v1/content-requests",
@@ -505,11 +528,14 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
         synced, failed = external.sync_due_external_feeds(db, client.app.state.settings)
     assert (synced, failed) == (1, 0)
     catalog = client.get("/api/v1/catalog/curated", headers=guardian).json()
-    assert len([item for item in catalog if item.get("collection_id") == collection_id]) == 3
+    synced_card = next(item for item in catalog if item.get("collection_id") == collection_id)
+    assert len([item for item in catalog if item.get("collection_id") == collection_id]) == 1
+    assert "六岁精选" in synced_card["tags"]
+    assert synced_card["age_from"] == 5 and synced_card["age_to"] == 9
     assert any(item["title"] == "新收藏的视频" for item in catalog)
 
     # 单集删除只移除这一集；整合集删除后，后台同步也不会把它复活。
-    first = next(item for item in episodes if item["episode_index"] == 1)
+    first = episodes[0]
     assert client.delete(f"/api/v1/ops/library/{first['id']}/permanent", headers=operator).status_code == 204
     detail = client.get(f"/api/v1/catalog/{selected['id']}/collection", headers=guardian).json()
     assert [item["episode_index"] for item in detail["episodes"]] == [2, 3]

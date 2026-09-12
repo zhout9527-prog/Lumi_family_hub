@@ -89,12 +89,14 @@ export interface ContentItem {
   playbackMode?: PlaybackMode
   launchAllowed?: boolean
   provider?: string
+  audience?: 'child' | 'family' | 'adult' | string
   collectionId?: string
   collectionTitle?: string
   collectionKind?: 'ugc_season' | 'multi_page' | string
   episodeIndex?: number
   episodeCount?: number
   sectionTitle?: string
+  collectionCard?: boolean
 }
 
 export interface ContentCollection {
@@ -242,6 +244,7 @@ export interface AssetReviewDraft {
   ageFrom: number
   ageTo: number
   language: string
+  tags: string[]
   /** 可选的来源或授权备注；家庭内容审核不要求填写 URL。 */
   licenseRef?: string
   reviewNote: string
@@ -309,6 +312,7 @@ export interface LibraryItemRecord {
   episodeIndex?: number
   episodeCount?: number
   sectionTitle?: string
+  collectionCard?: boolean
   updatedAt: string
 }
 
@@ -321,6 +325,7 @@ export interface LocalImportDraft {
   ageTo: number
   language: string
   description: string
+  tags: string[]
   copyToLibrary: boolean
   publish: boolean
 }
@@ -336,6 +341,7 @@ export interface ExternalItemDraft {
   ageTo: number
   language: string
   description: string
+  tags: string[]
 }
 
 export interface ExternalFeed {
@@ -348,6 +354,7 @@ export interface ExternalFeed {
   ageFrom: number
   ageTo: number
   language: string
+  tags: string[]
   maxItems: number
   syncIntervalHours: number
   enabled: boolean
@@ -365,6 +372,7 @@ export interface ExternalFeedDraft {
   ageFrom: number
   ageTo: number
   language: string
+  tags: string[]
   maxItems: number
   syncIntervalHours: number
 }

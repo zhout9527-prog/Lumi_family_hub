@@ -79,6 +79,15 @@ function passwordCharacters(value: string): string {
   return value.replace(/[^A-Za-z0-9]/g, '')
 }
 
+function parseContentTags(value: string): string[] {
+  return Array.from(new Set(
+    value
+      .split(/[,，\n]+/)
+      .map((tag) => tag.trim().replace(/\s+/g, ' '))
+      .filter(Boolean),
+  )).slice(0, 20)
+}
+
 function leavePlaybackFullscreen(): void {
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
   const orientation = window.screen.orientation as ScreenOrientation & { unlock?: () => void }
@@ -255,6 +264,7 @@ function ContentCard({
     <article className="content-card">
       <div className="card-cover-wrap">
         <Cover item={item} onOpen={onOpen} focusable={false} />
+        {item.collectionCard && <span className="collection-count-badge"><Layers3 size={13} />{item.episodeCount ?? 0} 集</span>}
         <IconButton
           label={favorite ? '取消收藏' : '加入收藏'}
           className={'favorite-button ' + (favorite ? 'is-favorite' : '')}
@@ -1119,6 +1129,7 @@ function AssetReviewEditor({
   const [ageFrom, setAgeFrom] = useState(0)
   const [ageTo, setAgeTo] = useState(99)
   const [language, setLanguage] = useState('中文')
+  const [tagText, setTagText] = useState('')
   const [licenseRef, setLicenseRef] = useState(job?.proofUrl ?? '')
   const [reviewNote, setReviewNote] = useState('已核对来源、家庭使用权利和文件内容')
   const [rightsConfirmed, setRightsConfirmed] = useState(false)
@@ -1142,7 +1153,7 @@ function AssetReviewEditor({
     setSubmitting(true)
     setError('')
     try {
-      await onReview({ title: title.trim(), contentKind, audience, ageFrom, ageTo, language: language.trim(), licenseRef: licenseRef.trim() || undefined, reviewNote: reviewNote.trim(), rightsConfirmed, securityConfirmed })
+      await onReview({ title: title.trim(), contentKind, audience, ageFrom, ageTo, language: language.trim(), tags: parseContentTags(tagText), licenseRef: licenseRef.trim() || undefined, reviewNote: reviewNote.trim(), rightsConfirmed, securityConfirmed })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '审核入库失败')
     } finally {
@@ -1158,6 +1169,7 @@ function AssetReviewEditor({
       <label className="ops-field"><span>最低年龄</span><div><input aria-label="最低年龄" type="number" min="0" max="18" value={ageFrom} onChange={(event) => setAgeFrom(Number(event.target.value))} /></div></label>
       <label className="ops-field"><span>最高年龄</span><div><input aria-label="最高年龄" type="number" min="0" max="99" value={ageTo} onChange={(event) => setAgeTo(Number(event.target.value))} /></div></label>
       <label className="ops-field"><span>语言</span><div><input aria-label="馆藏语言" value={language} onChange={(event) => setLanguage(event.target.value)} /></div></label>
+      <label className="ops-field review-wide"><span>内容标签</span><div><input aria-label="馆藏内容标签" value={tagText} onChange={(event) => setTagText(event.target.value)} placeholder="动画，英语启蒙，自然科普（逗号分隔）" /></div></label>
       <label className="ops-field review-wide"><span>来源/授权备注（可选）</span><div><ShieldCheck size={15} /><input aria-label="来源或授权备注" type="text" value={licenseRef} onChange={(event) => setLicenseRef(event.target.value)} placeholder="可填写原视频页、授权说明或家庭自有" /></div></label>
       <label className="ops-field review-wide"><span>审核说明</span><div><FileCheck2 size={15} /><input aria-label="审核说明" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></div></label>
       <div className="review-confirmations review-wide">
@@ -1423,17 +1435,29 @@ function SourceCard({
 
 function LibraryView({
   items,
+  role,
   favoriteIds,
   onOpen,
   onFavorite,
 }: {
   items: ContentItem[]
+  role: Role
   favoriteIds: string[]
   onOpen: (item: ContentItem) => void
   onFavorite: (id: string) => void
 }) {
   const [kind, setKind] = useState<ContentKind | 'all'>('all')
-  const filtered = items.filter((item) => kind === 'all' || item.kind === kind)
+  const [audienceScope, setAudienceScope] = useState<'adult-family' | 'child' | 'all'>(role === 'guardian' ? 'adult-family' : 'all')
+  const [tag, setTag] = useState('all')
+  const tagOptions = useMemo(() => Array.from(new Set(items.flatMap((item) => item.tags)))
+    .filter((value) => !['在线内容', '本地馆藏', 'B站', '合集'].includes(value))
+    .slice(0, 12), [items])
+  const filtered = items.filter((item) => {
+    if (kind !== 'all' && item.kind !== kind) return false
+    if (role === 'guardian' && audienceScope === 'adult-family' && item.audience === 'child') return false
+    if (role === 'guardian' && audienceScope === 'child' && item.audience !== 'child') return false
+    return tag === 'all' || item.tags.includes(tag)
+  })
   return (
     <div className="dashboard library-dashboard">
       <section className="page-intro">
@@ -1441,6 +1465,17 @@ function LibraryView({
         <button type="button" className="button button-quiet"><Plus size={16} /> 添加内容</button>
       </section>
       <CategoryStrip active={kind} onChange={setKind} />
+      <div className="content-filter-bar">
+        {role === 'guardian' && <div className="audience-filter" role="group" aria-label="家庭书架受众筛选">
+          <button type="button" className={audienceScope === 'adult-family' ? 'active' : ''} onClick={() => setAudienceScope('adult-family')}>家长与全家</button>
+          <button type="button" className={audienceScope === 'child' ? 'active' : ''} onClick={() => setAudienceScope('child')}>儿童</button>
+          <button type="button" className={audienceScope === 'all' ? 'active' : ''} onClick={() => setAudienceScope('all')}>全部</button>
+        </div>}
+        {tagOptions.length > 0 && <div className="tag-filter" role="group" aria-label="内容标签筛选">
+          <button type="button" className={tag === 'all' ? 'active' : ''} onClick={() => setTag('all')}>全部标签</button>
+          {tagOptions.map((value) => <button type="button" key={value} className={tag === value ? 'active' : ''} onClick={() => setTag(value)}>{value}</button>)}
+        </div>}
+      </div>
       <div className="library-summary">
         <span><strong>{filtered.length}</strong> 个内容</span>
         <span className="summary-divider" />
@@ -1619,15 +1654,17 @@ function MediaPlayerModal({
   onSelectEpisode: (item: ContentItem) => void
 }) {
   const [interactions, setInteractions] = useState<BilibiliInteractions>({ comments: [], danmaku: [] })
-  const [communityTab, setCommunityTab] = useState<'comments' | 'danmaku'>('comments')
+  const [detailTab, setDetailTab] = useState<'episodes' | 'comments'>(item.collectionId ? 'episodes' : 'comments')
   const [communityLoading, setCommunityLoading] = useState(item.provider === 'bilibili')
   const [collection, setCollection] = useState<ContentCollection | null>(null)
 
   useEffect(() => {
     if (!item.collectionId) {
       setCollection(null)
+      setDetailTab('comments')
       return
     }
+    setDetailTab('episodes')
     let active = true
     void contentCollectionApi(item.id)
       .then((result) => { if (active) setCollection(result) })
@@ -1666,23 +1703,26 @@ function MediaPlayerModal({
           <div className="player-experience">
             <VideoPlayer item={item} url={url} profile={DEVICE_PROFILE} danmaku={interactions.danmaku} onClose={onClose} />
             {item.provider === 'bilibili' && (
-              <aside className="player-community" aria-label="B站评论与弹幕">
-                {collection && <div className="player-collection">
-                  <div><strong>{collection.title}</strong><span>{collection.episodes.length} / {collection.episodeCount} 集</span></div>
+              <section className="player-community" aria-label="合集信息与评论">
+                <div className="player-media-info">
+                  <div><span className="eyebrow">{collection ? 'BILIBILI COLLECTION' : 'BILIBILI VIDEO'}</span><h2>{collection?.title ?? item.title}</h2></div>
+                  <span className="soft-badge">{collection ? `${collection.episodes.length} / ${collection.episodeCount} 集` : `${interactions.danmaku.length} 条弹幕`}</span>
+                  {(collection?.description || item.description) && <p>{collection?.description || item.description}</p>}
+                </div>
+                <div className="community-tabs" role="tablist" aria-label="播放详情">
+                  {collection && <button type="button" role="tab" aria-selected={detailTab === 'episodes'} className={detailTab === 'episodes' ? 'active' : ''} onClick={() => setDetailTab('episodes')}>选集 {collection.episodeCount}</button>}
+                  <button type="button" role="tab" aria-selected={detailTab === 'comments'} className={detailTab === 'comments' ? 'active' : ''} onClick={() => setDetailTab('comments')}>评论 {interactions.comments.length}</button>
+                </div>
+                {detailTab === 'episodes' && collection ? (
                   <div className="player-episode-list" aria-label="合集选集">
-                    {collection.episodes.map((episode) => <button type="button" key={episode.id} className={episode.id === item.id ? 'active' : ''} aria-current={episode.id === item.id ? 'true' : undefined} onClick={() => { if (episode.id !== item.id) onSelectEpisode(episode) }}><span>{episode.episodeIndex ?? '-'}</span><strong>{episode.title}</strong></button>)}
+                    {collection.episodes.map((episode) => <button type="button" key={episode.id} className={episode.id === item.id ? 'active' : ''} aria-current={episode.id === item.id ? 'true' : undefined} onClick={() => { if (episode.id !== item.id) onSelectEpisode(episode) }}><span>{episode.episodeIndex ?? '-'}</span><strong>{episode.title}</strong>{episode.sectionTitle && <small>{episode.sectionTitle}</small>}</button>)}
                   </div>
-                </div>}
-                <div className="community-tabs" role="tablist">
-                  <button type="button" role="tab" aria-selected={communityTab === 'comments'} className={communityTab === 'comments' ? 'active' : ''} onClick={() => setCommunityTab('comments')}>评论 {interactions.comments.length}</button>
-                  <button type="button" role="tab" aria-selected={communityTab === 'danmaku'} className={communityTab === 'danmaku' ? 'active' : ''} onClick={() => setCommunityTab('danmaku')}>弹幕 {interactions.danmaku.length}</button>
-                </div>
-                <div className="community-list">
-                  {communityLoading ? <div className="community-empty"><RefreshCw className="spin" size={20} />正在获取</div> : communityTab === 'comments' ? (
-                    interactions.comments.length ? interactions.comments.map((comment) => <article className="community-comment" key={comment.id}><span>{comment.author}</span><p>{comment.text}</p><small><ThumbsUp size={12} />{comment.likes}</small></article>) : <div className="community-empty"><MessageSquareText size={20} />暂无可显示评论</div>
-                  ) : interactions.danmaku.length ? interactions.danmaku.map((entry) => <article className="community-danmaku" key={entry.id}><time>{Math.floor(entry.time / 60)}:{String(Math.floor(entry.time % 60)).padStart(2, '0')}</time><span>{entry.text}</span></article>) : <div className="community-empty"><MessageSquareText size={20} />暂无可显示弹幕</div>}
-                </div>
-              </aside>
+                ) : (
+                  <div className="community-list">
+                    {communityLoading ? <div className="community-empty"><RefreshCw className="spin" size={20} />正在获取评论</div> : interactions.comments.length ? interactions.comments.map((comment) => <article className="community-comment" key={comment.id}><span>{comment.author}</span><p>{comment.text}</p><small><ThumbsUp size={12} />{comment.likes}</small></article>) : <div className="community-empty"><MessageSquareText size={20} />暂无可显示评论</div>}
+                  </div>
+                )}
+              </section>
             )}
           </div>
         ) : (
@@ -2336,6 +2376,7 @@ function ResourceManagerView({
   const [localAgeTo, setLocalAgeTo] = useState('12')
   const [localLanguage, setLocalLanguage] = useState('中文')
   const [localDescription, setLocalDescription] = useState('')
+  const [localTags, setLocalTags] = useState('')
   const [localCopy, setLocalCopy] = useState(true)
   const [localPublish, setLocalPublish] = useState(false)
   const [onlineUrl, setOnlineUrl] = useState('')
@@ -2348,6 +2389,7 @@ function ResourceManagerView({
   const [onlineLanguage, setOnlineLanguage] = useState('中文')
   const [onlineCover, setOnlineCover] = useState('')
   const [onlineDescription, setOnlineDescription] = useState('')
+  const [onlineTags, setOnlineTags] = useState('')
   const [feedName, setFeedName] = useState('')
   const [feedUrl, setFeedUrl] = useState('')
   const [feedCookie, setFeedCookie] = useState('')
@@ -2355,6 +2397,7 @@ function ResourceManagerView({
   const [feedAgeFrom, setFeedAgeFrom] = useState('3')
   const [feedAgeTo, setFeedAgeTo] = useState('12')
   const [feedLanguage, setFeedLanguage] = useState('中文 / English')
+  const [feedTags, setFeedTags] = useState('')
   const [feedMaxItems, setFeedMaxItems] = useState('50')
   const [feedInterval, setFeedInterval] = useState('24')
   const [formError, setFormError] = useState('')
@@ -2439,6 +2482,7 @@ function ResourceManagerView({
         ageTo: Number(localAgeTo),
         language: localLanguage.trim() || '中文',
         description: localDescription.trim(),
+        tags: parseContentTags(localTags),
         copyToLibrary: localCopy,
         publish: localPublish,
       })
@@ -2463,6 +2507,7 @@ function ResourceManagerView({
         ageTo: Number(onlineAgeTo),
         language: onlineLanguage.trim() || '中文',
         description: onlineDescription.trim(),
+        tags: parseContentTags(onlineTags),
       })
       setOnlineUrl('')
       setOnlineTitle('')
@@ -2482,6 +2527,7 @@ function ResourceManagerView({
         ageFrom: Number(feedAgeFrom),
         ageTo: Number(feedAgeTo),
         language: feedLanguage.trim() || '中文',
+        tags: parseContentTags(feedTags),
         maxItems: Number(feedMaxItems),
         syncIntervalHours: Number(feedInterval),
       })
@@ -2500,7 +2546,7 @@ function ResourceManagerView({
   }
 
   const statusLabel = (status: string) => status === 'published' ? '已发布' : status === 'archived' ? '已隐藏' : '未发布'
-  const providerLabel = (mode: string) => mode === 'external_bilibili' ? 'B站' : mode === 'direct_stream' ? '开放直链' : mode === 'external_link' ? '第三方页面' : mode === 'local_library' ? '本地文件' : '在线资源'
+  const providerLabel = (mode: string) => mode === 'external_bilibili' ? 'B站' : mode === 'external_quark' ? '夸克分享' : mode === 'direct_stream' ? '开放直链' : mode === 'external_link' ? '第三方页面' : mode === 'local_library' ? '本地文件' : '在线资源'
 
   return (
     <div className="dashboard resource-dashboard">
@@ -2540,6 +2586,7 @@ function ResourceManagerView({
             <label className="ops-field"><span>年龄上限</span><div><input aria-label="本地资源年龄上限" type="number" min="0" max="99" value={localAgeTo} onChange={(event) => setLocalAgeTo(event.target.value)} /></div></label>
             <label className="ops-field"><span>语言</span><div><input aria-label="本地资源语言" value={localLanguage} onChange={(event) => setLocalLanguage(event.target.value)} /></div></label>
             <label className="ops-field resource-wide"><span>描述</span><div><input aria-label="本地资源描述" value={localDescription} onChange={(event) => setLocalDescription(event.target.value)} placeholder="给家人看的简短说明" /></div></label>
+            <label className="ops-field resource-wide"><span>内容标签</span><div><input aria-label="本地资源标签" value={localTags} onChange={(event) => setLocalTags(event.target.value)} placeholder="电影，纪录片，英语启蒙（逗号分隔）" /></div></label>
           </div>
           <div className="resource-options"><label className="rights-check"><input type="checkbox" checked={localCopy} onChange={(event) => setLocalCopy(event.target.checked)} />复制到已配置的资源目录（推荐）</label><label className="rights-check"><input type="checkbox" checked={localPublish} onChange={(event) => setLocalPublish(event.target.checked)} />导入后立即发布给 Client</label></div>
           <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitLocal().catch((error) => setFormError(error instanceof Error ? error.message : '导入失败')) }}><UploadCloud size={16} />{actionBusy === 'local' ? '正在导入' : '导入资源'}</button>
@@ -2550,11 +2597,11 @@ function ResourceManagerView({
       {tab === 'online' && <>
         <section className="panel resource-form-panel">
           <div className="panel-heading"><div><span className="eyebrow">PLAY WITHOUT DOWNLOADING</span><h2>添加在线播放入口</h2></div><Link2 size={19} /></div>
-          <p className="panel-hint">B 站视频优先使用官方播放器；抖音、夸克和其他站点保留官方页面入口，遇到站点限制时不会伪装成无感内嵌。</p>
+          <p className="panel-hint">B站会读取合集和分集；夸克会保留原分享链接并尝试读取公开标题、封面和官方预览。需要登录或转存的分享仍由夸克控制。</p>
           <div className="resource-form-grid">
             <label className="ops-field resource-wide"><span>视频 / 资源 URL</span><div><Link2 size={15} /><input aria-label="在线资源 URL" type="url" value={onlineUrl} onChange={(event) => setOnlineUrl(event.target.value)} placeholder="https://www.bilibili.com/video/BV..." /></div></label>
             <label className="ops-field"><span>平台</span><select aria-label="在线资源平台" value={onlineProvider} onChange={(event) => setOnlineProvider(event.target.value as typeof onlineProvider)}><option value="auto">自动识别</option><option value="bilibili">B站</option><option value="douyin">抖音</option><option value="quark">夸克网盘</option><option value="direct">开放直链</option><option value="other">其他</option></select></label>
-            <label className="ops-field"><span>标题（B站可留空）</span><div><input aria-label="在线资源标题" value={onlineTitle} onChange={(event) => setOnlineTitle(event.target.value)} placeholder="B站会自动读取标题和封面" /></div></label>
+            <label className="ops-field"><span>标题（B站/夸克可留空）</span><div><input aria-label="在线资源标题" value={onlineTitle} onChange={(event) => setOnlineTitle(event.target.value)} placeholder="优先自动读取平台标题和封面" /></div></label>
             <label className="ops-field"><span>类型</span><select aria-label="在线资源类型" value={onlineKind} onChange={(event) => setOnlineKind(event.target.value as typeof onlineKind)}><option value="video">视频</option><option value="book">图书</option><option value="audio">音频</option></select></label>
             <label className="ops-field"><span>可见范围</span><select aria-label="在线资源可见范围" value={onlineAudience} onChange={(event) => setOnlineAudience(event.target.value as typeof onlineAudience)}><option value="child">儿童</option><option value="family">全家</option><option value="adult">仅成人</option></select></label>
             <label className="ops-field"><span>年龄下限</span><div><input aria-label="在线资源年龄下限" type="number" min="0" max="99" value={onlineAgeFrom} onChange={(event) => setOnlineAgeFrom(event.target.value)} /></div></label>
@@ -2562,6 +2609,7 @@ function ResourceManagerView({
             <label className="ops-field"><span>封面 URL（可选）</span><div><input aria-label="在线资源封面 URL" type="url" value={onlineCover} onChange={(event) => setOnlineCover(event.target.value)} placeholder="留空使用平台封面" /></div></label>
             <label className="ops-field"><span>语言</span><div><input aria-label="在线资源语言" value={onlineLanguage} onChange={(event) => setOnlineLanguage(event.target.value)} /></div></label>
             <label className="ops-field resource-wide"><span>描述</span><div><input aria-label="在线资源描述" value={onlineDescription} onChange={(event) => setOnlineDescription(event.target.value)} /></div></label>
+            <label className="ops-field resource-wide"><span>内容标签</span><div><input aria-label="在线资源标签" value={onlineTags} onChange={(event) => setOnlineTags(event.target.value)} placeholder="动画，亲子，英语（逗号分隔）" /></div></label>
           </div>
           <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitOnline().catch((error) => setFormError(error instanceof Error ? error.message : '在线资源添加失败')) }}><Plus size={16} />{actionBusy === 'online' ? '正在读取元数据' : '保存在线播放入口'}</button>
         </section>
@@ -2582,6 +2630,7 @@ function ResourceManagerView({
             <label className="ops-field"><span>最多条数</span><div><input aria-label="同步最多条数" type="number" min="1" max="200" value={feedMaxItems} onChange={(event) => setFeedMaxItems(event.target.value)} /></div></label>
             <label className="ops-field"><span>同步间隔（小时）</span><div><input aria-label="同步间隔小时" type="number" min="1" max="168" value={feedInterval} onChange={(event) => setFeedInterval(event.target.value)} /></div></label>
             <label className="ops-field resource-wide"><span>语言标签</span><div><input aria-label="同步内容语言" value={feedLanguage} onChange={(event) => setFeedLanguage(event.target.value)} /></div></label>
+            <label className="ops-field resource-wide"><span>内容标签</span><div><input aria-label="同步内容标签" value={feedTags} onChange={(event) => setFeedTags(event.target.value)} placeholder="儿童动画，英语启蒙（逗号分隔，同步内容统一继承）" /></div></label>
           </div>
           <button type="button" className="button button-primary" disabled={busy || actionBusy !== null} onClick={() => { void submitFeed().catch((error) => setFormError(error instanceof Error ? error.message : '同步源创建失败')) }}><Plus size={16} />{actionBusy === 'feed' ? '正在同步' : '保存并立即同步'}</button>
         </section>
@@ -2651,7 +2700,8 @@ function LibraryTable({
                 <div className={'managed-kind ' + kindMeta[item.kind].tone}><KindIcon size={16} /></div>
                 <div className="managed-library-copy">
                   {editingId === item.id ? <input aria-label="编辑资源标题" value={editingTitle} onChange={(event) => onEditingTitle(event.target.value)} /> : <strong>{item.title}</strong>}
-                  <span>{libraryKindLabels[item.kind]} · {item.externalUrl ? providerLabel(item.acquisitionMode) : item.filePath ? formatFileSize(item.fileSize) : '文件不可用'} · {item.audience}{item.collectionId ? ` · ${item.collectionTitle} 第 ${item.episodeIndex}/${item.episodeCount} 集` : ''}</span>
+                  <span>{libraryKindLabels[item.kind]} · {item.externalUrl ? providerLabel(item.acquisitionMode) : item.filePath ? formatFileSize(item.fileSize) : '文件不可用'} · {item.audience}{item.collectionId ? ` · 合集 ${item.episodeCount ?? 0} 集` : ''} · {item.ageFrom}-${item.ageTo} 岁</span>
+                  {item.tags.length > 0 && <small className="managed-tag-line">标签：{item.tags.join(' · ')}</small>}
                   <small>{item.filePath ?? item.externalUrl ?? '无入口'}</small>
                 </div>
                 <span className={'submission-status ' + (isPublished ? 'transferred' : isHidden ? 'frozen' : 'review')}>{statusLabel(item.publicationStatus)}</span>
@@ -2666,7 +2716,7 @@ function LibraryTable({
                   {!isPublished && !isHidden && <button type="button" className="button button-primary small" disabled={busy} onClick={() => runAction(() => onUpdate(item.id, { publication_status: 'published' }), '发布失败')}><ShieldCheck size={14} />发布</button>}
                   {isHidden && <button type="button" className="button button-quiet small" disabled={busy} onClick={() => runAction(() => onUpdate(item.id, { publication_status: 'draft' }), '恢复资源失败')}><RotateCcw size={14} />恢复</button>}
                   {!isHidden && <IconButton label="隐藏资源" disabled={busy} onClick={() => runAction(() => onArchive(item.id), '隐藏资源失败')}><EyeOff size={15} /></IconButton>}
-                  {item.externalUrl && <IconButton label="删除在线资源" className="resource-delete" disabled={busy} onClick={() => {
+                  {item.externalUrl && !item.collectionId && <IconButton label="删除在线资源" className="resource-delete" disabled={busy} onClick={() => {
                     if (window.confirm(`确认删除“${item.title}”？它将从 Lumi 中移除，后续自动同步也不会恢复。`)) {
                       runAction(() => onDeleteExternal(item.id), '删除在线资源失败')
                     }
@@ -2968,7 +3018,7 @@ export default function App() {
     }
     if (state.role === 'child' && (activeNav === 'explore' || activeNav === 'library' || activeNav === 'progress')) {
       if (activeNav === 'library') {
-        return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+        return <LibraryView items={visibleItems} role={state.role} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       }
       if (activeNav === 'progress') {
         return <ProgressView displayName={currentUser.displayName} completedCount={state.completed.length} activeMinutes={state.activeMinutes} />
@@ -2976,11 +3026,11 @@ export default function App() {
       return <ChildDashboard displayName={currentUser.displayName} items={visibleItems} favoriteIds={state.favorites} completedIds={state.completed} onOpen={handleOpenItem} onFavorite={handleFavorite} />
     }
     if (state.role === 'guardian') {
-      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+      if (activeNav === 'library') return <LibraryView items={visibleItems} role={state.role} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       return <GuardianDashboard displayName={currentUser.displayName} items={visibleItems} requests={state.requests} submissions={state.submissions} onDecision={(id, status) => { void store.decideRequest(id, status).then(() => notify(status === 'approved' ? '已批准，孩子下次打开就能看到' : '已拒绝，并保留了这次决定', status === 'approved' ? 'success' : 'info')).catch(reportError) }} onOpen={handleOpenItem} onAddSubmission={handleSubmission} onTransfer={(id) => { void store.updateSubmission(id, 'transferred').then(() => notify('已记录转存，夜间 Worker 会在隔离区扫描')).catch(reportError) }} focus={activeNav} />
     }
     if (state.role === 'operator') {
-      if (activeNav === 'library') return <LibraryView items={visibleItems} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+      if (activeNav === 'library') return <LibraryView items={visibleItems} role={state.role} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
       if (activeNav === 'accounts') return <AccountManagementView registrations={store.registrations} users={store.managedUsers} onDecision={(id, decision) => { void store.decideRegistration(id, decision).then(() => notify(decision === 'approved' ? '账户已批准并可登录' : '注册申请已拒绝', decision === 'approved' ? 'success' : 'info')).catch(reportError) }} onStatus={(id, status) => { void store.updateManagedUser(id, status).then(() => notify(status === 'active' ? '账户已恢复' : '账户已停用')).catch(reportError) }} />
       if (activeNav === 'ops-library') return <ResourceManagerView items={store.libraryItems} feeds={store.externalFeeds} bilibiliAccount={store.bilibiliAccount} operatorUsername={currentUser.username} busy={store.busy} onScan={store.scanLibrary} onImport={store.importLocalLibrary} onExternal={store.addExternalItem} onUpdate={store.updateLibraryItem} onArchive={store.archiveLibraryItem} onRefreshExternal={store.refreshExternalItem} onDeleteExternal={store.deleteExternalItem} onDeleteCollection={store.deleteExternalCollection} onCreateFeed={store.createExternalFeed} onSyncFeed={store.syncExternalFeed} onDeleteFeed={store.deleteExternalFeed} onImportBilibiliAccount={store.importBilibiliAccount} onSwitchBilibiliAccount={store.switchBilibiliAccount} onDisconnectBilibiliAccount={store.disconnectBilibiliAccount} />
       if (activeNav === 'settings') return <StorageSettingsView paths={store.storagePaths} busy={store.busy} onSave={store.saveStoragePaths} />

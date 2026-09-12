@@ -36,6 +36,8 @@ def present_content(
         if local_available
         else "bilibili"
         if item.acquisition_mode == "external_bilibili"
+        else "quark"
+        if item.acquisition_mode == "external_quark"
         else "direct"
         if item.acquisition_mode == "direct_stream"
         else "external"

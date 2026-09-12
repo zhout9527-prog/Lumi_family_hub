@@ -70,6 +70,7 @@ import { TvSearchKeyboard } from './TvSearchKeyboard'
 import { VideoPlayer } from './VideoPlayer'
 import { PosterWall } from './PosterWall'
 import { GamesView, TetrisGame } from './TetrisGame'
+import { BlockMowerGame } from './BlockMowerGame'
 import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin } from './api'
 import './styles.css'
 
@@ -1657,6 +1658,7 @@ function MediaPlayerModal({
   const [detailTab, setDetailTab] = useState<'episodes' | 'comments'>(item.collectionId ? 'episodes' : 'comments')
   const [communityLoading, setCommunityLoading] = useState(item.provider === 'bilibili')
   const [collection, setCollection] = useState<ContentCollection | null>(null)
+  const [autoNext, setAutoNext] = useState(false)
 
   useEffect(() => {
     if (!item.collectionId) {
@@ -1671,6 +1673,17 @@ function MediaPlayerModal({
       .catch(() => { if (active) setCollection(null) })
     return () => { active = false }
   }, [item.collectionId, item.id])
+
+  const handleVideoEnded = () => {
+    if (!autoNext || !collection) return
+    const currentIndex = collection.episodes.findIndex((episode) => episode.id === item.id)
+    const nextEpisode = currentIndex >= 0 ? collection.episodes[currentIndex + 1] : undefined
+    if (nextEpisode) {
+      onSelectEpisode(nextEpisode)
+    } else {
+      setAutoNext(false)
+    }
+  }
 
   useEffect(() => {
     if (item.provider !== 'bilibili') return
@@ -1701,7 +1714,7 @@ function MediaPlayerModal({
       <section className={'media-player ' + ((mode === 'local_asset' || mode === 'direct_stream') && item.kind === 'video' ? 'has-custom-video' : '') + (item.provider === 'bilibili' ? ' has-community' : '')} role="dialog" aria-modal="true" aria-label={`播放 ${item.title}`} onMouseDown={(event) => event.stopPropagation()}>
         {(mode === 'local_asset' || mode === 'direct_stream') && item.kind === 'video' ? (
           <div className="player-experience">
-            <VideoPlayer item={item} url={url} profile={DEVICE_PROFILE} danmaku={interactions.danmaku} onClose={onClose} />
+            <VideoPlayer item={item} url={url} profile={DEVICE_PROFILE} danmaku={interactions.danmaku} collection={collection} autoNext={autoNext} onAutoNextChange={setAutoNext} onSelectEpisode={onSelectEpisode} onEnded={handleVideoEnded} onClose={onClose} />
             {item.provider === 'bilibili' && (
               <section className="player-community" aria-label="合集信息与评论">
                 <div className="player-media-info">
@@ -2775,6 +2788,7 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
   const [playback, setPlayback] = useState<{ item: ContentItem; url: string; mode: string; service?: string } | null>(null)
   const [tetrisOpen, setTetrisOpen] = useState(false)
+  const [blockMowerOpen, setBlockMowerOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: NoticeTone } | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
@@ -2793,6 +2807,7 @@ export default function App() {
     setSelectedItem(null)
     closePlayback()
     setTetrisOpen(false)
+    setBlockMowerOpen(false)
     setMobileOpen(false)
   }, [closePlayback, state.role, store.user?.id])
 
@@ -2806,6 +2821,11 @@ export default function App() {
       if (tetrisOpen) {
         event.preventDefault()
         setTetrisOpen(false)
+        return
+      }
+      if (blockMowerOpen) {
+        event.preventDefault()
+        setBlockMowerOpen(false)
         return
       }
       if (selectedItem) {
@@ -2832,7 +2852,7 @@ export default function App() {
     }
     window.addEventListener('lumi:native-back', handleNativeBack)
     return () => window.removeEventListener('lumi:native-back', handleNativeBack)
-  }, [activeNav, closePlayback, mobileOpen, playback, query, selectedItem, state.role, tetrisOpen, videoOnly])
+  }, [activeNav, blockMowerOpen, closePlayback, mobileOpen, playback, query, selectedItem, state.role, tetrisOpen, videoOnly])
 
   const items = store.catalog
 
@@ -2939,7 +2959,8 @@ export default function App() {
       void document.documentElement.requestFullscreen().catch(() => undefined)
     }
     setSelectedItem(null)
-    if (item.kind === 'video') setPlayback({ item, url: '', mode: 'loading' })
+    const switchingEpisode = item.kind === 'video' && playback?.item.kind === 'video' && playback.item.id !== item.id
+    if (item.kind === 'video' && !switchingEpisode) setPlayback({ item, url: '', mode: 'loading' })
     void store.launchContent(item.id).then((result) => {
       if (result.mode === 'local_asset' && result.url) {
         setSelectedItem(null)
@@ -3011,7 +3032,7 @@ export default function App() {
       return <SearchResults items={visibleItems} query={query} videoOnly={videoOnly} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
     }
     if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
-      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} />
+      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} />
     }
     if (activeNav === 'poster-wall' && state.role === 'guardian') {
       return <PosterWall items={items} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
@@ -3081,6 +3102,7 @@ export default function App() {
       )}
       {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={closePlayback} onSelectEpisode={handleLaunch} />}
       {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
+      {blockMowerOpen && <BlockMowerGame onClose={() => setBlockMowerOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   )

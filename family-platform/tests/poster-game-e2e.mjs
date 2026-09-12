@@ -85,6 +85,23 @@ try {
   check(await child.getByText('已暂停', { exact: true }).count() === 0, '电脑键盘没有恢复游戏')
   await child.keyboard.press('Escape')
   check(await child.getByRole('dialog', { name: '俄罗斯方块' }).count() === 0, '电脑端没有退出游戏')
+  await child.getByRole('button', { name: /方块割草/ }).click()
+  await child.getByRole('dialog', { name: '方块割草' }).waitFor()
+  check(await child.locator('.block-mower-tile').count() === 80, '方块割草棋盘不是 8 × 10')
+  const cleared = await child.locator('.block-mower-board').evaluate((board) => {
+    const cells = Array.from(board.querySelectorAll('button'))
+    for (let index = 0; index < cells.length; index += 1) {
+      const current = cells[index]
+      const right = index % 8 < 7 ? cells[index + 1] : null
+      const down = index + 8 < cells.length ? cells[index + 8] : null
+      if (right && current.className.match(/tile-\w+/)?.[0] === right.className.match(/tile-\w+/)?.[0]) { current.click(); return true }
+      if (down && current.className.match(/tile-\w+/)?.[0] === down.className.match(/tile-\w+/)?.[0]) { current.click(); return true }
+    }
+    return false
+  })
+  check(cleared, '方块割草初始棋盘没有可清除组合')
+  await child.getByText(/个方块连锁清除/).waitFor()
+  await child.getByRole('button', { name: '退出方块割草' }).click()
   await childContext.close()
 
   const mobileContext = await browser.newContext({
@@ -108,6 +125,11 @@ try {
   await mobile.getByRole('button', { name: '继续游戏' }).click()
   await mobile.screenshot({ path: `${artifactsPath}tetris-mobile-${runId}.png` })
   await mobile.getByRole('button', { name: '退出俄罗斯方块' }).click()
+  await mobile.getByRole('button', { name: /方块割草/ }).click()
+  await mobile.getByRole('dialog', { name: '方块割草' }).waitFor()
+  check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机方块割草横向溢出')
+  await mobile.screenshot({ path: `${artifactsPath}block-mower-mobile-${runId}.png` })
+  await mobile.getByRole('button', { name: '退出方块割草' }).click()
   await mobileContext.close()
 
   const landscapeContext = await browser.newContext({
@@ -153,6 +175,15 @@ try {
   await tv.screenshot({ path: `${artifactsPath}tetris-tv-${runId}.png` })
   await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
   check(await tv.getByRole('dialog', { name: '俄罗斯方块' }).count() === 0, '电视返回键没有退出游戏')
+  await tv.getByRole('button', { name: /方块割草/ }).focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByRole('dialog', { name: '方块割草' }).waitFor()
+  const initialTile = tv.locator('.block-mower-tile').first()
+  await initialTile.focus()
+  await tv.keyboard.press('ArrowRight')
+  check(await tv.evaluate(() => document.activeElement?.classList.contains('block-mower-tile')) === true, '电视方块割草没有逐格移动焦点')
+  await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
+  check(await tv.getByRole('dialog', { name: '方块割草' }).count() === 0, '电视返回键没有退出方块割草')
   await tvContext.close()
 
   check(failures.length === 0, failures.join('\n'))

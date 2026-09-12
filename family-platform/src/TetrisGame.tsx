@@ -252,25 +252,39 @@ export function TetrisGame({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function GamesView({ onPlayTetris }: { onPlayTetris: () => void }) {
+export function GamesView({ onPlayTetris, onPlayBlockMower }: { onPlayTetris: () => void; onPlayBlockMower: () => void }) {
   return (
     <div className="dashboard games-dashboard">
       <section className="page-intro games-intro">
         <div><span className="eyebrow">PLAYGROUND</span><h1>小游戏</h1><p>短短一局，动动脑筋。</p></div>
-        <span className="soft-badge"><Gamepad2 size={14} /> 1 个游戏</span>
+        <span className="soft-badge"><Gamepad2 size={14} /> 2 个游戏</span>
       </section>
-      <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
-        <span className="game-launch-art" aria-hidden="true">
-          <i className="block-i" /><i className="block-t" /><i className="block-o" /><i className="block-s" />
-          <span className="game-launch-grid" />
-        </span>
-        <span className="game-launch-copy">
-          <span className="eyebrow">SPATIAL PUZZLE</span>
-          <strong>俄罗斯方块</strong>
-          <small>逻辑 · 空间 · 反应</small>
-          <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
-        </span>
-      </button>
+      <div className="game-launch-grid-list">
+        <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
+          <span className="game-launch-art" aria-hidden="true">
+            <i className="block-i" /><i className="block-t" /><i className="block-o" /><i className="block-s" />
+            <span className="game-launch-grid" />
+          </span>
+          <span className="game-launch-copy">
+            <span className="eyebrow">SPATIAL PUZZLE</span>
+            <strong>俄罗斯方块</strong>
+            <small>逻辑 · 空间 · 反应</small>
+            <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
+          </span>
+        </button>
+        <button type="button" className="game-launch-card block-mower-launch-card" onClick={onPlayBlockMower}>
+          <span className="block-mower-launch-art" aria-hidden="true">
+            <i className="mower-tile mower-coral" /><i className="mower-tile mower-sun" /><i className="mower-tile mower-mint" /><i className="mower-tile mower-sky" /><i className="mower-tile mower-plum" />
+            <span className="mower-launch-spark">✦</span>
+          </span>
+          <span className="game-launch-copy">
+            <span className="eyebrow">COLOR GROVE</span>
+            <strong>方块割草</strong>
+            <small>连锁 · 观察 · 放松</small>
+            <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
+          </span>
+        </button>
+      </div>
     </div>
   )
 }

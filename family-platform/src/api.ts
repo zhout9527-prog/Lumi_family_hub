@@ -50,6 +50,24 @@ export function isNativeShell(): boolean {
   return Boolean(tauriWindow.__TAURI_INTERNALS__) || window.location.hostname === 'tauri.localhost'
 }
 
+export interface LumiAndroidBridge {
+  getMediaVolumePercent?: () => number
+  setMediaVolumePercent?: (percent: number) => void
+  getScreenBrightnessPercent?: () => number
+  setScreenBrightnessPercent?: (percent: number) => void
+  resetScreenBrightness?: () => void
+}
+
+export function isAndroidNative(): boolean {
+  return isNativeShell() && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+}
+
+export function getAndroidBridge(): LumiAndroidBridge | null {
+  if (!isAndroidNative() || typeof window === 'undefined') return null
+  const candidate = (window as Window & { LumiNative?: LumiAndroidBridge }).LumiNative
+  return candidate && typeof candidate === 'object' ? candidate : null
+}
+
 export async function openBilibiliLogin(browser: 'edge' | 'chrome' | 'firefox'): Promise<string> {
   const url = 'https://www.bilibili.com/'
   if (!isNativeShell()) {

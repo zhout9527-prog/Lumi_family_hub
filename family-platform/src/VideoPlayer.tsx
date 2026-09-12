@@ -4,6 +4,7 @@ import Hls from 'hls.js'
 import {
   Check,
   Gauge,
+  ListVideo,
   Maximize2,
   Minimize2,
   MessageSquareText,
@@ -19,7 +20,9 @@ import {
 } from 'lucide-react'
 import type { DeviceProfile } from './device'
 import { useArtworkSource } from './artwork'
+import { getAndroidBridge, isAndroidNative } from './api'
 import type { BilibiliDanmaku, ContentItem } from './types'
+import type { ContentCollection } from './types'
 
 const PLAYBACK_RATES = [0.5, 1, 1.25, 1.5, 2, 3] as const
 const DANMAKU_AREAS = [
@@ -28,6 +31,7 @@ const DANMAKU_AREAS = [
   { value: 'quarter', label: '四分之一' },
 ] as const
 type DanmakuArea = (typeof DANMAKU_AREAS)[number]['value']
+const DANMAKU_SPEEDS = [0.6, 0.8, 1, 1.2] as const
 
 interface GestureSession {
   pointerId: number
@@ -42,6 +46,7 @@ interface GestureSession {
   startBrightness: number
   startVolume: number
   startMuted: boolean
+  startSystemVolume: number | null
 }
 
 interface ProgressGesture {
@@ -68,6 +73,15 @@ function formatTime(value: number): string {
 
 function rateLabel(rate: number): string {
   return rate === 1 ? '正常' : `${rate}x`
+}
+
+function parseDurationHint(value: string): number {
+  const text = value.trim().toLowerCase()
+  const hours = text.match(/(\d+(?:\.\d+)?)\s*(?:小时|小時|h)/)
+  const minutes = text.match(/(\d+(?:\.\d+)?)\s*(?:分钟|分鐘|分|min|m)/)
+  const seconds = text.match(/(\d+(?:\.\d+)?)\s*(?:秒|sec|s)/)
+  const total = (hours ? Number(hours[1]) * 3600 : 0) + (minutes ? Number(minutes[1]) * 60 : 0) + (seconds ? Number(seconds[1]) : 0)
+  return Number.isFinite(total) && total > 0 ? Math.round(total) : 0
 }
 
 function seekDeltaForSwipe(distanceRatio: number, duration: number): number {
@@ -98,12 +112,22 @@ export function VideoPlayer({
   url,
   profile,
   danmaku = [],
+  collection = null,
+  autoNext = false,
+  onAutoNextChange,
+  onSelectEpisode,
+  onEnded,
   onClose,
 }: {
   item: ContentItem
   url: string
   profile: DeviceProfile
   danmaku?: BilibiliDanmaku[]
+  collection?: ContentCollection | null
+  autoNext?: boolean
+  onAutoNextChange?: (enabled: boolean) => void
+  onSelectEpisode?: (item: ContentItem) => void
+  onEnded?: () => void
   onClose: () => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -132,13 +156,21 @@ export function VideoPlayer({
   const [selectedRate, setSelectedRate] = useState(1)
   const [rateMenuOpen, setRateMenuOpen] = useState(false)
   const [danmakuMenuOpen, setDanmakuMenuOpen] = useState(false)
+  const [episodeMenuOpen, setEpisodeMenuOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(() => Boolean(document.fullscreenElement))
   const [lockedBoost, setLockedBoost] = useState(false)
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [danmakuVisible, setDanmakuVisible] = useState(true)
   const [danmakuArea, setDanmakuArea] = useState<DanmakuArea>('half')
+  const [danmakuSpeed, setDanmakuSpeed] = useState(0.8)
   const [brightness, setBrightness] = useState(1)
+  const androidNative = isAndroidNative()
+  const androidBridge = getAndroidBridge()
+  const gestureTapFallbackRef = useRef(false)
+  const isHlsSource = /\.m3u8(?:$|\?)/i.test(url)
+  const durationHint = parseDurationHint(item.duration)
+  const displayDuration = isHlsSource && durationHint > 0 ? durationHint : duration
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -153,16 +185,49 @@ export function VideoPlayer({
     setControlsVisible(true)
     clearTimer(hideTimerRef)
     const video = videoRef.current
-    if (video && !video.paused && profile !== 'tv' && !rateMenuOpen && !danmakuMenuOpen) {
+    if (video && !video.paused && profile !== 'tv' && !rateMenuOpen && !danmakuMenuOpen && !episodeMenuOpen) {
       hideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 2800)
     }
-  }, [danmakuMenuOpen, profile, rateMenuOpen])
+  }, [danmakuMenuOpen, episodeMenuOpen, profile, rateMenuOpen])
 
   const flashNotice = useCallback((message: string, timeout = 1100) => {
     clearTimer(noticeTimerRef)
     setNotice(message)
     if (timeout > 0) noticeTimerRef.current = window.setTimeout(() => setNotice(''), timeout)
   }, [])
+
+  const nativeScreenBrightness = useCallback(() => {
+    const value = androidBridge?.getScreenBrightnessPercent?.()
+    return typeof value === 'number' && Number.isFinite(value) ? clamp(value / 100, 0.05, 1) : brightness
+  }, [androidBridge, brightness])
+
+  const nativeMediaVolume = useCallback(() => {
+    const value = androidBridge?.getMediaVolumePercent?.()
+    return typeof value === 'number' && Number.isFinite(value) ? clamp(value / 100, 0, 1) : null
+  }, [androidBridge])
+
+  const applyBrightness = useCallback((value: number) => {
+    const next = androidNative ? clamp(value, 0.05, 1) : clamp(value, 0.35, 1.6)
+    setBrightness(next)
+    if (androidNative) androidBridge?.setScreenBrightnessPercent?.(Math.round(next * 100))
+    return next
+  }, [androidBridge, androidNative])
+
+  const applyVolume = useCallback((value: number) => {
+    const next = clamp(value, 0, 1)
+    const video = videoRef.current
+    if (androidNative) {
+      androidBridge?.setMediaVolumePercent?.(Math.round(next * 100))
+      if (video) {
+        video.muted = false
+        video.volume = 1
+      }
+    } else if (video) {
+      video.muted = false
+      video.volume = next
+    }
+    return next
+  }, [androidBridge, androidNative])
 
   const togglePlayback = useCallback(() => {
     const video = videoRef.current
@@ -174,12 +239,14 @@ export function VideoPlayer({
 
   const seekBy = useCallback((seconds: number) => {
     const video = videoRef.current
-    if (!video || !Number.isFinite(video.duration)) return
-    video.currentTime = clamp(video.currentTime + seconds, 0, video.duration)
+    if (!video) return
+    const mediaDuration = isHlsSource && durationHint > 0 ? Math.max(video.duration || 0, durationHint) : video.duration
+    if (!Number.isFinite(mediaDuration) || mediaDuration <= 0) return
+    video.currentTime = clamp(video.currentTime + seconds, 0, mediaDuration)
     setCurrentTime(video.currentTime)
     flashNotice(`${seconds < 0 ? '后退' : '前进'} ${Math.abs(seconds)} 秒`)
     revealControls()
-  }, [flashNotice, revealControls])
+  }, [durationHint, flashNotice, isHlsSource, revealControls])
 
   const toggleFullscreen = useCallback(async () => {
     const root = rootRef.current
@@ -260,11 +327,12 @@ export function VideoPlayer({
   const adjustVolume = useCallback((delta: number) => {
     const video = videoRef.current
     if (!video) return
-    video.muted = false
-    video.volume = clamp(video.volume + delta, 0, 1)
-    flashNotice(`音量 ${Math.round(video.volume * 100)}%`)
+    const current = androidNative ? (nativeMediaVolume() ?? volume) : video.volume
+    const next = applyVolume(current + delta)
+    setVolume(next)
+    flashNotice(`音量 ${Math.round(next * 100)}%`)
     revealControls()
-  }, [flashNotice, revealControls])
+  }, [androidNative, applyVolume, flashNotice, nativeMediaVolume, revealControls, volume])
 
   const stopHeldSeek = useCallback(() => {
     clearTimer(keyHoldTimerRef)
@@ -366,6 +434,10 @@ export function VideoPlayer({
     stopHeldSeek()
   }, [stopHeldSeek])
 
+  useEffect(() => () => {
+    androidBridge?.resetScreenBrightness?.()
+  }, [androidBridge])
+
   const beginGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (profile !== 'mobile') return
     const video = videoRef.current
@@ -382,11 +454,13 @@ export function VideoPlayer({
       mode: 'pending',
       locked: false,
       startRatio: clamp((event.clientX - bounds.left) / Math.max(1, bounds.width), 0, 1),
-      startBrightness: brightness,
-      startVolume: video.volume,
+      startBrightness: androidNative ? nativeScreenBrightness() : brightness,
+      startVolume: androidNative ? (nativeMediaVolume() ?? video.volume) : video.volume,
       startMuted: video.muted,
+      startSystemVolume: androidNative ? nativeMediaVolume() : null,
     }
     gestureRef.current = session
+    gestureTapFallbackRef.current = true
     clearTimer(holdTimerRef)
     holdTimerRef.current = window.setTimeout(() => {
       if (gestureRef.current !== session || session.mode !== 'pending') return
@@ -405,6 +479,7 @@ export function VideoPlayer({
     const deltaX = event.clientX - session.startX
     const deltaY = event.clientY - session.startY
     if (session.mode === 'pending' && (Math.abs(deltaX) > 12 || Math.abs(deltaY) > 12)) {
+      gestureTapFallbackRef.current = false
       if (Math.abs(deltaY) > Math.abs(deltaX) * 1.15) {
         clearTimer(holdTimerRef)
         if (session.startRatio <= 0.36) session.mode = 'brightness'
@@ -418,7 +493,7 @@ export function VideoPlayer({
     }
     if (session.mode === 'seek') {
       const width = Math.max(240, event.currentTarget.clientWidth)
-      const mediaDuration = video.duration || duration || 0
+      const mediaDuration = (isHlsSource && durationHint > 0 ? durationHint : video.duration || duration) || 0
       const span = seekDeltaForSwipe(deltaX / width, mediaDuration)
       session.targetTime = clamp(Math.round(session.startTime + (deltaX < 0 ? -span : span)), 0, mediaDuration)
       setSeekPreview(session.targetTime)
@@ -426,15 +501,13 @@ export function VideoPlayer({
       return
     }
     if (session.mode === 'brightness') {
-      const next = clamp(session.startBrightness - (deltaY / Math.max(1, event.currentTarget.clientHeight)) * 1.25, 0.35, 1.6)
-      setBrightness(next)
+      const next = applyBrightness(session.startBrightness - (deltaY / Math.max(1, event.currentTarget.clientHeight)) * 1.05)
       setNotice(`亮度 ${Math.round(next * 100)}%`)
       return
     }
     if (session.mode === 'volume') {
-      const next = clamp(session.startVolume - (deltaY / Math.max(1, event.currentTarget.clientHeight)) * 1.15, 0, 1)
-      video.muted = false
-      video.volume = next
+      const next = applyVolume(session.startVolume - (deltaY / Math.max(1, event.currentTarget.clientHeight)) * 1.05)
+      setVolume(next)
       setNotice(`音量 ${Math.round(next * 100)}%`)
       return
     }
@@ -450,6 +523,7 @@ export function VideoPlayer({
     const video = videoRef.current
     if (!session || session.pointerId !== event.pointerId || !video) return
     clearTimer(holdTimerRef)
+    gestureTapFallbackRef.current = false
     if (session.mode === 'seek') {
       video.currentTime = session.targetTime
       setCurrentTime(session.targetTime)
@@ -457,7 +531,9 @@ export function VideoPlayer({
       flashNotice(`已定位到 ${formatTime(session.targetTime)}`)
       if (session.wasPlaying) void video.play()
     } else if (session.mode === 'brightness' || session.mode === 'volume') {
-      flashNotice(session.mode === 'brightness' ? `亮度 ${Math.round(brightness * 100)}%` : `音量 ${Math.round(video.volume * 100)}%`)
+      flashNotice(session.mode === 'brightness'
+        ? `亮度 ${Math.round((androidNative ? nativeScreenBrightness() : brightness) * 100)}%`
+        : `音量 ${Math.round((androidNative ? (nativeMediaVolume() ?? volume) : video.volume) * 100)}%`)
     } else if (session.mode === 'boost') {
       if (!session.locked) {
         video.playbackRate = selectedRateRef.current
@@ -481,10 +557,12 @@ export function VideoPlayer({
       video.playbackRate = selectedRateRef.current
       if (!session.wasPlaying) video.pause()
     }
-    if (session.mode === 'brightness') setBrightness(session.startBrightness)
+    gestureTapFallbackRef.current = false
+    if (session.mode === 'brightness') applyBrightness(session.startBrightness)
     if (session.mode === 'volume') {
       video.muted = session.startMuted
-      video.volume = session.startVolume
+      applyVolume(session.startVolume)
+      setVolume(session.startVolume)
     }
     setSeekPreview(null)
     setNotice('')
@@ -518,12 +596,12 @@ export function VideoPlayer({
     if (!video) return
     progressWasPlayingRef.current = !video.paused
     video.pause()
-    if (profile === 'mobile' && video.duration > 0) {
+    if (profile === 'mobile' && (video.duration > 0 || displayDuration > 0)) {
       progressGestureRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startTime: video.currentTime,
-        duration: video.duration,
+        duration: displayDuration || video.duration,
       }
       try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* 兼容旧版 WebView */ }
     }
@@ -562,16 +640,29 @@ export function VideoPlayer({
     }
   }
 
-  const progress = duration > 0 ? ((seekPreview ?? currentTime) / duration) * 100 : 0
-  const bufferProgress = duration > 0 ? (buffered / duration) * 100 : 0
+  const progress = displayDuration > 0 ? ((seekPreview ?? currentTime) / displayDuration) * 100 : 0
+  const bufferProgress = displayDuration > 0 ? (buffered / displayDuration) * 100 : 0
   const progressStyle = {
     '--played-percent': `${clamp(progress, 0, 100)}%`,
     '--buffered-percent': `${clamp(bufferProgress, 0, 100)}%`,
   } as CSSProperties
+  const danmakuLaneCount = danmakuArea === 'full' ? 10 : danmakuArea === 'half' ? 6 : 3
+  const danmakuWindow = 7 / danmakuSpeed
+  const danmakuLaneGap = 2.8 / danmakuSpeed
+  const danmakuLanes = Array.from({ length: danmakuLaneCount }, () => -Infinity)
   const activeDanmaku = danmakuVisible
-    ? danmaku.filter((entry) => entry.time <= currentTime && entry.time > currentTime - 7).slice(-10)
+    ? danmaku
+      .filter((entry) => entry.time <= currentTime && entry.time > currentTime - danmakuWindow)
+      .sort((left, right) => left.time - right.time)
+      .map((entry) => {
+        const lane = danmakuLanes.findIndex((lastTime) => entry.time - lastTime >= danmakuLaneGap)
+        if (lane < 0) return null
+        danmakuLanes[lane] = entry.time
+        return { entry, lane }
+      })
+      .filter((entry): entry is { entry: BilibiliDanmaku; lane: number } => Boolean(entry))
+      .slice(-danmakuLaneCount * 2)
     : []
-  const danmakuLaneCount = danmakuArea === 'full' ? 8 : danmakuArea === 'half' ? 4 : 2
   const danmakuLayerStyle = {
     '--danmaku-area-height': danmakuArea === 'full' ? '82%' : danmakuArea === 'half' ? '50%' : '25%',
   } as CSSProperties
@@ -580,10 +671,10 @@ export function VideoPlayer({
     <div
       ref={rootRef}
       className={`lumi-video-player controls-${controlsVisible || profile === 'tv' ? 'visible' : 'hidden'} profile-${profile}`}
-      style={{ '--video-brightness': brightness } as CSSProperties}
+      style={{ '--video-brightness': androidNative ? 1 : brightness } as CSSProperties}
       tabIndex={0}
       data-tv-initial
-      onMouseMove={revealControls}
+      onMouseMove={profile === 'mobile' ? undefined : revealControls}
       onFocus={revealControls}
     >
       <video
@@ -607,15 +698,23 @@ export function VideoPlayer({
         onProgress={updateBuffered}
         onPlay={() => { setPlaying(true); revealControls() }}
         onPause={() => { setPlaying(false); setControlsVisible(true) }}
-        onVolumeChange={(event) => { setVolume(event.currentTarget.volume); setMuted(event.currentTarget.muted) }}
-        onEnded={() => { setPlaying(false); setControlsVisible(true) }}
+        onVolumeChange={(event) => {
+          const systemVolume = androidNative ? nativeMediaVolume() : null
+          setVolume(systemVolume ?? event.currentTarget.volume)
+          setMuted(androidNative ? (systemVolume ?? 0) <= 0 : event.currentTarget.muted)
+        }}
+        onEnded={() => { setPlaying(false); setControlsVisible(true); onEnded?.() }}
       />
       {activeDanmaku.length > 0 && (
         <div className={`video-danmaku-layer area-${danmakuArea}`} style={danmakuLayerStyle} aria-hidden="true">
-          {activeDanmaku.map((entry, index) => (
+          {activeDanmaku.map(({ entry, lane }) => (
             <span
               key={entry.id}
-              style={{ top: `${6 + (index % danmakuLaneCount) * (88 / danmakuLaneCount)}%`, color: `#${entry.color.toString(16).padStart(6, '0')}` }}
+              style={{
+                top: `${6 + lane * (88 / danmakuLaneCount)}%`,
+                color: `#${entry.color.toString(16).padStart(6, '0')}`,
+                animationDuration: `${7 / danmakuSpeed}s`,
+              }}
             >{entry.text}</span>
           ))}
         </div>
@@ -627,7 +726,17 @@ export function VideoPlayer({
         onPointerMove={moveGesture}
         onPointerUp={finishGesture}
         onPointerCancel={cancelGesture}
-        onClick={() => { if (profile !== 'mobile') togglePlayback() }}
+        onClick={() => {
+          if (profile !== 'mobile') {
+            togglePlayback()
+            return
+          }
+          if (!gestureTapFallbackRef.current) return
+          gestureTapFallbackRef.current = false
+          clearTimer(holdTimerRef)
+          gestureRef.current = null
+          setControlsVisible((visible) => !visible)
+        }}
       />
       <div className="video-top-controls" data-player-control>
         <div className="video-title"><span>{item.source ?? '家庭馆藏'}</span><strong>{item.title}</strong></div>
@@ -647,7 +756,7 @@ export function VideoPlayer({
             className="video-progress"
             type="range"
             min="0"
-            max={duration || 0}
+            max={displayDuration || 0}
             step="0.1"
             value={seekPreview ?? currentTime}
             aria-label="播放进度"
@@ -677,23 +786,37 @@ export function VideoPlayer({
               {profile === 'desktop' && <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} aria-label="音量" onChange={(event) => { if (videoRef.current) { videoRef.current.muted = false; videoRef.current.volume = Number(event.target.value) } }} />}
             </div>
           )}
-          <span className="video-time">{formatTime(seekPreview ?? currentTime)} / {formatTime(duration)}</span>
+          <span className="video-time">{formatTime(seekPreview ?? currentTime)} / {formatTime(displayDuration)}</span>
           <div className="video-control-spacer" />
           {danmaku.length > 0 && (
             <div className="video-danmaku-control">
               <button type="button" className={'player-text-button ' + (danmakuVisible ? 'active' : '')} aria-label={danmakuVisible ? '关闭弹幕' : '开启弹幕'} onClick={() => setDanmakuVisible((visible) => !visible)}>
                 <MessageSquareText size={18} />弹幕
               </button>
-              <button type="button" className="player-text-button danmaku-area-button" aria-label="弹幕显示范围" aria-expanded={danmakuMenuOpen} onClick={() => { setDanmakuMenuOpen((open) => !open); setRateMenuOpen(false); setControlsVisible(true) }}>
+              <button type="button" className="player-text-button danmaku-area-button" aria-label="弹幕显示范围" aria-expanded={danmakuMenuOpen} onClick={() => { setDanmakuMenuOpen((open) => !open); setRateMenuOpen(false); setEpisodeMenuOpen(false); setControlsVisible(true) }}>
                 {DANMAKU_AREAS.find((entry) => entry.value === danmakuArea)?.label}
               </button>
               {danmakuMenuOpen && <div className="video-danmaku-menu">
                 {DANMAKU_AREAS.map((entry) => <button type="button" key={entry.value} className={danmakuArea === entry.value ? 'active' : ''} aria-pressed={danmakuArea === entry.value} onClick={() => { setDanmakuArea(entry.value); setDanmakuMenuOpen(false); flashNotice(`弹幕显示范围：${entry.label}`) }}><span>{entry.label}</span>{danmakuArea === entry.value && <Check size={16} />}</button>)}
+                <div className="video-menu-heading">弹幕速度</div>
+                {DANMAKU_SPEEDS.map((speed) => <button type="button" key={speed} className={danmakuSpeed === speed ? 'active' : ''} aria-pressed={danmakuSpeed === speed} onClick={() => { setDanmakuSpeed(speed); flashNotice(`弹幕速度 ${speed}x`) }}><span>{speed}x</span>{danmakuSpeed === speed && <Check size={16} />}</button>)}
               </div>}
             </div>
           )}
+          {collection && onSelectEpisode && (
+            <div className="video-episode-control">
+              <button type="button" className="player-text-button" aria-label="切换合集选集" aria-expanded={episodeMenuOpen} onClick={() => { setEpisodeMenuOpen((open) => !open); setRateMenuOpen(false); setDanmakuMenuOpen(false); setControlsVisible(true) }}><ListVideo size={18} />选集</button>
+              {episodeMenuOpen && (
+                <div className="video-episode-menu" aria-label="合集选集">
+                  <label className="video-autoplay-option"><input type="checkbox" checked={autoNext} onChange={(event) => onAutoNextChange?.(event.target.checked)} /><span>自动连播下一集</span></label>
+                  <div className="video-menu-heading">{collection.title}</div>
+                  {collection.episodes.map((episode) => <button type="button" key={episode.id} className={episode.id === item.id ? 'active' : ''} aria-current={episode.id === item.id ? 'true' : undefined} onClick={() => { if (episode.id !== item.id) onSelectEpisode(episode); setEpisodeMenuOpen(false) }}><span>{episode.episodeIndex ?? '-'}</span><strong>{episode.title}</strong>{episode.id === item.id && <Check size={16} />}</button>)}
+                </div>
+              )}
+            </div>
+          )}
           <div className="video-rate-control">
-            <button type="button" className="player-text-button" aria-label="播放速度" aria-expanded={rateMenuOpen} onClick={() => { setRateMenuOpen((open) => !open); setDanmakuMenuOpen(false); setControlsVisible(true) }}><Gauge size={18} />{rateLabel(selectedRate)}</button>
+            <button type="button" className="player-text-button" aria-label="播放速度" aria-expanded={rateMenuOpen} onClick={() => { setRateMenuOpen((open) => !open); setDanmakuMenuOpen(false); setEpisodeMenuOpen(false); setControlsVisible(true) }}><Gauge size={18} />{rateLabel(selectedRate)}</button>
             {rateMenuOpen && (
               <div className="video-rate-menu">
                 {PLAYBACK_RATES.map((rate) => (

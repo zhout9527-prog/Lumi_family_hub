@@ -241,6 +241,11 @@ try {
   await mobile.waitForFunction(() => Boolean(document.fullscreenElement))
   const fullscreenPlayer = await mobile.locator('.lumi-video-player').boundingBox()
   check(fullscreenPlayer && fullscreenPlayer.width >= 389 && fullscreenPlayer.height >= 843, '手机播放器没有覆盖全屏')
+  const controlsBeforeTap = await mobile.locator('.lumi-video-player').evaluate((player) => player.classList.contains('controls-visible'))
+  await mobile.locator('.video-gesture-zone').click({ position: { x: fullscreenPlayer.width / 2, y: fullscreenPlayer.height / 2 } })
+  await mobile.waitForFunction((before) => document.querySelector('.lumi-video-player')?.classList.contains('controls-visible') !== before, controlsBeforeTap)
+  await mobile.locator('.video-gesture-zone').click({ position: { x: fullscreenPlayer.width / 2, y: fullscreenPlayer.height / 2 } })
+  await mobile.waitForFunction((before) => document.querySelector('.lumi-video-player')?.classList.contains('controls-visible') === before, controlsBeforeTap)
   await mobile.screenshot({ path: `${artifactsPath}player-mobile-${runId}.png` })
   const nativeBackHandled = await mobile.evaluate(() => {
     const event = new Event('lumi:native-back', { cancelable: true })

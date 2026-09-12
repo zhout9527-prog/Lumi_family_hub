@@ -54,20 +54,20 @@ Windows/Android/Android TV Client（儿童、家长）
 日常使用不要求安装 Python、Node.js 或编译工具。优先运行：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.4_x64-setup.exe
+artifacts\windows\Lumi-Server_1.4.6_x64-setup.exe
 ```
 
 不想安装时，完整保留并运行便携目录；其中两个 EXE 缺一不可：
 
 ```text
-artifacts\windows\Lumi-Server_0.5.4_x64-portable\
+artifacts\windows\Lumi-Server_1.4.6_x64-portable\
   lumi-server.exe
   lumi-server-core\
     lumi-server-core.exe
     （Server Core 运行库文件）
 ```
 
-`artifacts\windows\lumi-server_0.5.4_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
+`artifacts\windows\lumi-server_1.4.6_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
 
 关闭 Server 主窗口右上角的叉号只会把它收进系统托盘，家庭服务仍会运行；需要让手机和其他 Client 断开时，请在托盘菜单选择“退出并停止服务”。即使 GUI 被任务管理器强制结束，Core 也会检测父进程退出并停止，不再留下单独监听 `2521` 的后台进程。
 
@@ -91,7 +91,7 @@ npm run build
 
 ## 原生客户端与跨平台发布
 
-前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows 发布版本为 Server `0.5.4`、Client `0.4.5`。
+前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows、Android 发布版本统一为 `1.4.6`。
 
 | 目标 | 产物 | 最低系统 | 说明 |
 | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 {
   "name": "family-platform",
   "private": true,
-  "version": "0.4.5",
+  "version": "1.4.6",
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js --mode client",
@@ -19,9 +19,9 @@
     "native:icons": "node scripts/run-tauri.mjs icon public/lumi-icon.svg -o src-tauri/icons",
     "native:dev": "node scripts/run-tauri.mjs dev",
     "native:dev:server": "node scripts/run-tauri.mjs dev --config src-tauri/tauri.server.conf.json",
-    "native:build": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition All",
-    "native:build:client": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition Client",
-    "native:build:server": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Edition Server",
+    "native:build": "pwsh -NoLogo -NoProfile -File scripts/build-windows.ps1 -Edition All",
+    "native:build:client": "pwsh -NoLogo -NoProfile -File scripts/build-windows.ps1 -Edition Client",
+    "native:build:server": "pwsh -NoLogo -NoProfile -File scripts/build-windows.ps1 -Edition Server",
     "android:init": "node scripts/run-tauri.mjs android init",
     "android:dev": "node scripts/run-tauri.mjs android dev",
     "android:apk": "node scripts/build-android.mjs --format apk --abi universal",
@@ -30,7 +30,7 @@
     "android:aab": "node scripts/build-android.mjs --format aab --abi universal",
     "android:apk:tauri": "node scripts/run-tauri.mjs android build --apk",
     "android:aab:tauri": "node scripts/run-tauri.mjs android build --aab",
-    "native:release": "node scripts/prepare-tauri-release-config.mjs && powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -TauriConfig src-tauri/tauri.release.generated.conf.json -SignUpdater",
+    "native:release": "node scripts/prepare-tauri-release-config.mjs && pwsh -NoLogo -NoProfile -File scripts/build-windows.ps1 -TauriConfig src-tauri/tauri.release.generated.conf.json -SignUpdater",
     "native:release:prepare": "node scripts/prepare-tauri-release-config.mjs"
   },
   "dependencies": {

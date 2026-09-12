@@ -50,6 +50,7 @@ try {
       localVideo.local_available = true
       localVideo.playable = true
       localVideo.playback_mode = 'local_asset'
+      localVideo.audience = 'family'
     }
     await route.fulfill({ response, json: payload })
   })

@@ -162,29 +162,44 @@ try {
     # Core 直接输出到最终产物目录。这样安装包、版本化 EXE 和便携版
     # 始终共享同一份完整的 onedir 文件树，不会再产生只有 GUI 的闪退包。
     $distPathArg = Join-Path $projectRoot "artifacts\windows"
+    $staleCoreOutput = Join-Path $distPathArg "lumi-server-core"
+    if (Test-Path -LiteralPath $staleCoreOutput) {
+      Remove-Item -LiteralPath $staleCoreOutput -Recurse -Force
+    }
     New-Item -ItemType Directory -Path $pyinstallerRoot -Force | Out-Null
     Push-Location $pyinstallerRoot
     try {
-      # 在独立目录运行 PyInstaller，使用其默认 build/spec 子目录，
-      # 避免 PowerShell 长时间构建时临时变量被外部工具清空。
-      Invoke-CheckedExternalCommand "Lumi Server core build" {
-        & $pythonPath -m PyInstaller `
-          --noconfirm `
-          --noconsole `
-          --noupx `
-          --onedir `
-          --name lumi-server-core `
-          --paths $backendSource `
-          --distpath $distPathArg `
-          --hidden-import uvicorn.logging `
-          --hidden-import uvicorn.loops.auto `
-          --hidden-import uvicorn.protocols.http.auto `
-          --hidden-import uvicorn.protocols.websockets.auto `
-          --hidden-import uvicorn.lifespan.on `
-          --collect-all yt_dlp `
-          --collect-all imageio_ffmpeg `
-          (Join-Path $backendSource "server_entry.py")
-      }
+      # 在独立目录运行 PyInstaller，使用其默认 build/spec 子目录。
+      $pyinstallerArguments = @(
+        "-m"
+        "PyInstaller"
+        "--noconfirm"
+        "--noconsole"
+        "--noupx"
+        "--onedir"
+        "--name"
+        "lumi-server-core"
+        "--paths"
+        $backendSource
+        "--distpath"
+        $distPathArg
+        "--hidden-import"
+        "uvicorn.logging"
+        "--hidden-import"
+        "uvicorn.loops.auto"
+        "--hidden-import"
+        "uvicorn.protocols.http.auto"
+        "--hidden-import"
+        "uvicorn.protocols.websockets.auto"
+        "--hidden-import"
+        "uvicorn.lifespan.on"
+        "--collect-all"
+        "yt_dlp"
+        "--collect-all"
+        "imageio_ffmpeg"
+        (Join-Path $backendSource "server_entry.py")
+      )
+      Invoke-CheckedExternalCommand "Lumi Server core build" { & $pythonPath @pyinstallerArguments }
     } finally {
       Pop-Location
     }
@@ -195,7 +210,7 @@ try {
   }
 
   if ($isServer) {
-    $artifactOutputRoot = "artifacts\windows"
+    $artifactOutputRoot = Join-Path $projectRoot "artifacts\windows"
     $legacyCoreTarget = "$artifactOutputRoot\lumi-server-core.exe"
     if (Test-Path -LiteralPath $legacyCoreTarget) {
       Remove-Item -LiteralPath $legacyCoreTarget -Force

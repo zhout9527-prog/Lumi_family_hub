@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "0.3.0",
+  "version": "1.4.6",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
   "published_at": "2026-09-08T00:00:00Z",
-  "notes": "增加本地资源目录管理、在线播放入口与 B 站收藏夹定时同步。",
+  "notes": "统一发布版本并更新合集、播放器、资源管理与家庭端体验。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

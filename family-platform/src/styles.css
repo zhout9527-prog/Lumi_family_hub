@@ -6987,3 +6987,166 @@ html.mobile-mode:fullscreen .player-community {
     margin-top: 18px;
   }
 }
+
+/* 家庭伙伴页面：资源预览图作为统一舞台，具体模型可按 asset_path 逐步替换。 */
+.pet-dashboard {
+  display: grid;
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+.pet-hero {
+  position: relative;
+  display: grid;
+  min-height: 238px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 38%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #f7f4ed;
+}
+
+.pet-hero::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(247,244,237,.96) 0%, rgba(247,244,237,.78) 52%, rgba(247,244,237,.12) 100%);
+  content: '';
+  pointer-events: none;
+}
+
+.pet-hero-copy {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  max-width: 650px;
+  padding: 28px 34px;
+}
+
+.pet-hero-copy h1 {
+  margin: 7px 0 9px;
+  color: var(--ink);
+  font-size: clamp(25px, 3vw, 38px);
+  line-height: 1.1;
+}
+
+.pet-hero-copy p {
+  max-width: 590px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.pet-hero > img {
+  width: 100%;
+  height: 100%;
+  min-height: 238px;
+  object-fit: cover;
+  object-position: center;
+}
+
+.pet-credit-row,
+.pet-footer-note,
+.pet-owner-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pet-credit-row { margin-top: 19px; }
+.pet-credit-row a,
+.pet-footer-note a { color: var(--accent); text-decoration: none; }
+.pet-credit-row a:hover,
+.pet-footer-note a:hover { text-decoration: underline; }
+
+.pet-hero-active { border-left: 4px solid var(--pet-accent, var(--accent)); }
+.pet-hero-active::before { background: linear-gradient(90deg, rgba(247,244,237,.97) 0%, rgba(247,244,237,.82) 58%, rgba(247,244,237,.2) 100%); }
+.pet-hero-active .pet-hero-copy { padding-left: 30px; }
+.pet-message { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; padding: 8px 11px; color: var(--ink); background: rgba(255,255,255,.78); border: 1px solid var(--line); }
+
+.pet-avatar-wrap { position: relative; display: grid; place-items: center; min-height: 238px; overflow: hidden; }
+.pet-avatar-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .66; filter: saturate(.72); }
+.pet-avatar-wrap::after { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(247,244,237,.4), rgba(247,244,237,.04)); content: ''; }
+.pet-avatar { position: relative; z-index: 1; display: grid; width: 122px; height: 122px; place-items: center; border: 5px solid rgba(255,255,255,.86); border-radius: 50%; background: color-mix(in srgb, var(--pet-accent, #6a91b9) 75%, white); box-shadow: 0 15px 34px rgba(45,55,54,.18); font-size: 64px; }
+.pet-avatar-wrap > i { position: absolute; z-index: 0; bottom: 24px; width: 170px; height: 22px; border-radius: 50%; background: rgba(47,58,57,.2); filter: blur(7px); }
+
+.pet-content-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 18px; }
+.pet-panel,
+.pet-adoption-panel { border: 1px solid var(--line); background: var(--surface); padding: 20px; }
+.pet-panel .section-heading,
+.pet-adoption-panel .section-heading { margin-bottom: 18px; }
+.pet-heart-icon { color: #d87566; }
+.pet-stats { display: grid; gap: 15px; }
+.pet-stat > div:first-child { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.pet-stat strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.pet-stat-track { height: 8px; overflow: hidden; background: #ece8df; }
+.pet-stat-track i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
+.pet-stat-track i.mood { background: #d87566; }
+.pet-stat-track i.energy { background: #d2a43d; }
+.pet-stat-track i.curiosity { background: #5e9b8d; }
+.pet-stat-track i.cleanliness { background: #6a91b9; }
+.pet-growth-line { display: grid; grid-template-columns: auto auto; gap: 5px 12px; margin-top: 22px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.pet-growth-line strong { color: var(--ink); }
+.pet-growth-line small { grid-column: 1 / -1; }
+
+.pet-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.pet-action-button { display: flex; min-height: 62px; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); color: var(--ink); background: #fbfaf7; text-align: left; cursor: pointer; }
+.pet-action-button:hover:not(:disabled),
+.pet-action-button:focus-visible { border-color: var(--accent); background: #f1f6f3; outline: none; }
+.pet-action-button:disabled { cursor: not-allowed; opacity: .5; }
+.pet-action-button > svg { flex: 0 0 auto; color: var(--accent); }
+.pet-action-button span { display: grid; gap: 2px; min-width: 0; }
+.pet-action-button strong { font-size: 13px; }
+.pet-action-button small { color: var(--muted); font-size: 11px; }
+
+.pet-species-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.pet-species-card { display: grid; min-height: 137px; align-content: start; gap: 3px; padding: 12px; border: 1px solid var(--line); border-top: 3px solid var(--pet-accent, var(--accent)); background: #fbfaf7; color: var(--ink); text-align: left; cursor: pointer; }
+.pet-species-card:hover:not(:disabled),
+.pet-species-card:focus-visible { border-color: var(--pet-accent, var(--accent)); outline: 2px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 28%, transparent); outline-offset: 1px; }
+.pet-species-card.is-selected { background: color-mix(in srgb, var(--pet-accent, var(--accent)) 13%, white); box-shadow: inset 0 0 0 2px var(--pet-accent, var(--accent)); }
+.pet-species-card:disabled { cursor: default; opacity: .72; }
+.pet-species-emoji { font-size: 31px; line-height: 1.1; }
+.pet-species-name { font-weight: 700; }
+.pet-species-card small { color: var(--muted); font-size: 10px; }
+.pet-species-card em { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 10px; font-style: normal; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pet-adoption-form { display: flex; align-items: end; gap: 12px; margin-top: 19px; }
+.pet-adoption-form label { display: grid; flex: 1; gap: 6px; color: var(--muted); font-size: 12px; }
+.pet-adoption-form input { width: 100%; min-height: 42px; border: 1px solid var(--line); padding: 0 11px; color: var(--ink); background: #fff; }
+.pet-adoption-form input:focus { border-color: var(--accent); outline: 2px solid rgba(94,155,141,.18); }
+.pet-adoption-form .button { min-height: 42px; white-space: nowrap; }
+.pet-empty-state { display: grid; min-height: 130px; place-items: center; align-content: center; gap: 7px; border: 1px dashed var(--line); color: var(--muted); text-align: center; }
+.pet-empty-state strong { color: var(--ink); }
+.pet-inline-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.pet-footer-note { justify-content: center; padding: 2px 0; }
+.connection-help { margin: -2px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.connection-help code { padding: 1px 4px; color: var(--ink); background: #f1eee7; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+.tv-mode .pet-species-card:focus,
+.tv-mode .pet-action-button:focus,
+.tv-mode .pet-adoption-form .button:focus { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .pet-content-grid { grid-template-columns: 1fr; }
+  .pet-species-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .pet-dashboard { gap: 12px; padding: 0 0 22px; }
+  .pet-hero { min-height: 310px; grid-template-columns: 1fr; }
+  .pet-hero > img { position: absolute; inset: auto 0 0; height: 155px; min-height: 0; opacity: .62; }
+  .pet-hero::before { background: linear-gradient(180deg, rgba(247,244,237,.98) 0%, rgba(247,244,237,.88) 58%, rgba(247,244,237,.24) 100%); }
+  .pet-hero-copy { align-self: start; padding: 22px 18px; }
+  .pet-hero-active .pet-hero-copy { padding-left: 18px; }
+  .pet-hero-active { min-height: 350px; }
+  .pet-avatar-wrap { position: absolute; right: 20px; bottom: 12px; min-height: 0; width: 145px; height: 145px; }
+  .pet-avatar-wrap img { display: none; }
+  .pet-avatar-wrap::after { display: none; }
+  .pet-avatar { width: 100px; height: 100px; font-size: 52px; }
+  .pet-panel, .pet-adoption-panel { padding: 15px; }
+  .pet-species-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pet-adoption-form { display: grid; align-items: stretch; }
+  .pet-adoption-form .button { width: 100%; }
+  .pet-footer-note { align-items: flex-start; justify-content: flex-start; line-height: 1.5; }
+}

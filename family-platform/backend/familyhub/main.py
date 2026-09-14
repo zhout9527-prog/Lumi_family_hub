@@ -78,6 +78,7 @@ from .models import (
     DownloadJob,
     Favorite,
     OperatorRecovery,
+    Pet,
     SessionScope,
     SessionToken,
     SystemSetting,
@@ -137,6 +138,12 @@ from .schemas import (
     UserStatusIn,
     UserOut,
     ReleaseManifestOut,
+    PetActionIn,
+    PetActionOut,
+    PetAdoptIn,
+    PetBootstrapOut,
+    PetOut,
+    PetSpeciesOut,
 )
 from .security import (
     LoginLimiter,
@@ -153,6 +160,7 @@ from .security import (
 )
 from .seed import seed_database
 from .services import apply_asset_review, system_status
+from .pets import PetServiceError, action_message, adopt as adopt_pet, bootstrap_payload as pet_bootstrap_payload, interact as interact_with_pet, pet_to_dict
 from .worker import FamilyWorker
 
 
@@ -1025,6 +1033,13 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
         "active_minutes": int(completed_seconds // 60),
         "downloads_paused": bool(setting and setting.value_json.get("paused")),
     }
+    if user.role in {"child", "guardian"}:
+        # 宠物状态随 bootstrap 一起返回，客户端轮询即可跨设备同步。
+        pet_data = pet_bootstrap_payload(db, user)
+        result["pet"] = pet_data["pet"]
+        result["pets"] = pet_data["pets"]
+        result["pet_species"] = pet_data["species"]
+        result["pet_can_adopt"] = pet_data["can_adopt"]
     if user.role == "child":
         result["requests"] = [
             present_request(item).model_dump()
@@ -1080,6 +1095,85 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
         result["external_feeds"] = load_external_feeds(db)
         result["bilibili_account"] = bilibili_account_status(db, settings)
     return result
+
+
+@router.get("/pets/mine", response_model=PetBootstrapOut, tags=["pets"])
+def my_pet(user: CurrentUser, db: Db) -> PetBootstrapOut:
+    """读取当前账号可见的伙伴和完整形象目录。"""
+
+    if user.role not in {"child", "guardian", "operator"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有伙伴访问权限")
+    return PetBootstrapOut.model_validate(pet_bootstrap_payload(db, user))
+
+
+@router.post("/pets/adopt", response_model=PetOut, status_code=status.HTTP_201_CREATED, tags=["pets"])
+def adopt_my_pet(payload: PetAdoptIn, request: Request, user: CurrentUser, db: Db) -> PetOut:
+    try:
+        pet = adopt_pet(db, user, species_id=payload.species, name=payload.name)
+    except PetServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    add_audit(
+        db,
+        request=request,
+        actor=db.get(User, user.id),
+        action="pet.adopted",
+        resource_type="pet",
+        resource_id=pet.id,
+        metadata={"species": pet.species},
+    )
+    db.commit()
+    return PetOut.model_validate(pet_to_dict(db, pet))
+
+
+@router.post("/pets/{pet_id}/actions", response_model=PetActionOut, tags=["pets"])
+def pet_action(
+    pet_id: str,
+    payload: PetActionIn,
+    request: Request,
+    user: CurrentUser,
+    db: Db,
+    idempotency_header: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> PetActionOut:
+    pet = db.scalar(select(Pet).where(Pet.id == pet_id, Pet.household_id == user.household_id))
+    if pet is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="伙伴不存在")
+    try:
+        updated, event, idempotent = interact_with_pet(
+            db,
+            user,
+            pet,
+            action=payload.action,
+            idempotency_key=idempotency_header or payload.idempotency_key,
+            note=payload.note,
+        )
+    except PetServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if not idempotent:
+        add_audit(
+            db,
+            request=request,
+            actor=db.get(User, user.id),
+            action="pet.interacted",
+            resource_type="pet",
+            resource_id=updated.id,
+            metadata={"action": payload.action, "points": event.points},
+        )
+        db.commit()
+    return PetActionOut(
+        pet=PetOut.model_validate(pet_to_dict(db, updated)),
+        action=event.action,
+        message=action_message(event.action),
+        points=event.points,
+        idempotent=idempotent,
+    )
+
+
+@router.get("/guardian/pets", response_model=list[PetOut], tags=["pets"])
+def guardian_pets(user: GuardianOrOperator, db: Db) -> list[PetOut]:
+    """家长和运维可查看本家庭所有伙伴，方便后续做成长报表。"""
+
+    payload = pet_bootstrap_payload(db, user)
+    return [PetOut.model_validate(item) for item in payload["pets"]]
 
 
 @router.get("/ops/bilibili-account", response_model=BilibiliAccountStatusOut, tags=["ops"])

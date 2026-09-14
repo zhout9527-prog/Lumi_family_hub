@@ -25,8 +25,10 @@ class Settings(BaseSettings):
         "http://tauri.localhost,https://tauri.localhost"
     )
     cors_lan_regex: str = (
+        # 同一 tailnet 内使用 100.64.0.0/10 的 Tailscale 地址，仍只允许私网来源。
         r"^https?://(localhost|127\.0\.0\.1|tauri\.localhost|10(?:\.\d{1,3}){3}|"
-        r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(:\d+)?$"
+        r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|"
+        r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2})(:\d+)?$"
     )
     seed_demo: bool = True
     demo_child_password: str = "ChildDemo2026"

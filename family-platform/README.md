@@ -77,6 +77,8 @@ artifacts\windows\Lumi-Server_1.4.6_x64-portable\
 
 PC 作为临时家庭 NAS 时，应关闭自动睡眠，给电脑设置固定 DHCP 地址。Server 安装器会在 Windows 防火墙中只允许“专用网络”的本地子网访问 `2521`；便携版需手动创建同等规则。若从外网访问，先使用 Tailscale 等私有组网，再填写该私网地址；不要把 API、下载器或运维面板直接映射到公网。
 
+跨网络部署的逐步检查、ACL 建议和便携版防火墙命令见 [`TAILSCALE.md`](TAILSCALE.md)。
+
 源码开发模式仍可使用 `prepare-pc.ps1`、`start-familyhub.ps1`、`backup.ps1` 和 `run-worker-once.ps1`，但这些脚本不是普通家庭成员安装 Client 的前置条件。
 
 ## 开发与验证

@@ -28,6 +28,10 @@ import type {
   StoragePaths,
   SystemStatus,
   PlaybackResult,
+  PetAction,
+  PetActionResult,
+  PetSpecies,
+  PetState,
 } from './types'
 import { APP_EDITION } from './edition'
 
@@ -432,6 +436,55 @@ interface ApiBilibiliAccountStatus {
   updated_at?: string | null
 }
 
+interface ApiPetSpecies {
+  id: string
+  name: string
+  english_name: string
+  source: string
+  source_url?: string | null
+  license_url?: string | null
+  accent: string
+  emoji: string
+  temperament: string
+  asset_path?: string | null
+}
+
+interface ApiPet {
+  id: string
+  owner_user_id: string
+  owner_name: string
+  name: string
+  species: string
+  species_name: string
+  species_english_name: string
+  personality: string
+  growth_stage: string
+  growth_points: number
+  mood: number
+  energy: number
+  curiosity: number
+  cleanliness: number
+  revision: number
+  last_interaction_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface ApiPetBootstrap {
+  pet?: ApiPet | null
+  pets?: ApiPet[]
+  species: ApiPetSpecies[]
+  can_adopt: boolean
+}
+
+interface ApiPetAction {
+  pet: ApiPet
+  action: PetAction
+  message: string
+  points: number
+  idempotent: boolean
+}
+
 export interface BootstrapPayload {
   user: ApiUser
   catalog: ApiContent[]
@@ -448,6 +501,10 @@ export interface BootstrapPayload {
   storage_paths?: ApiStoragePaths
   external_feeds?: ApiExternalFeed[]
   bilibili_account?: ApiBilibiliAccountStatus
+  pet?: ApiPet | null
+  pets?: ApiPet[]
+  pet_species?: ApiPetSpecies[]
+  pet_can_adopt?: boolean
 }
 
 export interface HealthPayload {
@@ -852,6 +909,35 @@ export async function bootstrapApi(): Promise<BootstrapPayload> {
   return apiRequest<BootstrapPayload>('/bootstrap')
 }
 
+export async function petBootstrapApi(): Promise<ReturnType<typeof mapPetBootstrap>> {
+  const result = await apiRequest<ApiPetBootstrap>('/pets/mine')
+  return mapPetBootstrap(result)
+}
+
+export async function adoptPetApi(species: string, name: string): Promise<PetState> {
+  const result = await apiRequest<ApiPet>('/pets/adopt', {
+    method: 'POST',
+    body: JSON.stringify({ species, name }),
+  })
+  return mapPet(result)
+}
+
+export async function petActionApi(
+  petId: string,
+  action: PetAction,
+  note = '',
+): Promise<PetActionResult> {
+  const key = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `pet-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const result = await apiRequest<ApiPetAction>(`/pets/${encodeURIComponent(petId)}/actions`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': key },
+    body: JSON.stringify({ action, note, idempotency_key: key }),
+  })
+  return mapPetAction(result)
+}
+
 export async function createRequestApi(itemId: string, reason: string): Promise<ApiContentRequest> {
   return apiRequest<ApiContentRequest>('/content-requests', {
     method: 'POST',
@@ -980,6 +1066,68 @@ export function mapBilibiliAccount(item?: ApiBilibiliAccountStatus): BilibiliAcc
     vip: Boolean(item?.vip),
     browser: item?.browser ?? undefined,
     updatedAt: item?.updated_at ?? undefined,
+  }
+}
+
+export function mapPetSpecies(item: ApiPetSpecies): PetSpecies {
+  return {
+    id: item.id,
+    name: item.name,
+    englishName: item.english_name,
+    source: item.source,
+    sourceUrl: item.source_url ?? undefined,
+    licenseUrl: item.license_url ?? undefined,
+    accent: item.accent,
+    emoji: item.emoji,
+    temperament: item.temperament,
+    assetPath: item.asset_path ?? undefined,
+  }
+}
+
+export function mapPet(item: ApiPet): PetState {
+  return {
+    id: item.id,
+    ownerUserId: item.owner_user_id,
+    ownerName: item.owner_name,
+    name: item.name,
+    species: item.species,
+    speciesName: item.species_name,
+    speciesEnglishName: item.species_english_name,
+    personality: item.personality,
+    growthStage: item.growth_stage,
+    growthPoints: item.growth_points,
+    mood: item.mood,
+    energy: item.energy,
+    curiosity: item.curiosity,
+    cleanliness: item.cleanliness,
+    revision: item.revision,
+    lastInteractionAt: item.last_interaction_at ?? undefined,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+  }
+}
+
+export function mapPetAction(item: ApiPetAction): PetActionResult {
+  return {
+    pet: mapPet(item.pet),
+    action: item.action,
+    message: item.message,
+    points: item.points,
+    idempotent: item.idempotent,
+  }
+}
+
+export function mapPetBootstrap(item?: ApiPetBootstrap | null): {
+  pet: PetState | null
+  pets: PetState[]
+  species: PetSpecies[]
+  canAdopt: boolean
+} {
+  return {
+    pet: item?.pet ? mapPet(item.pet) : null,
+    pets: (item?.pets ?? []).map(mapPet),
+    species: (item?.species ?? []).map(mapPetSpecies),
+    canAdopt: Boolean(item?.can_adopt),
   }
 }
 

@@ -15,7 +15,7 @@ const content = (id, index, title) => ({
   language: '中文',
   age_from: 4,
   age_to: 12,
-  duration_minutes: 5,
+  duration_minutes: index,
   description: '合集分集',
   tags: ['B站', '合集'],
   accent: '#5e9b8d',
@@ -43,6 +43,15 @@ const content = (id, index, title) => ({
 
 const first = content('episode-1', 1, '认识天空')
 const second = content('episode-2', 2, '认识海洋')
+const collectionCard = {
+  ...first,
+  id: 'collection-card',
+  title: '自然课合集',
+  subtitle: '合集 · 2 集',
+  duration_minutes: 10,
+  episode_index: null,
+  collection_card: true,
+}
 const browser = await chromium.launch({ executablePath: edgePath, headless: true })
 try {
   const context = await browser.newContext({
@@ -52,16 +61,25 @@ try {
     hasTouch: true,
     userAgent: 'Mozilla/5.0 (Linux; Android 16; 24129PN74C) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36',
   })
+  const launchRequests = []
+  await context.route('**/episode.m3u8', async (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/vnd.apple.mpegurl',
+    body: '#EXTM3U\n#EXT-X-TARGETDURATION:60\n#EXT-X-ENDLIST\n',
+  }))
   await context.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (path.endsWith('/health')) return json({ status: 'ok', version: 'test', setup_required: false })
     if (path.endsWith('/auth/login')) return json({ access_token: 'e2e-token', token_type: 'bearer', expires_at: '2099-01-01T00:00:00Z', user: { id: 'guardian', username: 'guardian-demo', role: 'guardian', display_name: '家长' } })
-    if (path.endsWith('/bootstrap')) return json({ user: { id: 'guardian', username: 'guardian-demo', role: 'guardian', display_name: '家长' }, catalog: [first], active_minutes: 0, downloads_paused: false, requests: [], submissions: [] })
+    if (path.endsWith('/bootstrap')) return json({ user: { id: 'guardian', username: 'guardian-demo', role: 'guardian', display_name: '家长' }, catalog: [collectionCard], active_minutes: 0, downloads_paused: false, requests: [], submissions: [] })
     if (path.endsWith('/collection')) return json({ id: 'collection-e2e', title: '自然课合集', description: '完整合集', collection_kind: 'ugc_season', episode_count: 2, current_episode_index: path.includes('episode-2') ? 2 : 1, episodes: [first, second] })
     if (path.endsWith('/interactions')) return json({ comments: [], danmaku: [] })
-    if (path.endsWith('/launch')) return json({ mode: 'direct_stream', url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' })
+    if (path.endsWith('/launch')) {
+      launchRequests.push(path)
+      return json({ mode: 'direct_stream', url: `${baseUrl}/episode.m3u8` })
+    }
     return json({ detail: 'not found' }, 404)
   })
   const page = await context.newPage()
@@ -70,11 +88,14 @@ try {
   await page.getByLabel('密码', { exact: true }).fill('GuardianDemo2026')
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.locator('.search-box').click()
-  await page.getByLabel('搜索全部家庭资源').fill('认识天空')
-  const card = page.locator('.content-card').filter({ hasText: '认识天空' }).first()
+  await page.getByLabel('搜索全部家庭资源').fill('自然课合集')
+  const card = page.locator('.content-card').filter({ hasText: '自然课合集' }).first()
   await card.waitFor()
   await card.locator('button.card-copy').click()
-  await page.getByText('自然课合集', { exact: true }).waitFor()
+  await page.getByLabel('合集信息与评论').getByRole('heading', { name: '自然课合集', exact: true }).waitFor()
+  await page.locator('.lumi-video-player').waitFor()
+  check(launchRequests.some((path) => path.endsWith('/episode-1/launch')), '合集卡片没有解析到第一分集')
+  check(await page.getByLabel('播放进度').getAttribute('max') === '60', '进度条没有使用第一集自己的 1 分钟时长')
   check(await page.locator('.player-episode-list button').count() === 2, '播放器没有显示完整选集')
   const episodeTwo = page.locator('.player-episode-list button').filter({ hasText: '认识海洋' })
   await episodeTwo.focus()

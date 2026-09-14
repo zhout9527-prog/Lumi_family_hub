@@ -63,6 +63,7 @@ export type NavKey =
   | 'connection'
   | 'ops-library'
   | 'settings'
+  | 'pet'
 
 export type RequestStatus = 'pending' | 'approved' | 'rejected'
 
@@ -97,6 +98,50 @@ export interface ContentItem {
   episodeCount?: number
   sectionTitle?: string
   collectionCard?: boolean
+}
+
+export type PetAction = 'feed' | 'play' | 'groom' | 'story' | 'talk'
+
+export interface PetSpecies {
+  id: string
+  name: string
+  englishName: string
+  source: string
+  sourceUrl?: string
+  licenseUrl?: string
+  accent: string
+  emoji: string
+  temperament: string
+  assetPath?: string
+}
+
+export interface PetState {
+  id: string
+  ownerUserId: string
+  ownerName: string
+  name: string
+  species: string
+  speciesName: string
+  speciesEnglishName: string
+  personality: string
+  growthStage: string
+  growthPoints: number
+  mood: number
+  energy: number
+  curiosity: number
+  cleanliness: number
+  revision: number
+  lastInteractionAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PetActionResult {
+  pet: PetState
+  action: PetAction
+  message: string
+  points: number
+  idempotent: boolean
 }
 
 export interface ContentCollection {

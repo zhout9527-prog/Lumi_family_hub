@@ -64,7 +64,12 @@ def present_content(
         language=item.language,
         age_from=item.age_from,
         age_to=item.age_to,
-        duration_minutes=item.duration_minutes,
+        # 合集卡片可以使用汇总时长，但播放分集必须以分集自己的时长为准。
+        duration_minutes=(
+            collection_episode.duration_minutes
+            if collection_episode is not None and collection_episode.duration_minutes > 0
+            else item.duration_minutes
+        ),
         description=item.description,
         tags=list(item.tags or []),
         accent=item.accent,

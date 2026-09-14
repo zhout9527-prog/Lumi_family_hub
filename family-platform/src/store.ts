@@ -31,6 +31,10 @@ import {
   mapStoragePaths,
   mapSubmission,
   mapUser,
+  mapPet,
+  mapPetSpecies,
+  petActionApi,
+  adoptPetApi,
   operatorRecoveryQuestionApi,
   pauseAllApi,
   pauseJobApi,
@@ -94,6 +98,10 @@ import type {
   SourceRecord,
   StoragePaths,
   SystemStatus,
+  PetAction,
+  PetSpecies,
+  PetState,
+  PetActionResult,
 } from './types'
 
 const defaultState: AppState = {
@@ -132,6 +140,9 @@ export function useFamilyStore() {
   const [storagePaths, setStoragePaths] = useState<StoragePaths | null>(null)
   const [externalFeeds, setExternalFeeds] = useState<ExternalFeed[]>([])
   const [bilibiliAccount, setBilibiliAccount] = useState<BilibiliAccountStatus>({ connected: false, vip: false })
+  const [pet, setPet] = useState<PetState | null>(null)
+  const [petSpecies, setPetSpecies] = useState<PetSpecies[]>([])
+  const [petCanAdopt, setPetCanAdopt] = useState(false)
   const authTransition = useRef<Promise<void>>(Promise.resolve())
 
   const clearSessionState = () => {
@@ -147,6 +158,9 @@ export function useFamilyStore() {
     setStoragePaths(null)
     setExternalFeeds([])
     setBilibiliAccount({ connected: false, vip: false })
+    setPet(null)
+    setPetSpecies([])
+    setPetCanAdopt(false)
     setState(defaultState)
   }
 
@@ -169,6 +183,9 @@ export function useFamilyStore() {
     setStoragePaths(payload.storage_paths ? mapStoragePaths(payload.storage_paths) : null)
     setExternalFeeds((payload.external_feeds ?? []).map(mapExternalFeed))
     setBilibiliAccount(mapBilibiliAccount(payload.bilibili_account))
+    setPet(payload.pet ? mapPet(payload.pet) : null)
+    setPetSpecies((payload.pet_species ?? []).map(mapPetSpecies))
+    setPetCanAdopt(Boolean(payload.pet_can_adopt))
     setDownloadsPaused(payload.downloads_paused)
     setState({
       role: mappedUser.role,
@@ -499,6 +516,29 @@ export function useFamilyStore() {
 
   const launchContent = async (id: string) => launchContentApi(id)
 
+  const adoptPet = async (species: string, name: string): Promise<PetState> => {
+    setBusy(true)
+    try {
+      const created = await adoptPetApi(species, name)
+      setPet(created)
+      setPetCanAdopt(false)
+      return created
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const performPetAction = async (petId: string, action: PetAction, note = ''): Promise<PetActionResult> => {
+    setBusy(true)
+    try {
+      const result = await petActionApi(petId, action, note)
+      setPet(result.pet)
+      return result
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const pauseAll = async () => {
     await pauseAllApi()
     setDownloadsPaused(true)
@@ -735,6 +775,9 @@ export function useFamilyStore() {
     storagePaths,
     externalFeeds,
     bilibiliAccount,
+    pet,
+    petSpecies,
+    petCanAdopt,
     login,
     logout,
     registerAccount,
@@ -754,6 +797,8 @@ export function useFamilyStore() {
     queueBilibili,
     reviewAsset,
     launchContent,
+    adoptPet,
+    performPetAction,
     pauseAll,
     resumeAll,
     addSubmission,

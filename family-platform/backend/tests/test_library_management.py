@@ -552,6 +552,9 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
     assert detail.json()["title"] == "完整自然课"
     assert [item["episode_index"] for item in detail.json()["episodes"]] == [1, 2, 3]
     episodes = detail.json()["episodes"]
+    # 合集入口可以展示总时长，但每一集的播放时长必须来自自己的分集记录。
+    assert [item["duration_minutes"] for item in episodes] == [2, 3, 4]
+    assert collection_card["duration_minutes"] == 9
     selected = episodes[1]
 
     managed = client.get("/api/v1/ops/library", headers=operator).json()

@@ -169,7 +169,8 @@ export function VideoPlayer({
   const androidBridge = getAndroidBridge()
   const gestureTapFallbackRef = useRef(false)
   const isHlsSource = /\.m3u8(?:$|\?)/i.test(url)
-  const durationHint = parseDurationHint(item.duration)
+  // 合集卡片上的时长是所有分集之和，只允许真实分集向 HLS 播放器提供时长提示。
+  const durationHint = item.collectionCard ? 0 : parseDurationHint(item.duration)
   const displayDuration = isHlsSource && durationHint > 0 ? durationHint : duration
 
   useEffect(() => {

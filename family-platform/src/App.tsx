@@ -59,7 +59,7 @@ import {
 } from 'lucide-react'
 import { APP_EDITION, PRODUCT_NAME } from './edition'
 import { useFamilyStore } from './store'
-import type { AccountRegistration, AdultCredentials, AssetRecord, AssetReviewDraft, BilibiliAccountStatus, BilibiliDownloadDraft, BilibiliInteractions, CloudSubmission, ContentCollection, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
+import type { AccountRegistration, AdultCredentials, AssetRecord, AssetReviewDraft, BilibiliAccountStatus, BilibiliDownloadDraft, BilibiliInteractions, CloudSubmission, ContentCollection, ContentItem, ContentKind, DownloadJob, ExternalFeed, ExternalFeedDraft, ExternalItemDraft, LibraryItemRecord, LocalImportDraft, ManagedUser, NavKey, OperatorAccountDraft, OperatorPasswordResetDraft, OperatorRecoveryQuestion, PetAction, RegistrationDraft, Role, SessionUser, SourceRecord, StoragePaths, SystemStatus } from './types'
 import { checkForAppUpdate, installDesktopUpdate } from './updates'
 import type { UpdateCheckResult } from './updates'
 import type { LucideIcon } from 'lucide-react'
@@ -71,6 +71,7 @@ import { VideoPlayer } from './VideoPlayer'
 import { PosterWall } from './PosterWall'
 import { GamesView, TetrisGame } from './TetrisGame'
 import { BlockMowerGame } from './BlockMowerGame'
+import { PetView } from './PetView'
 import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin } from './api'
 import './styles.css'
 
@@ -134,6 +135,7 @@ const navByRole: Record<Role, NavItem[]> = {
     { key: 'library', label: '我的书架', icon: Library },
     { key: 'games', label: '小游戏', icon: Gamepad2 },
     { key: 'progress', label: '成长记录', icon: Sparkles },
+    { key: 'pet', label: '我的伙伴', icon: Heart },
     { key: 'connection', label: '连接设置', icon: Wifi },
   ],
   guardian: [
@@ -143,6 +145,7 @@ const navByRole: Record<Role, NavItem[]> = {
     { key: 'library', label: '家庭书架', icon: Library },
     { key: 'poster-wall', label: '家庭海报墙', icon: Film },
     { key: 'games', label: '小游戏', icon: Gamepad2 },
+    { key: 'pet', label: '家庭伙伴', icon: Heart },
     { key: 'connection', label: '连接设置', icon: Wifi },
   ],
   operator: [
@@ -2216,7 +2219,7 @@ function LoginScreen({
               }}>
                 <label className="login-field">
                   <span>家庭主机地址</span>
-                  <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521" autoComplete="url" /></div>
+                  <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521 或 100.x.x.x:2521" autoComplete="url" /></div>
                 </label>
                 <div className="login-server-actions">
                   <button type="submit" className="button button-quiet" disabled={busy || !host.trim()}><Wifi size={15} />保存并测试</button>
@@ -2263,8 +2266,9 @@ function ConnectionView({
         <form className="connection-form" onSubmit={(event) => { event.preventDefault(); void onSave(host).catch(() => undefined) }}>
           <label className="login-field">
             <span>家庭主机地址</span>
-            <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521" autoComplete="url" /></div>
+            <div><Server size={17} /><input aria-label="家庭主机地址" value={host} onChange={(event) => setHost(event.target.value)} placeholder="例如 192.168.1.20:2521 或 100.x.x.x:2521" autoComplete="url" /></div>
           </label>
+          <p className="connection-help">同一局域网填写 Server 电脑的内网地址；跨网络时在 Server 和设备加入同一 Tailscale 网络，再填写 Server 的 <code>100.x.x.x:2521</code> 地址。不要开启公网端口转发。</p>
           {error && <div className="login-error" role="alert"><AlertTriangle size={15} />{error}</div>}
           <div className="connection-actions">
             <button type="submit" className="button button-primary" disabled={busy || !host.trim()}>{busy ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}保存并测试</button>
@@ -2961,20 +2965,33 @@ export default function App() {
     setSelectedItem(null)
     const switchingEpisode = item.kind === 'video' && playback?.item.kind === 'video' && playback.item.id !== item.id
     if (item.kind === 'video' && !switchingEpisode) setPlayback({ item, url: '', mode: 'loading' })
-    void store.launchContent(item.id).then((result) => {
+
+    // 目录中的合集卡片只用于展示总时长，真正播放前解析到第一分集，
+    // 避免把合集汇总时长带进播放器进度条。兼容旧缓存中缺少 collectionCard 标记的卡片。
+    const isCollectionCard = item.kind === 'video'
+      && Boolean(item.collectionId)
+      && (item.collectionCard === true || item.episodeIndex == null)
+    const launchItem = isCollectionCard
+      ? contentCollectionApi(item.id).then((collection) => {
+          const firstEpisode = collection.episodes[0]
+          if (!firstEpisode) throw new Error('合集暂无可播放分集')
+          return firstEpisode
+        })
+      : Promise.resolve(item)
+    void launchItem.then((resolvedItem) => store.launchContent(resolvedItem.id).then((result) => ({ resolvedItem, result }))).then(({ resolvedItem, result }) => {
       if (result.mode === 'local_asset' && result.url) {
         setSelectedItem(null)
-        setPlayback({ item, url: result.url, mode: result.mode })
+        setPlayback({ item: resolvedItem, url: result.url, mode: result.mode })
         return
       }
       if ((result.mode === 'embed' || result.mode === 'direct_stream' || result.mode === 'external_link') && result.url) {
         setSelectedItem(null)
-        setPlayback({ item, url: result.url, mode: result.mode, service: result.service })
+        setPlayback({ item: resolvedItem, url: result.url, mode: result.mode, service: result.service })
         return
       }
       if (result.mode === 'local_service') {
         setSelectedItem(null)
-        setPlayback({ item, url: '', mode: result.mode, service: result.service })
+        setPlayback({ item: resolvedItem, url: '', mode: result.mode, service: result.service })
         return
       }
       closePlayback()
@@ -3030,6 +3047,9 @@ export default function App() {
     }
     if (query || videoOnly) {
       return <SearchResults items={visibleItems} query={query} videoOnly={videoOnly} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
+    }
+    if (activeNav === 'pet' && (state.role === 'child' || state.role === 'guardian')) {
+      return <PetView user={currentUser} pet={store.pet} species={store.petSpecies} canAdopt={store.petCanAdopt} connection={store.connection} busy={store.busy} onAdopt={store.adoptPet} onAction={(petId, action: PetAction) => store.performPetAction(petId, action)} />
     }
     if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
       return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} />

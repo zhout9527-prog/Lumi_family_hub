@@ -210,6 +210,58 @@ class ContentCollectionEpisode(Base):
     )
 
 
+class Pet(Base):
+    """家庭伙伴的当前状态；所有成长数值只在 Server 端计算。"""
+
+    __tablename__ = "pets"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(String(40), index=True, default="home")
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(40))
+    species: Mapped[str] = mapped_column(String(40), index=True)
+    personality: Mapped[str] = mapped_column(String(40), default="curious")
+    growth_stage: Mapped[str] = mapped_column(String(24), default="初遇")
+    growth_points: Mapped[int] = mapped_column(Integer, default=0)
+    mood: Mapped[int] = mapped_column(Integer, default=72)
+    energy: Mapped[int] = mapped_column(Integer, default=78)
+    curiosity: Mapped[int] = mapped_column(Integer, default=50)
+    cleanliness: Mapped[int] = mapped_column(Integer, default=82)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    last_interaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    owner: Mapped[User] = relationship()
+
+    __table_args__ = (
+        # 一个儿童账号在第一版只允许拥有一个伙伴。
+        UniqueConstraint("owner_user_id", name="uq_pet_owner_user"),
+        Index("ix_pet_household_owner", "household_id", "owner_user_id"),
+    )
+
+
+class PetEvent(Base):
+    """伙伴互动流水，用于幂等、每日上限和家长审计。"""
+
+    __tablename__ = "pet_events"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=new_id)
+    pet_id: Mapped[str] = mapped_column(ForeignKey("pets.id", ondelete="CASCADE"), index=True)
+    household_id: Mapped[str] = mapped_column(String(40), index=True, default="home")
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    points: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    pet: Mapped[Pet] = relationship()
+    actor: Mapped[User] = relationship(foreign_keys=[actor_user_id])
+
+
 class ContentRequest(Base):
     __tablename__ = "content_requests"
 

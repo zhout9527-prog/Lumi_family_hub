@@ -208,6 +208,66 @@ class UserStatusIn(BaseModel):
     status: Literal["active", "suspended"]
 
 
+class PetSpeciesOut(ApiModel):
+    id: str
+    name: str
+    english_name: str
+    source: str
+    source_url: str | None = None
+    license_url: str | None = None
+    accent: str
+    emoji: str
+    temperament: str
+    asset_path: str | None = None
+
+
+class PetOut(ApiModel):
+    id: str
+    owner_user_id: str
+    owner_name: str
+    name: str
+    species: str
+    species_name: str
+    species_english_name: str
+    personality: str
+    growth_stage: str
+    growth_points: int
+    mood: int
+    energy: int
+    curiosity: int
+    cleanliness: int
+    revision: int
+    last_interaction_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PetBootstrapOut(ApiModel):
+    pet: PetOut | None = None
+    pets: list[PetOut] = Field(default_factory=list)
+    species: list[PetSpeciesOut] = Field(default_factory=list)
+    can_adopt: bool = False
+
+
+class PetAdoptIn(BaseModel):
+    species: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=24)
+
+
+class PetActionIn(BaseModel):
+    action: Literal["feed", "play", "groom", "story", "talk"]
+    idempotency_key: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=120)
+
+
+class PetActionOut(ApiModel):
+    pet: PetOut
+    action: str
+    message: str
+    points: int
+    idempotent: bool = False
+
+
 class ContentOut(ApiModel):
     id: str
     kind: ContentKind

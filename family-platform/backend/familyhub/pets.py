@@ -43,13 +43,14 @@ def pet_to_dict(db: Session, pet: Pet) -> dict[str, Any]:
         "emoji": "🐾",
         "temperament": "喜欢陪伴你",
         "asset_path": None,
+        "animation_hint": None,
     }
     return {
         "id": pet.id,
         "owner_user_id": pet.owner_user_id,
         "owner_name": owner.display_name if owner else "家庭成员",
         "name": pet.name,
-        "species": pet.species,
+        "species": species["id"],
         "species_name": species["name"],
         "species_english_name": species["english_name"],
         "personality": pet.personality,

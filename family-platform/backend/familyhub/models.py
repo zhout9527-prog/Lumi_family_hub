@@ -133,6 +133,8 @@ class ContentItem(Base):
     language: Mapped[str] = mapped_column(String(120), default="中文")
     age_from: Mapped[int] = mapped_column(Integer, default=0)
     age_to: Mapped[int] = mapped_column(Integer, default=99)
+    # 保留媒体原始秒数；duration_minutes 仅用于旧客户端兼容和汇总展示。
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
     duration_minutes: Mapped[int] = mapped_column(Integer, default=10)
     description: Mapped[str] = mapped_column(Text, default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -197,6 +199,8 @@ class ContentCollectionEpisode(Base):
     title: Mapped[str] = mapped_column(String(240))
     source_url: Mapped[str] = mapped_column(String(1000))
     cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # 分集必须使用自己的精确时长，不能从合集总时长反推。
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
     duration_minutes: Mapped[int] = mapped_column(Integer, default=1)
     publication_status: Mapped[str] = mapped_column(String(24), index=True, default="published")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

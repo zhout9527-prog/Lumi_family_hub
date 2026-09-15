@@ -7,7 +7,7 @@ function check(condition, message) {
   if (!condition) throw new Error(message)
 }
 
-const content = (id, index, title) => ({
+const content = (id, index, title, durationSeconds) => ({
   id,
   kind: 'video',
   title,
@@ -15,7 +15,8 @@ const content = (id, index, title) => ({
   language: '中文',
   age_from: 4,
   age_to: 12,
-  duration_minutes: index,
+  duration_minutes: Math.max(1, Math.round(durationSeconds / 60)),
+  duration_seconds: durationSeconds,
   description: '合集分集',
   tags: ['B站', '合集'],
   accent: '#5e9b8d',
@@ -41,14 +42,15 @@ const content = (id, index, title) => ({
   section_title: '第一章',
 })
 
-const first = content('episode-1', 1, '认识天空')
-const second = content('episode-2', 2, '认识海洋')
+const first = content('episode-1', 1, '认识天空', 83)
+const second = content('episode-2', 2, '认识海洋', 142)
 const collectionCard = {
   ...first,
   id: 'collection-card',
   title: '自然课合集',
   subtitle: '合集 · 2 集',
   duration_minutes: 10,
+  duration_seconds: 225,
   episode_index: null,
   collection_card: true,
 }
@@ -95,7 +97,7 @@ try {
   await page.getByLabel('合集信息与评论').getByRole('heading', { name: '自然课合集', exact: true }).waitFor()
   await page.locator('.lumi-video-player').waitFor()
   check(launchRequests.some((path) => path.endsWith('/episode-1/launch')), '合集卡片没有解析到第一分集')
-  check(await page.getByLabel('播放进度').getAttribute('max') === '60', '进度条没有使用第一集自己的 1 分钟时长')
+  check(await page.getByLabel('播放进度').getAttribute('max') === '83', '进度条没有使用第一集原始 83 秒时长')
   check(await page.locator('.player-episode-list button').count() === 2, '播放器没有显示完整选集')
   const episodeTwo = page.locator('.player-episode-list button').filter({ hasText: '认识海洋' })
   await episodeTwo.focus()

@@ -77,6 +77,8 @@ export interface ContentItem {
   language: string
   age: string
   duration: string
+  /** 媒体原始时长（秒），合集卡片为合集汇总；分集为单集时长。 */
+  durationSeconds?: number
   description: string
   tags: string[]
   accent: string
@@ -113,6 +115,7 @@ export interface PetSpecies {
   emoji: string
   temperament: string
   assetPath?: string
+  animationHint?: string
 }
 
 export interface PetState {

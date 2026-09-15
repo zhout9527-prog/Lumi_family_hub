@@ -168,10 +168,14 @@ export function VideoPlayer({
   const androidNative = isAndroidNative()
   const androidBridge = getAndroidBridge()
   const gestureTapFallbackRef = useRef(false)
-  const isHlsSource = /\.m3u8(?:$|\?)/i.test(url)
-  // 合集卡片上的时长是所有分集之和，只允许真实分集向 HLS 播放器提供时长提示。
-  const durationHint = item.collectionCard ? 0 : parseDurationHint(item.duration)
-  const displayDuration = isHlsSource && durationHint > 0 ? durationHint : duration
+  // 合集卡片上的时长是所有分集之和，绝不能传给播放器；分集优先使用
+  // Server 保存的原始秒数，旧缓存才回退到旧的文本时长。
+  const durationHint = item.collectionCard
+    ? 0
+    : (typeof item.durationSeconds === 'number'
+        ? Math.max(0, Math.round(item.durationSeconds))
+        : parseDurationHint(item.duration))
+  const displayDuration = durationHint > 0 ? durationHint : duration
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -241,13 +245,13 @@ export function VideoPlayer({
   const seekBy = useCallback((seconds: number) => {
     const video = videoRef.current
     if (!video) return
-    const mediaDuration = isHlsSource && durationHint > 0 ? Math.max(video.duration || 0, durationHint) : video.duration
+    const mediaDuration = durationHint > 0 ? durationHint : video.duration
     if (!Number.isFinite(mediaDuration) || mediaDuration <= 0) return
     video.currentTime = clamp(video.currentTime + seconds, 0, mediaDuration)
     setCurrentTime(video.currentTime)
     flashNotice(`${seconds < 0 ? '后退' : '前进'} ${Math.abs(seconds)} 秒`)
     revealControls()
-  }, [durationHint, flashNotice, isHlsSource, revealControls])
+  }, [durationHint, flashNotice, revealControls])
 
   const toggleFullscreen = useCallback(async () => {
     const root = rootRef.current
@@ -494,7 +498,7 @@ export function VideoPlayer({
     }
     if (session.mode === 'seek') {
       const width = Math.max(240, event.currentTarget.clientWidth)
-      const mediaDuration = (isHlsSource && durationHint > 0 ? durationHint : video.duration || duration) || 0
+      const mediaDuration = (durationHint > 0 ? durationHint : video.duration || duration) || 0
       const span = seekDeltaForSwipe(deltaX / width, mediaDuration)
       session.targetTime = clamp(Math.round(session.startTime + (deltaX < 0 ? -span : span)), 0, mediaDuration)
       setSeekPreview(session.targetTime)

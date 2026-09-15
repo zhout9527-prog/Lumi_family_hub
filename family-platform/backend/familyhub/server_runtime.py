@@ -9,7 +9,7 @@ from logging.handlers import RotatingFileHandler
 import uvicorn
 
 from .config import Settings
-from .database import Base, build_engine, build_session_factory
+from .database import Base, build_engine, build_session_factory, ensure_runtime_schema
 from .main import create_app
 from .seed import seed_database
 from .worker import build_worker
@@ -112,6 +112,7 @@ def main() -> None:
     configure_runtime_logging(settings)
     engine = build_engine(settings)
     Base.metadata.create_all(engine)
+    ensure_runtime_schema(engine)
     with build_session_factory(engine)() as database:
         seed_database(database, settings)
     engine.dispose()

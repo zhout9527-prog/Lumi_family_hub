@@ -6988,7 +6988,7 @@ html.mobile-mode:fullscreen .player-community {
   }
 }
 
-/* 家庭伙伴页面：资源预览图作为统一舞台，具体模型可按 asset_path 逐步替换。 */
+/* 家庭伙伴页面：真实 glTF/GLB 模型和骨骼动画随客户端离线打包。 */
 .pet-dashboard {
   display: grid;
   gap: 18px;
@@ -7037,13 +7037,7 @@ html.mobile-mode:fullscreen .player-community {
   line-height: 1.7;
 }
 
-.pet-hero > img {
-  width: 100%;
-  height: 100%;
-  min-height: 238px;
-  object-fit: cover;
-  object-position: center;
-}
+.pet-adoption-model { position: relative; z-index: 1; display: grid; min-width: 0; min-height: 300px; }
 
 .pet-credit-row,
 .pet-footer-note,
@@ -7066,11 +7060,18 @@ html.mobile-mode:fullscreen .player-community {
 .pet-hero-active .pet-hero-copy { padding-left: 30px; }
 .pet-message { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; padding: 8px 11px; color: var(--ink); background: rgba(255,255,255,.78); border: 1px solid var(--line); }
 
-.pet-avatar-wrap { position: relative; display: grid; place-items: center; min-height: 238px; overflow: hidden; }
-.pet-avatar-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .66; filter: saturate(.72); }
-.pet-avatar-wrap::after { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(247,244,237,.4), rgba(247,244,237,.04)); content: ''; }
-.pet-avatar { position: relative; z-index: 1; display: grid; width: 122px; height: 122px; place-items: center; border: 5px solid rgba(255,255,255,.86); border-radius: 50%; background: color-mix(in srgb, var(--pet-accent, #6a91b9) 75%, white); box-shadow: 0 15px 34px rgba(45,55,54,.18); font-size: 64px; }
-.pet-avatar-wrap > i { position: absolute; z-index: 0; bottom: 24px; width: 170px; height: 22px; border-radius: 50%; background: rgba(47,58,57,.2); filter: blur(7px); }
+.pet-avatar-wrap { position: relative; z-index: 1; display: grid; min-width: 0; min-height: 300px; overflow: hidden; }
+.pet-3d-viewer { position: relative; width: 100%; min-height: 300px; overflow: hidden; background: color-mix(in srgb, var(--pet-model-accent, #6a91b9) 10%, #f7f4ed); isolation: isolate; }
+.pet-3d-canvas { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+.pet-3d-canvas:active { cursor: grabbing; }
+.pet-3d-canvas canvas { display: block; width: 100%; height: 100%; }
+.pet-3d-state { position: absolute; z-index: 2; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--muted); background: rgba(247,244,237,.62); text-align: center; font-size: 12px; }
+.pet-3d-state > span { width: 15px; height: 15px; border: 2px solid color-mix(in srgb, var(--pet-model-accent, #6a91b9) 32%, white); border-top-color: var(--pet-model-accent, #6a91b9); border-radius: 50%; animation: pet-model-spin .8s linear infinite; }
+.pet-3d-state.is-error { color: #9a5148; }
+.pet-3d-toolbar { position: absolute; z-index: 2; right: 12px; bottom: 10px; display: grid; justify-items: end; gap: 2px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.68); color: #33423f; background: rgba(255,255,255,.78); backdrop-filter: blur(8px); pointer-events: none; }
+.pet-3d-toolbar span { font-size: 10px; font-weight: 700; }
+.pet-3d-toolbar small { color: var(--muted); font-size: 9px; }
+@keyframes pet-model-spin { to { transform: rotate(360deg); } }
 
 .pet-content-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 18px; }
 .pet-panel,
@@ -7107,7 +7108,9 @@ html.mobile-mode:fullscreen .player-community {
 .pet-species-card:focus-visible { border-color: var(--pet-accent, var(--accent)); outline: 2px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 28%, transparent); outline-offset: 1px; }
 .pet-species-card.is-selected { background: color-mix(in srgb, var(--pet-accent, var(--accent)) 13%, white); box-shadow: inset 0 0 0 2px var(--pet-accent, var(--accent)); }
 .pet-species-card:disabled { cursor: default; opacity: .72; }
+.pet-species-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .pet-species-emoji { font-size: 31px; line-height: 1.1; }
+.pet-species-card small.pet-species-model-badge { padding: 3px 5px; border: 1px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 42%, white); border-radius: 999px; color: var(--pet-accent, var(--accent)); background: white; font-size: 8px; font-weight: 700; }
 .pet-species-name { font-weight: 700; }
 .pet-species-card small { color: var(--muted); font-size: 10px; }
 .pet-species-card em { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 10px; font-style: normal; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -7134,16 +7137,15 @@ html.mobile-mode:fullscreen .player-community {
 
 @media (max-width: 620px) {
   .pet-dashboard { gap: 12px; padding: 0 0 22px; }
-  .pet-hero { min-height: 310px; grid-template-columns: 1fr; }
-  .pet-hero > img { position: absolute; inset: auto 0 0; height: 155px; min-height: 0; opacity: .62; }
+  .pet-hero { min-height: 0; grid-template-columns: 1fr; }
   .pet-hero::before { background: linear-gradient(180deg, rgba(247,244,237,.98) 0%, rgba(247,244,237,.88) 58%, rgba(247,244,237,.24) 100%); }
   .pet-hero-copy { align-self: start; padding: 22px 18px; }
   .pet-hero-active .pet-hero-copy { padding-left: 18px; }
-  .pet-hero-active { min-height: 350px; }
-  .pet-avatar-wrap { position: absolute; right: 20px; bottom: 12px; min-height: 0; width: 145px; height: 145px; }
-  .pet-avatar-wrap img { display: none; }
-  .pet-avatar-wrap::after { display: none; }
-  .pet-avatar { width: 100px; height: 100px; font-size: 52px; }
+  .pet-hero-active { min-height: 0; }
+  .pet-adoption-model,
+  .pet-avatar-wrap,
+  .pet-3d-viewer { min-height: 255px; }
+  .pet-3d-toolbar { right: 8px; bottom: 8px; }
   .pet-panel, .pet-adoption-panel { padding: 15px; }
   .pet-species-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pet-adoption-form { display: grid; align-items: stretch; }

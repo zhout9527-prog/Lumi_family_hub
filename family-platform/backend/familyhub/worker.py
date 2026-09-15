@@ -15,7 +15,7 @@ from .audit import add_audit
 from .bilibili import BILIBILI_SOURCE_ID, download_bilibili_to_quarantine
 from .bilibili_account import active_bilibili_cookie_file
 from .config import Settings
-from .database import Base, build_engine, build_session_factory
+from .database import Base, build_engine, build_session_factory, ensure_runtime_schema
 from .download import DownloadRejected, download_to_quarantine, read_manifest, redact_manifest
 from .external import sync_due_external_feeds
 from .file_safety import safe_filename, scan_file, sha256_file
@@ -358,6 +358,7 @@ def build_worker(settings: Settings | None = None) -> FamilyWorker:
     active_settings.ensure_directories()
     engine = build_engine(active_settings)
     Base.metadata.create_all(engine)
+    ensure_runtime_schema(engine)
     return FamilyWorker(active_settings, build_session_factory(engine))
 
 

@@ -246,6 +246,7 @@ interface ApiContent {
   age_from: number
   age_to: number
   duration_minutes: number
+  duration_seconds?: number
   description: string
   tags: string[]
   accent: string
@@ -447,6 +448,7 @@ interface ApiPetSpecies {
   emoji: string
   temperament: string
   asset_path?: string | null
+  animation_hint?: string | null
 }
 
 interface ApiPet {
@@ -543,6 +545,16 @@ function formatBytes(value: number): string {
   return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`
 }
 
+function formatDuration(value: number | undefined, fallbackMinutes: number): string {
+  const seconds = Number.isFinite(value) && (value ?? 0) > 0 ? Math.round(value as number) : 0
+  if (seconds <= 0) return `${Math.max(1, fallbackMinutes)} 分钟`
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainder = seconds % 60
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+  return `${minutes}:${String(remainder).padStart(2, '0')}`
+}
+
 export function mapUser(user: ApiUser): SessionUser {
   return {
     id: user.id,
@@ -595,7 +607,8 @@ export function mapContent(item: ApiContent): ContentItem {
     kind: item.kind,
     language: item.language,
     age,
-    duration: `${item.duration_minutes} 分钟`,
+    duration: formatDuration(item.duration_seconds, item.duration_minutes),
+    durationSeconds: item.duration_seconds ?? 0,
     description: item.description,
     tags: item.tags,
     accent: item.accent,
@@ -1081,6 +1094,7 @@ export function mapPetSpecies(item: ApiPetSpecies): PetSpecies {
     emoji: item.emoji,
     temperament: item.temperament,
     assetPath: item.asset_path ?? undefined,
+    animationHint: item.animation_hint ?? undefined,
   }
 }
 

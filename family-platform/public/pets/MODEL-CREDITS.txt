@@ -1,0 +1,10 @@
+Lumi 家庭伙伴模型来源说明
+
+- Deer、Stag、Fox、Wolf、Alpaca、Bull、Cow、Donkey、Horse、Horse White、Husky、Shiba Inu：Quaternius Ultimate Animated Animals Pack，CC0 1.0。
+  官方资源页：https://quaternius.com/packs/ultimateanimatedanimals.html
+  本项目使用 glTF 模型的离线副本，模型包含 Idle、Eating、Walk/Gallop、Jump 等骨骼动画。
+- Cat：Kenney Cube Pets，CC0 1.0。
+  官方资源页：https://kenney.nl/assets/cube-pets
+  模型包含 idle、walk、run、eat、dance 等动画。
+
+模型文件仅作为应用内置素材，Lumi 的宠物成长数据仍由家庭 Server 保存。

@@ -219,6 +219,7 @@ class PetSpeciesOut(ApiModel):
     emoji: str
     temperament: str
     asset_path: str | None = None
+    animation_hint: str | None = None
 
 
 class PetOut(ApiModel):
@@ -277,6 +278,7 @@ class ContentOut(ApiModel):
     age_from: int
     age_to: int
     duration_minutes: int
+    duration_seconds: int = 0
     description: str
     tags: list[str]
     accent: str

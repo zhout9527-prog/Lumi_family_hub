@@ -43,12 +43,14 @@
     "pinyin-pro": "3.29.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-tetris": "0.4.0"
+    "react-tetris": "0.4.0",
+    "three": "0.186.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
+    "@types/three": "0.186.0",
     "playwright-core": "1.62.1",
     "typescript": "5.9.3",
     "vite": "6.4.3"

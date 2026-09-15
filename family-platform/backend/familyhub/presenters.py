@@ -65,6 +65,11 @@ def present_content(
         age_from=item.age_from,
         age_to=item.age_to,
         # 合集卡片可以使用汇总时长，但播放分集必须以分集自己的时长为准。
+        duration_seconds=(
+            collection_episode.duration_seconds
+            if collection_episode is not None and collection_episode.duration_seconds > 0
+            else item.duration_seconds
+        ),
         duration_minutes=(
             collection_episode.duration_minutes
             if collection_episode is not None and collection_episode.duration_minutes > 0

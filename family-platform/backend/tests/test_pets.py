@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from familyhub.pet_catalog import get_species
+
 from .conftest import login
 
 
@@ -13,6 +15,9 @@ def test_child_can_adopt_one_pet_and_repeat_actions_are_idempotent(client: TestC
     assert payload["pet"] is None
     assert payload["pet_can_adopt"] is True
     assert len(payload["pet_species"]) == 13
+    assert all(species["asset_path"].endswith((".gltf", ".glb")) for species in payload["pet_species"])
+    assert all(species["animation_hint"] for species in payload["pet_species"])
+    assert next(species for species in payload["pet_species"] if species["id"] == "cat")["source"] == "Kenney Cube Pets"
 
     adopted = client.post(
         "/api/v1/pets/adopt",
@@ -62,3 +67,10 @@ def test_guardian_can_read_family_pet_but_operator_is_not_exposed_in_client_cata
     assert pets.status_code == 200, pets.text
     assert pets.json()[0]["owner_name"] == "小满"
     assert client.get("/api/v1/pets/mine", headers=guardian).json()["pet"]["name"] == "小猫"
+
+
+def test_legacy_species_resolve_to_real_3d_models() -> None:
+    for legacy in ("boar", "buffalo", "goat", "llama", "rabbit", "bear", "chicken"):
+        species = get_species(legacy)
+        assert species is not None
+        assert species["asset_path"].endswith((".gltf", ".glb"))

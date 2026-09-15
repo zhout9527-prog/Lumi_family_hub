@@ -60,6 +60,8 @@ class ExternalEntry:
     duration_minutes: int
     description: str
     uploader: str
+    # B站接口返回的原始秒数；不要把它截断成整数分钟。
+    duration_seconds: int = 0
     # 以下字段用于还原 B 站 UGC 合集和多 P 视频；旧调用方可不填写。
     collection_id: str | None = None
     collection_external_id: str | None = None
@@ -364,6 +366,14 @@ def _seconds_to_minutes(value: Any, default: int = 10) -> int:
     return max(1, round(float(value) / 60)) if isinstance(value, (int, float)) else default
 
 
+def _duration_seconds(value: Any, default: int = 0) -> int:
+    """只接受真实秒数，分钟字段仅作为兼容回退。"""
+    if isinstance(value, (int, float)):
+        seconds = int(round(float(value)))
+        return max(0, seconds)
+    return max(0, default)
+
+
 def _episode_entry(
     *,
     reference: BilibiliReference,
@@ -390,6 +400,7 @@ def _episode_entry(
         url=page_url,
         cover_url=cover_url,
         duration_minutes=_seconds_to_minutes(duration),
+        duration_seconds=_duration_seconds(duration),
         description=description.strip()[:4000],
         uploader=uploader.strip()[:120] or "B站",
         collection_id=collection_id,
@@ -414,6 +425,7 @@ def fetch_bilibili_public_metadata(url: str, *, cookie_file: Path | None = None)
         url=reference.url,
         cover_url=_https_bilibili_image_url(str(data.get("pic") or "")),
         duration_minutes=_seconds_to_minutes(duration),
+        duration_seconds=_duration_seconds(duration),
         description=str(data.get("desc") or "").strip()[:4000],
         uploader=str((data.get("owner") or {}).get("name") or "B站").strip()[:120]
         if isinstance(data.get("owner"), dict)
@@ -664,7 +676,8 @@ def extract_bilibili_entries(
             "",
         )
         duration = raw.get("duration")
-        duration_minutes = max(1, round(float(duration) / 60)) if isinstance(duration, (int, float)) else 10
+        duration_seconds = _duration_seconds(duration)
+        duration_minutes = _seconds_to_minutes(duration)
         title = str(raw.get("title") or external_id).strip()[:240]
         description = str(raw.get("description") or "").strip()[:4000]
         uploader = str(raw.get("uploader") or raw.get("channel") or "B站").strip()[:120]
@@ -680,6 +693,7 @@ def extract_bilibili_entries(
                     title = enriched.title
                 if not isinstance(duration, (int, float)):
                     duration_minutes = enriched.duration_minutes
+                    duration_seconds = enriched.duration_seconds
                 description = description or enriched.description
                 uploader = uploader if uploader != "B站" else enriched.uploader
         entries.append(
@@ -689,6 +703,7 @@ def extract_bilibili_entries(
                 url=webpage_url,
                 cover_url=normalized_cover,
                 duration_minutes=duration_minutes,
+                duration_seconds=duration_seconds,
                 description=description,
                 uploader=uploader,
             )
@@ -929,6 +944,7 @@ def upsert_external_item(
     description: str = "",
     tags: list[str] | None = None,
     duration_minutes: int = 10,
+    duration_seconds: int = 0,
     external_id: str | None = None,
     force_publish: bool = False,
 ) -> ContentItem:
@@ -961,7 +977,12 @@ def upsert_external_item(
         item.language = language.strip()[:120] or "中文"
         item.age_from = age_from
         item.age_to = age_to
-    item.duration_minutes = max(1, duration_minutes)
+    # 新记录没有原始秒数就保持 0，让媒体元数据接管；同步暂时缺失时保留
+    # 已有精确值，不能用占位分钟覆盖已经取得的平台元数据。
+    exact_duration = max(0, int(duration_seconds or 0))
+    if existing is None or exact_duration > 0 or int(item.duration_seconds or 0) <= 0:
+        item.duration_seconds = exact_duration
+        item.duration_minutes = max(1, duration_minutes)
     item.description = description.strip() or "由家庭管理员添加的在线内容。"
     if update_editorial_policy:
         item.tags = list(dict.fromkeys([
@@ -1051,6 +1072,7 @@ def upsert_bilibili_entries(
             description=entry.description or f"来自 {entry.uploader} 的 B站视频。",
             tags=tags,
             duration_minutes=entry.duration_minutes,
+            duration_seconds=entry.duration_seconds,
             external_id=entry.external_id,
         )
         db.flush()
@@ -1065,7 +1087,8 @@ def upsert_bilibili_entries(
             item.tags = list(dict.fromkeys([*(item.tags or []), "合集", collection.title]))
             episode_id = _episode_key(collection.id, entry.url)
             episode = db.get(ContentCollectionEpisode, episode_id)
-            if episode is None:
+            new_episode = episode is None
+            if new_episode:
                 episode = ContentCollectionEpisode(
                     id=episode_id,
                     collection_id=collection.id,
@@ -1083,7 +1106,10 @@ def upsert_bilibili_entries(
             episode.title = entry.title[:240]
             episode.source_url = entry.url
             episode.cover_url = entry.cover_url
-            episode.duration_minutes = max(1, entry.duration_minutes)
+            exact_duration = max(0, entry.duration_seconds)
+            if new_episode or exact_duration > 0 or int(episode.duration_seconds or 0) <= 0:
+                episode.duration_seconds = exact_duration
+                episode.duration_minutes = max(1, entry.duration_minutes)
             episode.publication_status = item.publication_status
             episode.updated_at = utcnow()
         if entry.cover_url and cover_budget > 0:

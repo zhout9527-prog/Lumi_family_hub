@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from familyhub import external
 from familyhub.external import ExternalCatalogError, ExternalCollection, ExternalEntry, ExternalPageMetadata
 from familyhub import main as familyhub_main
+from familyhub.models import ContentCollectionEpisode, ContentItem, User
 
 from .conftest import login
 
@@ -237,6 +239,7 @@ def test_flat_bilibili_feed_entries_are_enriched_with_public_metadata(monkeypatc
             url=url,
             cover_url="https://i0.hdslb.com/enriched-cover.jpg",
             duration_minutes=12,
+            duration_seconds=731,
             description="被补全的简介",
             uploader="测试 UP 主",
         )
@@ -253,6 +256,7 @@ def test_flat_bilibili_feed_entries_are_enriched_with_public_metadata(monkeypatc
     assert entries[0].title == "被补全的标题"
     assert entries[0].cover_url == "https://i0.hdslb.com/enriched-cover.jpg"
     assert entries[0].duration_minutes == 12
+    assert entries[0].duration_seconds == 731
 
 
 def test_cover_format_accepts_supported_image_magic_bytes() -> None:
@@ -281,14 +285,14 @@ def test_bilibili_collection_is_restored_from_a_middle_episode(monkeypatch) -> N
                 {
                     "title": "第一章",
                     "episodes": [
-                        {"bvid": "BV1111111111", "title": "第一集", "arc": {"bvid": "BV1111111111", "title": "第一集", "duration": 120, "pic": "https://i0.hdslb.com/1.jpg"}},
-                        {"bvid": "BV2222222222", "title": "第二集", "arc": {"bvid": "BV2222222222", "title": "第二集", "duration": 180, "pic": "https://i0.hdslb.com/2.jpg"}},
+                        {"bvid": "BV1111111111", "title": "第一集", "arc": {"bvid": "BV1111111111", "title": "第一集", "duration": 83, "pic": "https://i0.hdslb.com/1.jpg"}},
+                        {"bvid": "BV2222222222", "title": "第二集", "arc": {"bvid": "BV2222222222", "title": "第二集", "duration": 142, "pic": "https://i0.hdslb.com/2.jpg"}},
                     ],
                 },
                 {
                     "title": "第二章",
                     "episodes": [
-                        {"bvid": "BV3333333333", "title": "第三集", "arc": {"bvid": "BV3333333333", "title": "第三集", "duration": 240, "pic": "https://i0.hdslb.com/3.jpg"}},
+                        {"bvid": "BV3333333333", "title": "第三集", "arc": {"bvid": "BV3333333333", "title": "第三集", "duration": 227, "pic": "https://i0.hdslb.com/3.jpg"}},
                     ],
                 },
             ],
@@ -303,6 +307,7 @@ def test_bilibili_collection_is_restored_from_a_middle_episode(monkeypatch) -> N
     assert collection.title == "完整自然课"
     assert [episode.title for episode in collection.episodes] == ["第一集", "第二集", "第三集"]
     assert [episode.episode_index for episode in collection.episodes] == [1, 2, 3]
+    assert [episode.duration_seconds for episode in collection.episodes] == [83, 142, 227]
     assert collection.episodes[2].section_title == "第二章"
 
 
@@ -318,8 +323,8 @@ def test_multi_page_video_keeps_each_page_url(monkeypatch) -> None:
         "pic": "https://i0.hdslb.com/main.jpg",
         "owner": {"name": "测试作者"},
         "pages": [
-            {"page": 1, "part": "认识天空", "duration": 60},
-            {"page": 2, "part": "认识海洋", "duration": 90},
+            {"page": 1, "part": "认识天空", "duration": 83},
+            {"page": 2, "part": "认识海洋", "duration": 142},
         ],
     }
     monkeypatch.setattr(external, "_fetch_bilibili_view_data", lambda *_args, **_kwargs: (reference, payload))
@@ -332,6 +337,7 @@ def test_multi_page_video_keeps_each_page_url(monkeypatch) -> None:
         "https://www.bilibili.com/video/BV18T3G6jEVM?p=1",
         "https://www.bilibili.com/video/BV18T3G6jEVM?p=2",
     ]
+    assert [episode.duration_seconds for episode in collection.episodes] == [83, 142]
 
 
 def test_bilibili_favorite_feed_syncs_metadata_without_downloading(
@@ -465,6 +471,60 @@ def test_bilibili_favorite_feed_syncs_metadata_without_downloading(
     assert removed.status_code == 204
 
 
+def test_temporary_missing_duration_does_not_erase_exact_episode_seconds(client: TestClient) -> None:
+    login(client, "operator")
+    collection_id = "bilibili-collection-duration-regression"
+
+    def entry(duration_seconds: int, duration_minutes: int) -> ExternalEntry:
+        return ExternalEntry(
+            external_id="BV1234567890",
+            title="真实时长分集",
+            url="https://www.bilibili.com/video/BV1234567890",
+            cover_url=None,
+            duration_minutes=duration_minutes,
+            duration_seconds=duration_seconds,
+            description="同步时长降级测试",
+            uploader="测试作者",
+            collection_id=collection_id,
+            collection_external_id="duration-regression",
+            collection_title="时长测试合集",
+            collection_kind="ugc_season",
+            episode_index=1,
+            episode_count=1,
+        )
+
+    with client.app.state.session_factory() as db:
+        operator = db.scalar(select(User).where(User.username == "operator-demo"))
+        assert operator is not None
+        external.upsert_bilibili_entries(
+            db,
+            client.app.state.settings,
+            user=operator,
+            entries=[entry(83, 1)],
+            audience="family",
+            age_from=4,
+            age_to=12,
+            language="中文",
+        )
+        db.commit()
+        external.upsert_bilibili_entries(
+            db,
+            client.app.state.settings,
+            user=operator,
+            entries=[entry(0, 99)],
+            audience="family",
+            age_from=4,
+            age_to=12,
+            language="中文",
+        )
+        db.commit()
+        episode = db.scalar(
+            select(ContentCollectionEpisode).where(ContentCollectionEpisode.collection_id == collection_id)
+        )
+        item = db.get(ContentItem, episode.content_id if episode else "")
+        assert episode is not None and episode.duration_seconds == 83 and episode.duration_minutes == 1
+        assert item is not None and item.duration_seconds == 83 and item.duration_minutes == 1
+
 def test_favorite_sync_expands_collection_updates_incrementally_and_honors_deletion(
     client: TestClient,
     monkeypatch,
@@ -482,13 +542,15 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
         )
     ]
     collection_id = "bilibili-collection-test"
+    exact_durations = (83, 142, 227)
     collection_entries = tuple(
         ExternalEntry(
             external_id=f"BV{index:010d}",
             title=f"自然课第 {index} 集",
             url=f"https://www.bilibili.com/video/BV{index:010d}",
             cover_url=None,
-            duration_minutes=index + 1,
+            duration_minutes=max(1, round(exact_durations[index - 1] / 60)),
+            duration_seconds=exact_durations[index - 1],
             description="合集分集",
             uploader="测试作者",
             collection_id=collection_id,
@@ -552,9 +614,25 @@ def test_favorite_sync_expands_collection_updates_incrementally_and_honors_delet
     assert detail.json()["title"] == "完整自然课"
     assert [item["episode_index"] for item in detail.json()["episodes"]] == [1, 2, 3]
     episodes = detail.json()["episodes"]
-    # 合集入口可以展示总时长，但每一集的播放时长必须来自自己的分集记录。
-    assert [item["duration_minutes"] for item in episodes] == [2, 3, 4]
-    assert collection_card["duration_minutes"] == 9
+    # 使用非整分钟数据验证：合集入口可以汇总，但分集必须保留平台原始秒数。
+    assert [item["duration_seconds"] for item in episodes] == [83, 142, 227]
+    assert collection_card["duration_seconds"] == 452
+    # 模拟从旧版本数据库升级：首次打开合集时会重新读取原平台秒数，而不是
+    # 把旧的整数分钟直接乘以 60。
+    with client.app.state.session_factory() as db:
+        legacy_episodes = list(
+            db.scalars(
+                select(ContentCollectionEpisode).where(ContentCollectionEpisode.collection_id == collection_id)
+            ).all()
+        )
+        for legacy_episode in legacy_episodes:
+            legacy_episode.duration_seconds = 0
+            if legacy_episode.content_id:
+                db.get(ContentItem, legacy_episode.content_id).duration_seconds = 0
+        db.commit()
+    monkeypatch.setattr(familyhub_main, "fetch_bilibili_collection", lambda *_args, **_kwargs: collection)
+    repaired = client.get(f"/api/v1/catalog/{episodes[0]['id']}/collection", headers=guardian).json()
+    assert [item["duration_seconds"] for item in repaired["episodes"]] == [83, 142, 227]
     selected = episodes[1]
 
     managed = client.get("/api/v1/ops/library", headers=operator).json()

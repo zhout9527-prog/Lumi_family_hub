@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { BookOpen, Heart, MessageCircle, PawPrint, Sparkles, Utensils, WandSparkles, Waves, Play } from 'lucide-react'
-import type { PetAction, PetSpecies, PetState, Role, SessionUser } from './types'
+import { Pet3DViewer } from './Pet3DViewer'
+import type { PetAction, PetSpecies, PetState, SessionUser } from './types'
 
 const ACTIONS: Array<{ action: PetAction; label: string; icon: typeof Heart; hint: string }> = [
   { action: 'feed', label: '喂食', icon: Utensils, hint: '补充一点能量' },
@@ -45,7 +46,7 @@ function SpeciesCard({
       aria-pressed={selected}
       data-tv-initial={selected ? true : undefined}
     >
-      <span className="pet-species-emoji" aria-hidden="true">{species.emoji}</span>
+      <span className="pet-species-card-head"><span className="pet-species-emoji" aria-hidden="true">{species.emoji}</span><small className="pet-species-model-badge">3D 动画</small></span>
       <span className="pet-species-name">{species.name}</span>
       <small>{species.englishName}</small>
       <em>{species.temperament}</em>
@@ -75,6 +76,8 @@ export function PetView({
   const [selectedSpecies, setSelectedSpecies] = useState(species[0]?.id ?? '')
   const [name, setName] = useState(species[0]?.name ?? '')
   const [message, setMessage] = useState('')
+  const [animation, setAnimation] = useState<PetAction | 'idle'>('idle')
+  const [animationNonce, setAnimationNonce] = useState(0)
   const selected = useMemo(() => species.find((item) => item.id === selectedSpecies) ?? species[0], [selectedSpecies, species])
   const readOnly = connection !== 'backend' || busy
 
@@ -88,7 +91,11 @@ export function PetView({
             <p>{user.role === 'child' ? '从 12 种 Quaternius 动物和一只 Lumi 小猫中选择一位伙伴。每个儿童账号先养一只，之后一起完成故事和小任务。' : '孩子还没有领养伙伴。这里会同步显示 Server 中的伙伴目录。'}</p>
             <div className="pet-credit-row"><PawPrint size={15} /><span>低多边形动物目录 · CC0 资源</span><a href="https://quaternius.com/packs/ultimateanimatedanimals.html" target="_blank" rel="noreferrer">查看官方资源页</a></div>
           </div>
-          <img src="/pets/quaternius-preview.jpg" alt="Quaternius 动物资源预览" />
+          {selected && (
+            <div className="pet-adoption-model">
+              <Pet3DViewer assetPath={selected.assetPath} name={selected.name} accent={selected.accent} />
+            </div>
+          )}
         </div>
         {user.role === 'child' && canAdopt ? (
           <div className="pet-adoption-panel">
@@ -120,7 +127,15 @@ export function PetView({
           <span className="pet-owner-note">{pet.ownerName === user.displayName ? '这是你的伙伴' : `由 ${pet.ownerName} 照顾`}</span>
           {message && <div className="pet-message" role="status"><Sparkles size={15} />{message}</div>}
         </div>
-        <div className="pet-avatar-wrap"><img src="/pets/quaternius-preview.jpg" alt="" /><span className="pet-avatar" aria-label={pet.speciesName}>{currentSpecies?.emoji ?? '🐾'}</span><i /></div>
+        <div className="pet-avatar-wrap">
+          <Pet3DViewer
+            assetPath={currentSpecies?.assetPath}
+            name={pet.speciesName}
+            accent={currentSpecies?.accent ?? '#6a91b9'}
+            animation={animation}
+            animationNonce={animationNonce}
+          />
+        </div>
       </div>
       <div className="pet-content-grid">
         <section className="pet-panel pet-status-panel">
@@ -130,7 +145,7 @@ export function PetView({
         </section>
         <section className="pet-panel pet-action-panel">
           <div className="section-heading"><div><span className="eyebrow">SPEND TIME TOGETHER</span><h2>陪伴一下</h2></div><Heart size={19} className="pet-heart-icon" /></div>
-          <div className="pet-actions">{ACTIONS.map(({ action, label, icon: ActionIcon, hint }) => <button key={action} type="button" className="pet-action-button" disabled={readOnly} data-tv-initial={action === 'feed' ? true : undefined} onClick={() => { void onAction(pet.id, action).then((result) => setMessage(`${result.message} +${result.points} 成长点`)).catch((error) => setMessage(error instanceof Error ? error.message : '互动没有完成')) }}><ActionIcon size={18} /><span><strong>{label}</strong><small>{hint}</small></span></button>)}</div>
+          <div className="pet-actions">{ACTIONS.map(({ action, label, icon: ActionIcon, hint }) => <button key={action} type="button" className="pet-action-button" disabled={readOnly} data-tv-initial={action === 'feed' ? true : undefined} onClick={() => { setAnimation(action); setAnimationNonce((value) => value + 1); void onAction(pet.id, action).then((result) => setMessage(`${result.message} +${result.points} 成长点`)).catch((error) => setMessage(error instanceof Error ? error.message : '互动没有完成')) }}><ActionIcon size={18} /><span><strong>{label}</strong><small>{hint}</small></span></button>)}</div>
           {connection === 'offline' && <p className="pet-inline-note">Server 离线时只能查看上次同步的状态。</p>}
         </section>
       </div>

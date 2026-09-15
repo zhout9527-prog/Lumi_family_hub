@@ -32,7 +32,7 @@ from .bilibili_account import (
     import_bilibili_cookies_from_browser,
 )
 from .config import Settings
-from .database import Base, build_engine, build_session_factory, get_db
+from .database import Base, build_engine, build_session_factory, ensure_runtime_schema, get_db
 from .download import DownloadRejected, write_manifest
 from .external import (
     ExternalCatalogError,
@@ -331,7 +331,11 @@ def _refresh_external_bilibili_metadata(db: Session, settings: Settings, item: C
         item.title = entry.title
     if not item.description or item.description.startswith("已保存在线播放入口"):
         item.description = entry.description or f"来自 {entry.uploader} 的 B站视频。"
-    item.duration_minutes = entry.duration_minutes
+    if entry.duration_seconds > 0:
+        item.duration_seconds = entry.duration_seconds
+        item.duration_minutes = entry.duration_minutes
+    elif int(item.duration_seconds or 0) <= 0:
+        item.duration_minutes = entry.duration_minutes
     if not entry.cover_url:
         raise ExternalCatalogError("bilibili_cover_download_failed")
     cache_external_cover(db, settings, item=item, cover_url=entry.cover_url, provider="bilibili")
@@ -505,7 +509,16 @@ def _collapse_collection_cards(items: list[ContentOut]) -> list[ContentOut]:
         card.title = representative.collection_title or representative.title
         card.collection_title = card.title
         card.subtitle = f"合集 · {episode_count} 集"
-        card.duration_minutes = sum(entry.duration_minutes for entry in episodes)
+        card.duration_seconds = (
+            sum(entry.duration_seconds for entry in episodes)
+            if episodes and all(entry.duration_seconds > 0 for entry in episodes)
+            else 0
+        )
+        card.duration_minutes = (
+            max(1, round(card.duration_seconds / 60))
+            if card.duration_seconds > 0
+            else sum(entry.duration_minutes for entry in episodes)
+        )
         card.tags = list(dict.fromkeys([*(tag for entry in episodes for tag in entry.tags), "合集"]))
         card.featured = any(entry.featured for entry in episodes)
         card.favorite = any(entry.favorite for entry in episodes)
@@ -518,6 +531,47 @@ def _collapse_collection_cards(items: list[ContentOut]) -> list[ContentOut]:
         card.collection_card = True
         collapsed.append(card)
     return collapsed
+
+
+def _backfill_collection_exact_durations(
+    db: Session,
+    settings: Settings,
+    collection: ContentCollection,
+    episodes: list[ContentCollectionEpisode],
+) -> None:
+    """旧数据库首次打开合集时，从原平台一次性补齐每集真实秒数。"""
+
+    if not episodes or all(episode.duration_seconds > 0 for episode in episodes):
+        return
+    seed_url = next((episode.source_url for episode in episodes if episode.source_url), collection.source_url)
+    try:
+        remote = fetch_bilibili_collection(
+            seed_url,
+            cookie_file=active_bilibili_cookie_file(settings),
+        )
+    except (ExternalCatalogError, OSError, ValueError):
+        return
+    if remote is None:
+        return
+    by_url = {entry.url: entry for entry in remote.episodes}
+    by_identity = {(entry.external_id, entry.page_number): entry for entry in remote.episodes}
+    changed = False
+    for episode in episodes:
+        entry = by_url.get(episode.source_url) or by_identity.get((episode.external_id, episode.page_number))
+        if entry is None or entry.duration_seconds <= 0:
+            continue
+        episode.duration_seconds = entry.duration_seconds
+        episode.duration_minutes = entry.duration_minutes
+        episode.updated_at = utcnow()
+        if episode.content_id:
+            item = db.get(ContentItem, episode.content_id)
+            if item is not None:
+                item.duration_seconds = entry.duration_seconds
+                item.duration_minutes = entry.duration_minutes
+                item.updated_at = utcnow()
+        changed = True
+    if changed:
+        db.commit()
 
 
 def _managed_library_payloads(
@@ -653,6 +707,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = build_engine(active_settings)
         session_factory = build_session_factory(engine)
         Base.metadata.create_all(engine)
+        ensure_runtime_schema(engine)
         with session_factory() as db:
             seed_database(db, active_settings)
             storage_paths = load_storage_paths(db, active_settings, ensure=True)
@@ -1375,7 +1430,7 @@ def content_detail(item_id: str, user: CurrentUser, db: Db) -> ContentOut:
 
 
 @router.get("/catalog/{item_id}/collection", response_model=ContentCollectionOut, tags=["catalog"])
-def content_collection(item_id: str, user: CurrentUser, db: Db) -> ContentCollectionOut:
+def content_collection(item_id: str, user: CurrentUser, db: Db, settings: SettingsDep) -> ContentCollectionOut:
     current = require_visible_content(db, user, item_id)
     current_episode = db.scalar(
         select(ContentCollectionEpisode).where(ContentCollectionEpisode.content_id == current.id).limit(1)
@@ -1396,6 +1451,7 @@ def content_collection(item_id: str, user: CurrentUser, db: Db) -> ContentCollec
             .order_by(ContentCollectionEpisode.episode_index, ContentCollectionEpisode.id)
         ).all()
     )
+    _backfill_collection_exact_durations(db, settings, collection, ordered)
     visible = {item.id: item for item in _content_list(db, user, collapse_collections=False)}
     episodes = [visible[episode.content_id] for episode in ordered if episode.content_id in visible]
     return ContentCollectionOut(
@@ -2219,6 +2275,7 @@ def add_external_library_item(
     cover_url = str(payload.cover_url) if payload.cover_url else None
     description = payload.description
     duration_minutes = 10
+    duration_seconds = 0
     external_id = None
     collection_entries = []
     if provider == "bilibili":
@@ -2249,6 +2306,7 @@ def add_external_library_item(
             cover_url = cover_url or entry.cover_url
             description = description or entry.description
             duration_minutes = entry.duration_minutes
+            duration_seconds = entry.duration_seconds
             external_id = entry.external_id
         except (ExternalCatalogError, ValueError):
             try:
@@ -2304,6 +2362,7 @@ def add_external_library_item(
         description=description,
         tags=payload.tags,
         duration_minutes=duration_minutes,
+        duration_seconds=duration_seconds,
         external_id=external_id,
         force_publish=True,
     )

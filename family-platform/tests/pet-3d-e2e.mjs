@@ -218,9 +218,22 @@ try {
   await openPetView(mobile, true)
   await waitForModel(mobile)
   check(await mobile.locator('.pet-species-card').count() === 13, '手机端没有提供全部 13 种真实 3D 宠物')
-  const catResponse = mobile.waitForResponse((response) => response.url().endsWith('/pets/kenney/cat.glb') && response.ok())
+  await mobile.locator('.pet-species-card').first().click()
+  for (const item of species) {
+    const card = mobile.locator('.pet-species-card').filter({ hasText: item.name })
+    const alreadySelected = await card.getAttribute('aria-pressed') === 'true'
+    const modelResponse = alreadySelected
+      ? null
+      : mobile.waitForResponse((response) => response.url().endsWith(item.asset_path) && response.ok())
+    await card.click()
+    if (modelResponse) await modelResponse
+    await waitForModel(mobile)
+    await mobile.locator('.pet-preview-index strong').getByText(item.name, { exact: true }).waitFor()
+    check((await canvasStats(mobile)).spread > 20, `${item.name} 的 3D 模型没有形成有效画面`)
+  }
+  await mobile.getByRole('button', { name: '下一个伙伴' }).click()
+  await mobile.locator('.pet-preview-index strong').getByText('羊驼', { exact: true }).waitFor()
   await mobile.locator('.pet-species-card').filter({ hasText: '小猫' }).click()
-  await catResponse
   await waitForModel(mobile)
   const mobileFrame = await canvasStats(mobile)
   checkCanvas(mobileFrame, '手机端猫咪')

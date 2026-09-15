@@ -7038,6 +7038,12 @@ html.mobile-mode:fullscreen .player-community {
 }
 
 .pet-adoption-model { position: relative; z-index: 1; display: grid; min-width: 0; min-height: 300px; }
+.pet-preview-controls { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line); background: rgba(255,255,255,.82); }
+.pet-preview-controls .icon-button { width: 34px; height: 32px; color: var(--ink); border-color: var(--line); background: #fff; }
+.pet-preview-controls .icon-button:disabled { cursor: default; opacity: .45; }
+.pet-preview-index { display: grid; min-width: 0; justify-items: center; gap: 2px; color: var(--muted); text-align: center; }
+.pet-preview-index strong { max-width: 100%; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.pet-preview-index span { font-size: 10px; font-variant-numeric: tabular-nums; }
 
 .pet-credit-row,
 .pet-footer-note,

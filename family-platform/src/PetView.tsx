@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { BookOpen, Heart, MessageCircle, PawPrint, Sparkles, Utensils, WandSparkles, Waves, Play } from 'lucide-react'
+import { BookOpen, ChevronLeft, ChevronRight, Heart, MessageCircle, PawPrint, Sparkles, Utensils, WandSparkles, Waves, Play } from 'lucide-react'
 import { Pet3DViewer } from './Pet3DViewer'
 import type { PetAction, PetSpecies, PetState, SessionUser } from './types'
 
@@ -78,8 +78,50 @@ export function PetView({
   const [message, setMessage] = useState('')
   const [animation, setAnimation] = useState<PetAction | 'idle'>('idle')
   const [animationNonce, setAnimationNonce] = useState(0)
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [autoPreview, setAutoPreview] = useState(true)
   const selected = useMemo(() => species.find((item) => item.id === selectedSpecies) ?? species[0], [selectedSpecies, species])
+  const selectedIndex = useMemo(() => {
+    const index = species.findIndex((item) => item.id === selected?.id)
+    return index >= 0 ? index : 0
+  }, [selected?.id, species])
   const readOnly = connection !== 'backend' || busy
+
+  useEffect(() => {
+    if (species.length === 0) return
+    if (!species.some((item) => item.id === selectedSpecies)) {
+      setSelectedSpecies(species[0].id)
+      setName(species[0].name)
+    }
+  }, [selectedSpecies, species])
+
+  useEffect(() => {
+    if (selectedIndex !== previewIndex) setPreviewIndex(selectedIndex)
+  }, [previewIndex, selectedIndex])
+
+  useEffect(() => {
+    if (pet || !autoPreview || species.length < 2 || connection !== 'backend') return undefined
+    const timer = window.setInterval(() => {
+      setPreviewIndex((current) => {
+        const nextIndex = (current + 1) % species.length
+        const nextSpecies = species[nextIndex]
+        setSelectedSpecies(nextSpecies.id)
+        setName(nextSpecies.name)
+        return nextIndex
+      })
+    }, 4500)
+    return () => window.clearInterval(timer)
+  }, [autoPreview, connection, pet, species])
+
+  const chooseSpecies = (index: number) => {
+    if (species.length === 0) return
+    setAutoPreview(false)
+    const nextIndex = (index + species.length) % species.length
+    const nextSpecies = species[nextIndex]
+    setPreviewIndex(nextIndex)
+    setSelectedSpecies(nextSpecies.id)
+    setName(nextSpecies.name)
+  }
 
   if (!pet) {
     return (
@@ -88,12 +130,17 @@ export function PetView({
           <div className="pet-hero-copy">
             <span className="eyebrow">LUMI COMPANION</span>
             <h1>{user.role === 'child' ? `${user.displayName}，挑选你的伙伴` : '家庭伙伴'}</h1>
-            <p>{user.role === 'child' ? '从 12 种 Quaternius 动物和一只 Lumi 小猫中选择一位伙伴。每个儿童账号先养一只，之后一起完成故事和小任务。' : '孩子还没有领养伙伴。这里会同步显示 Server 中的伙伴目录。'}</p>
+            <p>{user.role === 'child' ? '从 12 种 Quaternius 动物和一只 Lumi 小猫中选择一位伙伴。模型会自动逐个展示，也可以手动切换。每个儿童账号先养一只，之后一起完成故事和小任务。' : '孩子还没有领养伙伴。这里会同步显示 Server 中的伙伴目录。'}</p>
             <div className="pet-credit-row"><PawPrint size={15} /><span>低多边形动物目录 · CC0 资源</span><a href="https://quaternius.com/packs/ultimateanimatedanimals.html" target="_blank" rel="noreferrer">查看官方资源页</a></div>
           </div>
           {selected && (
             <div className="pet-adoption-model">
               <Pet3DViewer assetPath={selected.assetPath} name={selected.name} accent={selected.accent} />
+              <div className="pet-preview-controls" aria-label="伙伴模型预览">
+                <button type="button" className="icon-button" aria-label="上一个伙伴" title="上一个伙伴" onClick={() => chooseSpecies(selectedIndex - 1)} disabled={readOnly}><ChevronLeft size={18} /></button>
+                <div className="pet-preview-index"><strong>{selected.name}</strong><span>{selectedIndex + 1} / {species.length}</span></div>
+                <button type="button" className="icon-button" aria-label="下一个伙伴" title="下一个伙伴" onClick={() => chooseSpecies(selectedIndex + 1)} disabled={readOnly}><ChevronRight size={18} /></button>
+              </div>
             </div>
           )}
         </div>
@@ -101,10 +148,10 @@ export function PetView({
           <div className="pet-adoption-panel">
             <div className="section-heading"><div><span className="eyebrow">CHOOSE A FRIEND</span><h2>选择一个形象</h2></div><span className="soft-badge">{species.length} 个可选</span></div>
             <div className="pet-species-grid">
-              {species.map((item) => <SpeciesCard key={item.id} species={item} selected={selected?.id === item.id} disabled={readOnly} onSelect={() => { setSelectedSpecies(item.id); setName(item.name) }} />)}
+              {species.map((item, index) => <SpeciesCard key={item.id} species={item} selected={selected?.id === item.id} disabled={readOnly} onSelect={() => chooseSpecies(index)} />)}
             </div>
             <div className="pet-adoption-form">
-              <label><span>给伙伴起个名字</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={24} placeholder="例如：小豆" disabled={readOnly || !selected} /></label>
+              <label><span>给伙伴起个名字</span><input value={name} onChange={(event) => { setAutoPreview(false); setName(event.target.value) }} maxLength={24} placeholder="例如：小豆" disabled={readOnly || !selected} /></label>
               <button type="button" className="button button-primary" data-tv-initial onClick={() => { if (selected) void onAdopt(selected.id, name || selected.name).then(() => setMessage('伙伴已经来到你的身边！')).catch((error) => setMessage(error instanceof Error ? error.message : '领养没有完成')) }} disabled={readOnly || !selected}><Heart size={16} fill="currentColor" />领养 {selected?.name ?? '伙伴'}</button>
             </div>
             {connection === 'offline' && <p className="pet-inline-note">连接 Server 后才能保存领养结果。</p>}

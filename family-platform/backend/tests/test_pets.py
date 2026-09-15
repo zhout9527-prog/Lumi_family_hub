@@ -69,6 +69,65 @@ def test_guardian_can_read_family_pet_but_operator_is_not_exposed_in_client_cata
     assert client.get("/api/v1/pets/mine", headers=guardian).json()["pet"]["name"] == "小猫"
 
 
+def test_each_child_account_has_an_independent_single_pet(client: TestClient) -> None:
+    first_child = login(client, "child")
+    first_pet = client.post(
+        "/api/v1/pets/adopt",
+        headers=first_child,
+        json={"species": "fox", "name": "小橘"},
+    )
+    assert first_pet.status_code == 201, first_pet.text
+
+    registration = client.post(
+        "/api/v1/auth/registrations",
+        json={
+            "username": "second-child",
+            "password": "SecondChild2026",
+            "display_name": "小芽",
+            "requested_role": "child",
+            "child_age": 6,
+        },
+    )
+    assert registration.status_code == 201, registration.text
+    operator = login(client, "operator")
+    approved = client.post(
+        f"/api/v1/ops/account-registrations/{registration.json()['id']}/decision",
+        headers=operator,
+        json={"decision": "approved", "review_note": "伙伴账户隔离测试"},
+    )
+    assert approved.status_code == 200, approved.text
+    second_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "second-child",
+            "password": "SecondChild2026",
+            "device_name": "pytest-second-child",
+            "app_edition": "client",
+        },
+    )
+    assert second_login.status_code == 200, second_login.text
+    second_child = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
+    second_bootstrap = client.get("/api/v1/pets/mine", headers=second_child)
+    assert second_bootstrap.status_code == 200, second_bootstrap.text
+    assert second_bootstrap.json()["pet"] is None
+    assert second_bootstrap.json()["can_adopt"] is True
+    assert len(second_bootstrap.json()["species"]) == 13
+
+    second_pet = client.post(
+        "/api/v1/pets/adopt",
+        headers=second_child,
+        json={"species": "cat", "name": "团团"},
+    )
+    assert second_pet.status_code == 201, second_pet.text
+    assert client.get("/api/v1/pets/mine", headers=first_child).json()["pet"]["species"] == "fox"
+    assert client.get("/api/v1/pets/mine", headers=second_child).json()["pet"]["species"] == "cat"
+    assert client.post(
+        "/api/v1/pets/adopt",
+        headers=second_child,
+        json={"species": "wolf", "name": "第三只"},
+    ).status_code == 409
+
+
 def test_legacy_species_resolve_to_real_3d_models() -> None:
     for legacy in ("boar", "buffalo", "goat", "llama", "rabbit", "bear", "chicken"):
         species = get_species(legacy)

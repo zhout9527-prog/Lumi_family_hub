@@ -42,14 +42,14 @@ const species = speciesSource.map(([id, name, englishName, fileName]) => ({
   id: 'cat',
   name: '小猫',
   english_name: 'Cat',
-  source: 'Kenney Cube Pets',
-  source_url: 'https://kenney.nl/assets/cube-pets',
-  license_url: 'https://creativecommons.org/publicdomain/zero/1.0/',
-  accent: '#8b82bd',
+  source: 'Cat by J-Toastie · Poly Pizza',
+  source_url: 'https://poly.pizza/m/DJ9rpAhrh3',
+  license_url: 'https://creativecommons.org/licenses/by/3.0/',
+  accent: '#849cab',
   emoji: '3D',
-  temperament: '安静，喜欢陪伴和聊天',
-  asset_path: '/pets/kenney/cat.glb',
-  animation_hint: 'idle · walk · run · eat · dance',
+  temperament: '温柔好奇，喜欢倾听和学你说话',
+  asset_path: '/pets/poly-pizza/cat.glb',
+  animation_hint: 'IdleCat · Lumi procedural actions',
 })
 
 const child = {
@@ -81,6 +81,34 @@ const pet = {
   updated_at: '2026-09-14T00:00:00Z',
 }
 
+const approvalItem = {
+  id: 'pet-e2e-approval-item',
+  kind: 'video',
+  title: '需要家长同意的自然纪录片',
+  subtitle: '窄窗口详情弹窗画幅测试',
+  language: '中文 / English',
+  age_from: 6,
+  age_to: 9,
+  duration_minutes: 18,
+  duration_seconds: 1080,
+  description: '跟随镜头观察森林里的动物，学习它们如何寻找食物和保护自己的家园。',
+  tags: ['自然观察', '双语启蒙', '亲子讨论'],
+  accent: '#6f927e',
+  cover_ref: '/covers/photo-1473445361085-b9a07f55608b.jpg',
+  acquisition_mode: 'local_library',
+  offline_activity: '画下最喜欢的动物，并说出一个新发现。',
+  featured: true,
+  favorite: false,
+  completed: false,
+  local_available: true,
+  playable: true,
+  playback_mode: 'local_asset',
+  launch_allowed: false,
+  provider: 'local',
+  audience: 'child',
+  collection_card: false,
+}
+
 async function installApi(context, adoption = false) {
   await context.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname
@@ -89,7 +117,7 @@ async function installApi(context, adoption = false) {
     if (path.endsWith('/auth/login')) return json({ access_token: 'pet-e2e-token', token_type: 'bearer', user: child })
     if (path.endsWith('/bootstrap')) return json({
       user: child,
-      catalog: [],
+      catalog: [approvalItem],
       active_minutes: 0,
       downloads_paused: false,
       pet: adoption ? null : pet,
@@ -188,10 +216,45 @@ try {
   const desktopContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'zh-CN' })
   await installApi(desktopContext)
   const desktop = await desktopContext.newPage()
+  await desktop.addInitScript(() => {
+    class FakeMediaRecorder {
+      static isTypeSupported() { return true }
+      constructor(stream, options = {}) {
+        this.stream = stream
+        this.mimeType = options.mimeType || 'audio/webm'
+        this.state = 'inactive'
+        this.ondataavailable = null
+        this.onstop = null
+      }
+      start() {
+        this.state = 'recording'
+        setTimeout(() => this.ondataavailable?.({ data: new Blob(['echo-sample'], { type: this.mimeType }) }), 20)
+      }
+      stop() {
+        this.state = 'inactive'
+        setTimeout(() => this.onstop?.(), 20)
+      }
+    }
+    class FakeAudio {
+      constructor(source) { this.src = source; this.currentTime = 0; this.playbackRate = 1; this.onended = null; this.onerror = null }
+      play() { setTimeout(() => this.onended?.(), 80); return Promise.resolve() }
+      pause() {}
+    }
+    class FakeAudioContext {
+      createAnalyser() { return { fftSize: 1024, getByteTimeDomainData: (samples) => samples.fill(128) } }
+      createMediaStreamSource() { return { connect() {} } }
+      close() { return Promise.resolve() }
+    }
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } })
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder })
+    Object.defineProperty(window, 'Audio', { configurable: true, value: FakeAudio })
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext })
+  })
   collectFailures(desktop, failures, 'desktop')
   await login(desktop)
   await openPetView(desktop)
   await waitForModel(desktop)
+  check(await desktop.locator('.pet-animation-chip').count() === 13, '小鹿没有展示全部 13 个原生动作')
   const firstFrame = await canvasStats(desktop)
   checkCanvas(firstFrame, '桌面端')
   await desktop.waitForTimeout(900)
@@ -200,6 +263,21 @@ try {
   check(firstFrame.hash !== animatedFrame.hash, '桌面端 3D 模型没有播放动画或自动转动')
   await desktop.getByRole('button', { name: /玩耍/ }).click()
   await desktop.locator('.pet-3d-toolbar').getByText(/当前动作：(?!Idle)/i).waitFor()
+  await desktop.getByRole('button', { name: /连续展示全部/ }).click()
+  check(await desktop.getByRole('button', { name: /停止连续展示/ }).getAttribute('aria-pressed') === 'true', '动作连续展示没有启动')
+  await desktop.getByRole('button', { name: /停止连续展示/ }).click()
+  await desktop.getByRole('button', { name: /去声声岛玩/ }).click()
+  await desktop.locator('.echo-modal').waitFor()
+  check(await desktop.locator('.echo-species').count() === 13, '声声岛没有提供全部 13 种伙伴声线')
+  await desktop.getByRole('button', { name: '开始说话' }).click()
+  await desktop.getByRole('button', { name: '说完了' }).waitFor()
+  await desktop.getByRole('button', { name: '说完了' }).click()
+  await desktop.getByText('还想听一次，或者换一位伙伴试试吗？').waitFor()
+  await desktop.locator('.echo-species').filter({ hasText: '小猫' }).click()
+  await desktop.getByRole('button', { name: '再听一次' }).click()
+  await desktop.getByText('还想听一次，或者换一位伙伴试试吗？').waitFor()
+  await desktop.screenshot({ path: `${artifactsPath}echo-companion-desktop-${runId}.png` })
+  await desktop.getByRole('button', { name: '关闭声声岛' }).click()
   check(!await desktop.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '桌面宠物页横向溢出')
   await desktop.screenshot({ path: `${artifactsPath}pet-3d-desktop-${runId}.png`, fullPage: true })
   await desktopContext.close()
@@ -229,6 +307,8 @@ try {
     if (modelResponse) await modelResponse
     await waitForModel(mobile)
     await mobile.locator('.pet-preview-index strong').getByText(item.name, { exact: true }).waitFor()
+    const expectedActions = item.id === 'cat' ? 9 : ['fox', 'husky', 'shibainu', 'wolf'].includes(item.id) ? 12 : 13
+    check(await mobile.locator('.pet-animation-chip').count() === expectedActions, `${item.name} 的动作图鉴数量不正确`)
     check((await canvasStats(mobile)).spread > 20, `${item.name} 的 3D 模型没有形成有效画面`)
   }
   await mobile.getByRole('button', { name: '下一个伙伴' }).click()
@@ -264,8 +344,28 @@ try {
   await tv.screenshot({ path: `${artifactsPath}pet-3d-tv-${runId}.png` })
   await tvContext.close()
 
+  const narrowContext = await browser.newContext({ viewport: { width: 759, height: 903 }, locale: 'zh-CN' })
+  await installApi(narrowContext)
+  const narrow = await narrowContext.newPage()
+  collectFailures(narrow, failures, 'narrow-detail')
+  await login(narrow)
+  await narrow.locator('.content-card').filter({ hasText: approvalItem.title }).locator('button.card-copy').click()
+  const detail = narrow.locator('.detail-modal')
+  await detail.waitFor()
+  const layout = await detail.evaluate((modal) => ({
+    clientWidth: modal.clientWidth,
+    scrollWidth: modal.scrollWidth,
+    contentWidth: modal.querySelector('.modal-content')?.getBoundingClientRect().width ?? 0,
+    coverWidth: modal.querySelector('.modal-cover')?.getBoundingClientRect().width ?? 0,
+  }))
+  check(layout.scrollWidth <= layout.clientWidth + 1, '儿童申请播放详情弹窗仍存在横向滚动')
+  check(layout.contentWidth > 600 && layout.coverWidth > 600, '759 像素窄窗口下详情弹窗没有使用上下画幅')
+  check(!await narrow.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '儿童详情弹窗撑宽了应用')
+  await narrow.screenshot({ path: `${artifactsPath}child-request-detail-${runId}.png` })
+  await narrowContext.close()
+
   check(failures.length === 0, failures.join('\n'))
-  console.log(JSON.stringify({ status: 'ok', species: 13, desktop: true, mobile: true, tv: true, animated: true }))
+  console.log(JSON.stringify({ status: 'ok', species: 13, nativeActionRange: '12-13', catActions: 9, echoVoices: 13, detail759: true, desktop: true, mobile: true, tv: true, animated: true }))
 } finally {
   await browser.close()
 }

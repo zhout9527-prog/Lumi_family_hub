@@ -231,6 +231,30 @@ try {
   await mobile.getByRole('button', { name: '关闭详情' }).click()
   check(Math.abs((await mobile.evaluate(() => window.scrollY)) - scrollBefore) <= 1, '关闭详情后滚动位置没有恢复')
 
+  const narrowDesktopContext = await createContext(browser, { width: 759, height: 903 })
+  const narrowDesktop = await narrowDesktopContext.newPage()
+  collectFailures(narrowDesktop, failures, 'narrow-desktop')
+  await narrowDesktop.goto(clientUrl, { waitUntil: 'networkidle' })
+  await login(narrowDesktop, childUsername, childPassword, 'child')
+  const narrowCard = narrowDesktop.locator('.content-card').nth(1)
+  await narrowCard.scrollIntoViewIfNeeded()
+  await narrowCard.locator('button.card-copy').click()
+  await narrowDesktop.locator('.detail-modal').waitFor()
+  const narrowModal = await narrowDesktop.locator('.detail-modal').evaluate((modal) => {
+    const content = modal.querySelector('.modal-content')
+    const cover = modal.querySelector('.modal-cover')
+    return {
+      modalClientWidth: modal.clientWidth,
+      modalScrollWidth: modal.scrollWidth,
+      contentWidth: content?.getBoundingClientRect().width ?? 0,
+      coverWidth: cover?.getBoundingClientRect().width ?? 0,
+    }
+  })
+  check(narrowModal.modalScrollWidth <= narrowModal.modalClientWidth + 1, '窄窗口详情弹窗仍然横向溢出')
+  check(narrowModal.contentWidth > 600 && narrowModal.coverWidth > 600, '窄窗口详情弹窗没有切换为正常的上下布局')
+  check(!await narrowDesktop.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '窄窗口详情页撑宽了应用画布')
+  await narrowDesktop.screenshot({ path: `${artifactsPath}client-detail-759x903-${runId}.png` })
+
   check(failures.length === 0, failures.join('\n'))
   console.log(JSON.stringify({
     status: 'ok',
@@ -244,6 +268,7 @@ try {
   }))
 
   await mobileContext.close()
+  await narrowDesktopContext.close()
   await wrongServerContext.close()
   await operatorClientContext.close()
   await serverContext.close()

@@ -16,6 +16,7 @@
 - 动画、图书、音频、益智游戏、创作和户外发现的统一目录
 - 家长 Client 独有的家庭海报墙，可在全部、本地和在线影片之间筛选、收藏并直接播放；儿童账户不返回该导航入口
 - Client 内置跨 Windows、Android 手机和 Android TV 的俄罗斯方块，规则内核统一，分别适配键盘、触控按钮与电视遥控器
+- Client 内置 13 种可领养 3D 伙伴，可读取并逐个/连续展示模型实际动作；“声声岛”支持所有伙伴本地录音复述和差异化声线，录音不上传 Server
 - Server 可配置视频、图书、音乐、图片、缓存、投递箱和隔离区目录，并扫描、导入、编辑、发布或归档本机资源
 - 支持开放媒体直链、B站按需播放、夸克公开媒体预览以及抖音等官方页面入口；在线项目只保存链接、封面与元数据，不长期占用家庭硬盘
 - B站空间、收藏夹和合集可保存为同步源，由 Worker 定时更新标题、封面和播放入口
@@ -99,8 +100,8 @@ npm run build
 | --- | --- | --- | --- |
 | Windows Server x64 | 含核心的 NSIS `setup.exe`、带 Core 运行库目录的便携包 | Windows 10 1803+ | 仅运维角色；自动监听家庭 API `2521` |
 | Windows Client x64 | 独立 EXE、NSIS `setup.exe` | Windows 10 1803+ | 儿童/家长界面；运维账户进入时降为家长权限；需要 WebView2 |
-| Android 手机 Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 小米 15 使用 ARM64 APK；已适配状态栏安全区 |
-| Android TV Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 同一 Client 带 Leanback 启动类别 |
+| Android 手机 Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 小米 15 使用 ARM64 APK；已适配状态栏安全区；声声岛首次使用请求麦克风权限 |
+| Android TV Client | ARM64 APK、通用 APK、AAB | Android 7.0 / API 24 | 同一 Client 带 Leanback 启动类别；无麦克风时伙伴功能会正常降级 |
 
 Android 的通用 APK 同时支持手机和电视。构建目录会额外生成文件名带 `tv` 的安装别名，方便拷贝到电视时辨认；它与同版本通用 APK 内容相同，安装后由设备自动选择触控或遥控器界面。
 

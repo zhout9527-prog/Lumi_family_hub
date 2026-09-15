@@ -16,6 +16,9 @@ $xml = Get-Content -LiteralPath $ManifestPath -Raw
 if ($xml -notmatch 'android:name="android\.permission\.INTERNET"') {
   $xml = [regex]::Replace($xml, '(<manifest\b[^>]*>)', "`$1`r`n    <uses-permission android:name=`"android.permission.INTERNET`" />", 1)
 }
+if ($xml -notmatch 'android:name="android\.permission\.RECORD_AUDIO"') {
+  $xml = [regex]::Replace($xml, '(<manifest\b[^>]*>)', "`$1`r`n    <uses-permission android:name=`"android.permission.RECORD_AUDIO`" />", 1)
+}
 if ($xml -notmatch 'android\.software\.leanback') {
   $features = "`r`n    <uses-feature android:name=`"android.software.leanback`" android:required=`"false`" />`r`n    <uses-feature android:name=`"android.hardware.touchscreen`" android:required=`"false`" />"
   $xml = [regex]::Replace($xml, '(<manifest\b[^>]*>)', "`$1$features", 1)
@@ -28,4 +31,4 @@ if ($xml -notmatch 'android\.intent\.category\.LEANBACK_LAUNCHER') {
 }
 
 Set-Content -LiteralPath $ManifestPath -Value $xml -Encoding utf8
-Write-Host "已为 Android 手机和电视补充 INTERNET、局域网 HTTP 与 Leanback 启动入口：$ManifestPath"
+Write-Host "已为 Android 手机和电视补充 INTERNET、RECORD_AUDIO、局域网 HTTP 与 Leanback 启动入口：$ManifestPath"

@@ -17,7 +17,10 @@ def test_child_can_adopt_one_pet_and_repeat_actions_are_idempotent(client: TestC
     assert len(payload["pet_species"]) == 13
     assert all(species["asset_path"].endswith((".gltf", ".glb")) for species in payload["pet_species"])
     assert all(species["animation_hint"] for species in payload["pet_species"])
-    assert next(species for species in payload["pet_species"] if species["id"] == "cat")["source"] == "Kenney Cube Pets"
+    cat = next(species for species in payload["pet_species"] if species["id"] == "cat")
+    assert cat["source"] == "Cat by J-Toastie · Poly Pizza"
+    assert cat["asset_path"] == "/pets/poly-pizza/cat.glb"
+    assert cat["license_url"].endswith("/by/3.0/")
 
     adopted = client.post(
         "/api/v1/pets/adopt",

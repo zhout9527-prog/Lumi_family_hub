@@ -6,7 +6,8 @@ from typing import Any
 # 模型由官方 CC0 资源组成，文件随客户端离线打包，不依赖外网才能显示。
 QUATERNIUS_SOURCE_URL = "https://quaternius.com/packs/ultimateanimatedanimals.html"
 QUATERNIUS_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/"
-KENNEY_SOURCE_URL = "https://kenney.nl/assets/cube-pets"
+POLY_PIZZA_CAT_URL = "https://poly.pizza/m/DJ9rpAhrh3"
+CC_BY_3_LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
 
 
 def _quaternius(
@@ -50,14 +51,14 @@ PET_SPECIES: tuple[dict[str, Any], ...] = (
         "id": "cat",
         "name": "小猫",
         "english_name": "Cat",
-        "source": "Kenney Cube Pets",
-        "source_url": KENNEY_SOURCE_URL,
-        "license_url": QUATERNIUS_LICENSE_URL,
-        "accent": "#8b82bd",
+        "source": "Cat by J-Toastie · Poly Pizza",
+        "source_url": POLY_PIZZA_CAT_URL,
+        "license_url": CC_BY_3_LICENSE_URL,
+        "accent": "#849cab",
         "emoji": "🐱",
-        "temperament": "安静，喜欢陪伴和聊天",
-        "asset_path": "/pets/kenney/cat.glb",
-        "animation_hint": "idle · walk · run · eat · dance",
+        "temperament": "温柔好奇，喜欢倾听和学你说话",
+        "asset_path": "/pets/poly-pizza/cat.glb",
+        "animation_hint": "IdleCat · Lumi Nod · Spin · Hop · Stretch · Listen · Talk · Sway · Bow",
     },
 )
 

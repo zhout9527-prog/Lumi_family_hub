@@ -1,0 +1,13 @@
+Cat 3D model attribution
+
+Title: Cat
+Creator: J-Toastie
+Source: https://poly.pizza/m/DJ9rpAhrh3
+License: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+License URL: https://creativecommons.org/licenses/by/3.0/
+
+Lumi distributes an offline copy of the original GLB. At runtime Lumi adjusts the
+material toward a soft blue-grey, non-metallic appearance and adds procedural nod,
+spin, hop, stretch, listen, talk, sway, and bow motions. The original IdleCat
+skeletal animation is preserved. These changes do not imply endorsement by the
+creator or Poly Pizza.

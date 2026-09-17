@@ -102,6 +102,30 @@ try {
   check(cleared, '方块割草初始棋盘没有可清除组合')
   await child.getByText(/个方块连锁清除/).waitFor()
   await child.getByRole('button', { name: '退出方块割草' }).click()
+  await child.getByRole('button', { name: /深岩淘金/ }).click()
+  await child.getByRole('dialog', { name: '深岩淘金' }).waitFor()
+  check(await child.locator('.gold-treasure[data-kind]').count() === 14, '深岩淘金没有生成完整宝藏')
+  const targetAngle = await child.locator('.gold-treasure[data-kind]').evaluateAll((items) => {
+    const target = items
+      .map((item) => {
+        const x = Number.parseFloat(item.style.left) * 10
+        const y = Number.parseFloat(item.style.top) * 6.5
+        return { angle: Math.atan2(x - 500, y - 104) * 180 / Math.PI, distance: Math.hypot(x - 500, y - 104) }
+      })
+      .filter(({ angle }) => Math.abs(angle) < 64)
+      .sort((left, right) => left.distance - right.distance)[0]
+    return target.angle
+  })
+  await child.waitForFunction((angle) => Math.abs(Number(document.querySelector('.gold-miner-stage')?.getAttribute('data-angle')) - angle) < 1.2, targetAngle)
+  await child.keyboard.press('ArrowDown')
+  await child.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) > 0, undefined, { timeout: 12_000 })
+  await child.keyboard.press('p')
+  await child.getByText('已暂停', { exact: true }).waitFor()
+  await child.keyboard.press('p')
+  check(await child.getByText('已暂停', { exact: true }).count() === 0, '电脑键盘没有恢复淘金游戏')
+  await child.screenshot({ path: `${artifactsPath}gold-miner-desktop-${runId}.png` })
+  await child.keyboard.press('Escape')
+  check(await child.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电脑端没有退出深岩淘金')
   await childContext.close()
 
   const mobileContext = await browser.newContext({
@@ -130,6 +154,13 @@ try {
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机方块割草横向溢出')
   await mobile.screenshot({ path: `${artifactsPath}block-mower-mobile-${runId}.png` })
   await mobile.getByRole('button', { name: '退出方块割草' }).click()
+  await mobile.getByRole('button', { name: /深岩淘金/ }).click()
+  await mobile.getByRole('dialog', { name: '深岩淘金' }).waitFor()
+  check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机深岩淘金横向溢出')
+  await mobile.locator('.gold-miner-stage').click()
+  await mobile.waitForFunction(() => document.querySelector('.gold-miner-stage')?.getAttribute('data-phase') !== 'swinging')
+  await mobile.screenshot({ path: `${artifactsPath}gold-miner-mobile-${runId}.png` })
+  await mobile.getByRole('button', { name: '退出深岩淘金' }).click()
   await mobileContext.close()
 
   const landscapeContext = await browser.newContext({
@@ -184,6 +215,15 @@ try {
   check(await tv.evaluate(() => document.activeElement?.classList.contains('block-mower-tile')) === true, '电视方块割草没有逐格移动焦点')
   await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
   check(await tv.getByRole('dialog', { name: '方块割草' }).count() === 0, '电视返回键没有退出方块割草')
+  await tv.getByRole('button', { name: /深岩淘金/ }).focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByRole('dialog', { name: '深岩淘金' }).waitFor()
+  check(await tv.evaluate(() => document.activeElement?.classList.contains('gold-miner-stage')) === true, '电视深岩淘金没有把焦点放到矿洞')
+  await tv.keyboard.press('ArrowDown')
+  await tv.waitForFunction(() => document.querySelector('.gold-miner-stage')?.getAttribute('data-phase') !== 'swinging')
+  await tv.screenshot({ path: `${artifactsPath}gold-miner-tv-${runId}.png` })
+  await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
+  check(await tv.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电视返回键没有退出深岩淘金')
   await tvContext.close()
 
   check(failures.length === 0, failures.join('\n'))

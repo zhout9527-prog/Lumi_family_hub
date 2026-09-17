@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
   "published_at": "2026-09-17T00:00:00Z",
-  "notes": "增加 12 种伙伴的个性化账户问候与声声岛试听，并补充本地语音助手实施路线。",
+  "notes": "新增跨 Windows、Android 手机与 Android TV 的深岩淘金游戏，支持触控、键盘和电视遥控器操作。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

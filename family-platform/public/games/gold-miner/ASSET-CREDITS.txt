@@ -1,0 +1,13 @@
+Lumi Deep Mine artwork credits
+================================
+
+Cave and ore texture sprites:
+  Roguelike Caves & Dungeons
+  Copyright: Kenney Vleugels / Kenney
+  Source: https://kenney.nl/assets/roguelike-caves-dungeons
+  License: Creative Commons Zero (CC0 1.0)
+  License URL: https://creativecommons.org/publicdomain/zero/1.0/
+
+The miner character, hook, treasure silhouettes, layout, effects and gameplay
+code are original Lumi project assets. No artwork from the commercial game
+"Gold Miner" is included.

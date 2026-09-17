@@ -71,6 +71,7 @@ import { VideoPlayer } from './VideoPlayer'
 import { PosterWall } from './PosterWall'
 import { GamesView, TetrisGame } from './TetrisGame'
 import { BlockMowerGame } from './BlockMowerGame'
+import { GoldMinerGame } from './GoldMinerGame'
 import { PetView } from './PetView'
 import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin } from './api'
 import './styles.css'
@@ -2793,6 +2794,7 @@ export default function App() {
   const [playback, setPlayback] = useState<{ item: ContentItem; url: string; mode: string; service?: string } | null>(null)
   const [tetrisOpen, setTetrisOpen] = useState(false)
   const [blockMowerOpen, setBlockMowerOpen] = useState(false)
+  const [goldMinerOpen, setGoldMinerOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: NoticeTone } | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
@@ -2812,6 +2814,7 @@ export default function App() {
     closePlayback()
     setTetrisOpen(false)
     setBlockMowerOpen(false)
+    setGoldMinerOpen(false)
     setMobileOpen(false)
   }, [closePlayback, state.role, store.user?.id])
 
@@ -2830,6 +2833,11 @@ export default function App() {
       if (blockMowerOpen) {
         event.preventDefault()
         setBlockMowerOpen(false)
+        return
+      }
+      if (goldMinerOpen) {
+        event.preventDefault()
+        setGoldMinerOpen(false)
         return
       }
       if (selectedItem) {
@@ -2856,7 +2864,7 @@ export default function App() {
     }
     window.addEventListener('lumi:native-back', handleNativeBack)
     return () => window.removeEventListener('lumi:native-back', handleNativeBack)
-  }, [activeNav, blockMowerOpen, closePlayback, mobileOpen, playback, query, selectedItem, state.role, tetrisOpen, videoOnly])
+  }, [activeNav, blockMowerOpen, closePlayback, goldMinerOpen, mobileOpen, playback, query, selectedItem, state.role, tetrisOpen, videoOnly])
 
   const items = store.catalog
 
@@ -3052,7 +3060,7 @@ export default function App() {
       return <PetView user={currentUser} pet={store.pet} species={store.petSpecies} canAdopt={store.petCanAdopt} connection={store.connection} busy={store.busy} onAdopt={store.adoptPet} onAction={(petId, action: PetAction) => store.performPetAction(petId, action)} />
     }
     if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
-      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} />
+      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} onPlayGoldMiner={() => { setSelectedItem(null); setPlayback(null); setGoldMinerOpen(true) }} />
     }
     if (activeNav === 'poster-wall' && state.role === 'guardian') {
       return <PosterWall items={items} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
@@ -3123,6 +3131,7 @@ export default function App() {
       {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={closePlayback} onSelectEpisode={handleLaunch} />}
       {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
       {blockMowerOpen && <BlockMowerGame onClose={() => setBlockMowerOpen(false)} />}
+      {goldMinerOpen && <GoldMinerGame onClose={() => setGoldMinerOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   )

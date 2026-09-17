@@ -252,12 +252,12 @@ export function TetrisGame({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function GamesView({ onPlayTetris, onPlayBlockMower }: { onPlayTetris: () => void; onPlayBlockMower: () => void }) {
+export function GamesView({ onPlayTetris, onPlayBlockMower, onPlayGoldMiner }: { onPlayTetris: () => void; onPlayBlockMower: () => void; onPlayGoldMiner: () => void }) {
   return (
     <div className="dashboard games-dashboard">
       <section className="page-intro games-intro">
         <div><span className="eyebrow">PLAYGROUND</span><h1>小游戏</h1><p>短短一局，动动脑筋。</p></div>
-        <span className="soft-badge"><Gamepad2 size={14} /> 2 个游戏</span>
+        <span className="soft-badge"><Gamepad2 size={14} /> 3 个游戏</span>
       </section>
       <div className="game-launch-grid-list">
         <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
@@ -281,6 +281,19 @@ export function GamesView({ onPlayTetris, onPlayBlockMower }: { onPlayTetris: ()
             <span className="eyebrow">COLOR GROVE</span>
             <strong>方块割草</strong>
             <small>连锁 · 观察 · 放松</small>
+            <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
+          </span>
+        </button>
+        <button type="button" className="game-launch-card gold-miner-launch-card" onClick={onPlayGoldMiner}>
+          <span className="gold-miner-launch-art" aria-hidden="true">
+            <span className="launch-miner"><i /><b /><em /></span>
+            <span className="launch-rope" /><span className="launch-claw" />
+            <span className="launch-gold launch-gold-one" /><span className="launch-gold launch-gold-two" /><span className="launch-diamond" />
+          </span>
+          <span className="game-launch-copy">
+            <span className="eyebrow">DEEP MINE</span>
+            <strong>深岩淘金</strong>
+            <small>时机 · 判断 · 收获</small>
             <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
           </span>
         </button>

@@ -17,7 +17,7 @@
     "active": true,
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 1400007
+      "versionCode": 1400008
     }
   }
 }

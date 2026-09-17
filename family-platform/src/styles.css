@@ -7282,3 +7282,737 @@ html.mobile-mode:fullscreen .player-community {
   .echo-species-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 14px 18px; }
   .echo-species { min-height: 104px; }
 }
+
+/* 深岩淘金：经典吊钩玩法使用原创角色与 CC0 洞穴纹理。 */
+.gold-miner-launch-card {
+  --game-accent: #f4b942;
+  --game-deep: #183c43;
+}
+
+.gold-miner-launch-card .game-launch-copy {
+  background: #f8f5ed;
+}
+
+.gold-miner-launch-art {
+  position: relative;
+  display: block;
+  min-height: 210px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #84c9cb 0 31%, #527174 31% 35%, #3b3f3d 35% 42%, #262c2d 42% 100%);
+}
+
+.gold-miner-launch-art::before,
+.gold-miner-launch-art::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.gold-miner-launch-art::before {
+  inset: 42% 0 0;
+  opacity: .13;
+  background: url('/games/gold-miner/kenney-caves.png') center / 492px 305px repeat;
+  image-rendering: pixelated;
+}
+
+.gold-miner-launch-art::after {
+  left: -4%;
+  right: -4%;
+  top: 31%;
+  height: 16px;
+  background: repeating-linear-gradient(90deg, #2c4c45 0 27px, #395e51 27px 51px, #223f3c 51px 78px);
+  clip-path: polygon(0 12%, 7% 42%, 14% 14%, 21% 54%, 31% 22%, 41% 62%, 53% 18%, 64% 55%, 74% 21%, 85% 62%, 100% 18%, 100% 100%, 0 100%);
+}
+
+.launch-miner {
+  position: absolute;
+  z-index: 3;
+  left: 22%;
+  top: 13%;
+  width: 50px;
+  height: 58px;
+}
+
+.launch-miner::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 5px;
+  width: 30px;
+  height: 28px;
+  border: 3px solid #432c24;
+  border-radius: 45% 45% 40% 40%;
+  background: #dfaa72;
+}
+
+.launch-miner i,
+.launch-miner b,
+.launch-miner em {
+  position: absolute;
+  display: block;
+}
+
+.launch-miner i {
+  z-index: 2;
+  left: 5px;
+  top: 0;
+  width: 43px;
+  height: 15px;
+  border: 3px solid #432c24;
+  border-radius: 12px 12px 5px 5px;
+  background: #f2bd3d;
+}
+
+.launch-miner b {
+  left: 13px;
+  top: 26px;
+  width: 29px;
+  height: 21px;
+  border-radius: 8px 8px 14px 14px;
+  background: #eef0dd;
+  box-shadow: 0 0 0 3px #432c24;
+}
+
+.launch-miner em {
+  left: 8px;
+  top: 44px;
+  width: 39px;
+  height: 20px;
+  border: 3px solid #432c24;
+  border-radius: 8px 8px 3px 3px;
+  background: #30666c;
+}
+
+.launch-rope {
+  position: absolute;
+  z-index: 2;
+  left: calc(22% + 43px);
+  top: 65px;
+  width: 3px;
+  height: 110px;
+  transform: rotate(-25deg);
+  transform-origin: top center;
+  background: #e6dcc6;
+  box-shadow: 1px 0 #5a4c42;
+}
+
+.launch-claw {
+  position: absolute;
+  z-index: 3;
+  left: calc(22% + 86px);
+  top: 162px;
+  width: 26px;
+  height: 20px;
+  border: solid #d5dde0;
+  border-width: 0 4px 4px;
+  transform: rotate(-25deg);
+  clip-path: polygon(0 0, 34% 76%, 50% 38%, 66% 76%, 100% 0, 84% 100%, 50% 68%, 16% 100%);
+  background: #d5dde0;
+}
+
+.launch-gold,
+.launch-diamond {
+  position: absolute;
+  z-index: 2;
+  display: block;
+}
+
+.launch-gold {
+  width: 48px;
+  height: 39px;
+  border: 4px solid #9e641e;
+  background: linear-gradient(145deg, #fff29a 0 17%, #f8c447 18% 62%, #ce8025 63% 100%);
+  clip-path: polygon(18% 2%, 72% 0, 98% 32%, 82% 88%, 35% 100%, 0 72%, 4% 25%);
+}
+
+.launch-gold-one { right: 12%; bottom: 13%; transform: rotate(9deg); }
+.launch-gold-two { right: 34%; bottom: 25%; width: 30px; height: 25px; transform: rotate(-12deg); }
+
+.launch-diamond {
+  right: 17%;
+  top: 43%;
+  width: 27px;
+  height: 34px;
+  transform: rotate(9deg);
+  clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%);
+  background: linear-gradient(135deg, #eaffff 0 24%, #62d7df 25% 58%, #258b9b 59% 100%);
+  filter: drop-shadow(0 0 6px rgba(112, 233, 239, .7));
+}
+
+.gold-miner-backdrop {
+  position: fixed;
+  z-index: 280;
+  inset: 0;
+  overflow: hidden;
+  color: #f8f2df;
+  background: #151b1d;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+
+.gold-miner-shell {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  outline: none;
+  background:
+    radial-gradient(circle at 73% 18%, rgba(71, 138, 140, .17), transparent 31%),
+    linear-gradient(145deg, #20292a, #14191b 58%, #22201c);
+}
+
+.gold-miner-header {
+  position: relative;
+  z-index: 5;
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: minmax(170px, .8fr) minmax(400px, 1.5fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 10px clamp(14px, 2.4vw, 32px);
+  border-bottom: 1px solid rgba(244, 185, 66, .22);
+  background: rgba(18, 24, 25, .94);
+  box-shadow: 0 7px 24px rgba(0, 0, 0, .22);
+}
+
+.gold-miner-brand,
+.gold-miner-stats,
+.gold-miner-header-actions,
+.gold-miner-control-note {
+  display: flex;
+  align-items: center;
+}
+
+.gold-miner-brand { gap: 10px; color: #f2c052; }
+.gold-miner-brand > div { display: grid; gap: 1px; }
+.gold-miner-brand strong { color: #fff8e7; font-size: 17px; }
+.gold-miner-brand span { color: #85b8b6; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+
+.gold-miner-stats {
+  min-width: 0;
+  justify-content: center;
+  gap: 7px;
+}
+
+.gold-miner-stats > span {
+  min-width: 92px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 6px;
+  color: #9eb4b2;
+  background: rgba(255,255,255,.04);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.gold-miner-stats strong { color: #fff1b9; font-size: 15px; font-variant-numeric: tabular-nums; }
+.gold-miner-stats .is-urgent { color: #ffb2a8; border-color: rgba(239, 111, 94, .4); animation: gold-timer-pulse .8s ease-in-out infinite alternate; }
+.gold-miner-stats .is-urgent strong { color: #ff9e8f; }
+
+.gold-miner-header-actions { justify-content: flex-end; gap: 7px; }
+
+.gold-miner-icon {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 6px;
+  color: #e8eee9;
+  background: #293235;
+  cursor: pointer;
+}
+
+.gold-miner-icon:hover { color: #fff0ac; border-color: rgba(244,185,66,.55); background: #333d3f; }
+.gold-miner-icon:focus-visible,
+.gold-miner-stage:focus-visible,
+.gold-miner-drop:focus-visible { outline: 3px solid #f4c957; outline-offset: 3px; }
+
+.gold-miner-main {
+  min-height: 0;
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  align-items: center;
+  gap: clamp(12px, 2vw, 25px);
+  padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.4vw, 30px);
+}
+
+.gold-miner-stage {
+  position: relative;
+  width: min(100%, calc((100vh - var(--safe-top) - var(--safe-bottom) - 116px) * 1.53846));
+  max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 116px);
+  aspect-ratio: 1000 / 650;
+  align-self: center;
+  overflow: hidden;
+  isolation: isolate;
+  padding: 0;
+  border: 2px solid #515956;
+  border-radius: 6px;
+  color: inherit;
+  background:
+    linear-gradient(180deg, #73afb2 0 14.5%, #44635f 14.6% 17.5%, #363b38 17.6% 24%, #2b3030 24% 100%);
+  box-shadow: 0 18px 46px rgba(0,0,0,.42), inset 0 0 50px rgba(0,0,0,.3);
+  cursor: crosshair;
+  appearance: none;
+}
+
+.gold-miner-stage::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 17.5% 0 0;
+  background:
+    radial-gradient(ellipse at 14% 17%, rgba(83, 103, 90, .34) 0 5%, transparent 6%),
+    radial-gradient(ellipse at 85% 31%, rgba(111, 82, 57, .3) 0 6%, transparent 7%),
+    radial-gradient(ellipse at 42% 69%, rgba(78, 103, 98, .25) 0 7%, transparent 8%),
+    linear-gradient(180deg, rgba(110, 92, 69, .22), transparent 18%),
+    repeating-linear-gradient(167deg, transparent 0 56px, rgba(255,255,255,.018) 57px 59px, transparent 60px 102px);
+}
+
+.gold-miner-stage::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: -2%;
+  right: -2%;
+  top: 14.5%;
+  height: 5%;
+  background: repeating-linear-gradient(90deg, #2c514a 0 42px, #3b6758 42px 82px, #28433f 82px 118px);
+  clip-path: polygon(0 12%, 6% 47%, 12% 16%, 18% 68%, 27% 22%, 37% 58%, 45% 14%, 53% 72%, 61% 20%, 68% 62%, 78% 12%, 87% 54%, 95% 20%, 100% 46%, 100% 100%, 0 100%);
+}
+
+.gold-miner-surface {
+  position: absolute;
+  z-index: 8;
+  inset: 0 0 auto;
+  height: 18%;
+  pointer-events: none;
+}
+
+.miner-character {
+  position: absolute;
+  left: calc(50% - 76px);
+  top: 6%;
+  width: 64px;
+  height: 91px;
+  transform-origin: 75% 78%;
+  animation: miner-breathe 1.8s ease-in-out infinite alternate;
+}
+
+.miner-character i { position: absolute; display: block; }
+
+.miner-hat {
+  z-index: 6;
+  left: 8px;
+  top: 0;
+  width: 48px;
+  height: 19px;
+  border: 3px solid #482c20;
+  border-radius: 18px 18px 5px 5px;
+  background: #f1bd42;
+  box-shadow: inset 0 -5px rgba(181,112,30,.35);
+}
+
+.miner-hat::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  bottom: -5px;
+  width: 62px;
+  height: 7px;
+  border: 3px solid #482c20;
+  border-radius: 5px;
+  background: #e6a92f;
+}
+
+.miner-head {
+  z-index: 4;
+  left: 13px;
+  top: 18px;
+  width: 39px;
+  height: 38px;
+  border: 3px solid #482c20;
+  border-radius: 43% 43% 45% 45%;
+  background: #dfa56e;
+}
+
+.miner-head::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2b2522;
+  box-shadow: 17px 0 #2b2522;
+}
+
+.miner-beard {
+  z-index: 5;
+  left: 14px;
+  top: 42px;
+  width: 38px;
+  height: 30px;
+  border: 3px solid #482c20;
+  border-radius: 9px 9px 20px 20px;
+  background: linear-gradient(90deg, #e8e2ce, #fff8df 52%, #d5cfbc);
+  clip-path: polygon(0 0, 100% 0, 86% 74%, 66% 67%, 50% 100%, 33% 68%, 13% 76%);
+}
+
+.miner-body {
+  z-index: 3;
+  left: 8px;
+  top: 64px;
+  width: 52px;
+  height: 27px;
+  border: 3px solid #482c20;
+  border-radius: 8px 8px 3px 3px;
+  background: #347077;
+  box-shadow: inset 0 -7px rgba(19,61,66,.6);
+}
+
+.miner-arm {
+  z-index: 2;
+  right: -12px;
+  top: 63px;
+  width: 28px;
+  height: 10px;
+  border: 3px solid #482c20;
+  border-radius: 8px;
+  transform: rotate(28deg);
+  background: #dfa56e;
+}
+
+.miner-cart {
+  position: absolute;
+  left: calc(50% - 153px);
+  top: 53%;
+  width: 75px;
+  height: 30px;
+  border: 4px solid #3c2d28;
+  border-radius: 3px 3px 13px 13px;
+  background: #a64f37;
+  box-shadow: inset 0 -8px #743626;
+}
+
+.miner-cart::before,
+.miner-cart::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #342a28;
+  border-radius: 50%;
+  background: #7e8582;
+}
+
+.miner-cart::before { left: 8px; }
+.miner-cart::after { right: 8px; }
+
+.miner-winch {
+  position: absolute;
+  z-index: 7;
+  left: calc(50% - 22px);
+  top: 57%;
+  width: 44px;
+  height: 44px;
+  border: 6px solid #383f40;
+  border-radius: 50%;
+  background: radial-gradient(circle, #c6d0cc 0 15%, #697573 16% 46%, #353d3c 47% 100%);
+  box-shadow: 0 2px 0 #202626;
+}
+
+.miner-winch::after {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 17px;
+  width: 29px;
+  height: 5px;
+  transform: rotate(-32deg);
+  transform-origin: 2px center;
+  border-radius: 4px;
+  background: #d6a945;
+}
+
+.gold-miner-hook-layer {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.gold-miner-rope { stroke: #e8ddc6; stroke-width: 4; filter: drop-shadow(1px 1px 0 rgba(0,0,0,.8)); }
+.gold-miner-claw { fill: #bbc5c3; stroke: #343c3c; stroke-width: 4; stroke-linejoin: round; }
+
+.gold-miner-cave-texture {
+  position: absolute;
+  z-index: 0;
+  inset: 21% 0 0;
+  opacity: .06;
+  background: url('/games/gold-miner/kenney-caves.png') center / 492px 305px repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.gold-miner-depth {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: .4;
+  background: linear-gradient(90deg, transparent, #765f47 15% 86%, transparent);
+}
+
+.depth-one { top: 51%; }
+.depth-two { top: 77%; }
+
+.gold-treasure {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotate(var(--treasure-rotate, 0deg));
+  pointer-events: none;
+  filter: drop-shadow(0 5px 3px rgba(0,0,0,.34));
+}
+
+.treasure-gold-large,
+.treasure-gold-medium,
+.treasure-gold-small {
+  border: clamp(2px, .35vw, 5px) solid #9e641f;
+  background: linear-gradient(145deg, #fff4a0 0 15%, #f7c84d 16% 57%, #d58b29 58% 100%);
+  clip-path: polygon(18% 2%, 74% 0, 98% 29%, 89% 77%, 67% 98%, 24% 93%, 1% 67%, 5% 23%);
+  box-shadow: inset -9px -8px rgba(153,84,18,.18), inset 8px 7px rgba(255,255,255,.26);
+}
+
+.treasure-diamond {
+  clip-path: polygon(50% 0, 100% 36%, 51% 100%, 0 36%);
+  background:
+    linear-gradient(60deg, transparent 45%, rgba(255,255,255,.7) 46% 52%, transparent 53%),
+    linear-gradient(135deg, #eaffff 0 23%, #73e6eb 24% 55%, #2691a0 56% 100%);
+  filter: drop-shadow(0 0 8px rgba(103,225,232,.66));
+}
+
+.treasure-rock {
+  border: clamp(2px, .3vw, 4px) solid #3b403f;
+  border-radius: 44% 55% 47% 53%;
+  background:
+    radial-gradient(circle at 32% 27%, #a6afaa 0 7%, transparent 8%),
+    radial-gradient(circle at 67% 64%, #525b58 0 10%, transparent 11%),
+    linear-gradient(145deg, #8d9894, #56605d 69%, #434a49);
+  box-shadow: inset -8px -9px rgba(27,34,33,.22);
+}
+
+.treasure-mystery {
+  border: clamp(2px, .32vw, 4px) solid #502f28;
+  border-radius: 48% 48% 38% 38%;
+  background: linear-gradient(135deg, #c46b4c, #8c3e36 67%);
+  color: #ffe398;
+  font-size: clamp(13px, 2vw, 26px);
+  font-weight: 950;
+}
+
+.treasure-mystery::before {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  top: -8%;
+  height: 20%;
+  border: 3px solid #502f28;
+  border-radius: 4px;
+  background: #e0b85f;
+}
+
+.gold-treasure.is-caught { opacity: 0; }
+.gold-treasure.caught-overlay { z-index: 7; transform: translate(-50%, -50%); }
+
+.gold-miner-score-flash {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 21%;
+  transform: translateX(-50%);
+  color: #ffe278;
+  font-size: clamp(23px, 4vw, 44px);
+  font-weight: 950;
+  text-shadow: 0 3px 0 #663d16, 0 6px 14px rgba(0,0,0,.55);
+  pointer-events: none;
+  animation: gold-score-rise 1.15s ease-out forwards;
+}
+
+.gold-miner-message {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  bottom: 2.5%;
+  max-width: 78%;
+  transform: translateX(-50%);
+  padding: 7px 13px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 5px;
+  color: #f5efdd;
+  background: rgba(19,24,24,.82);
+  font-size: clamp(10px, 1.3vw, 14px);
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.gold-miner-overlay {
+  position: absolute;
+  z-index: 15;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: rgba(15,21,22,.77);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.gold-miner-overlay strong { color: #ffe58d; font-size: clamp(29px, 5vw, 58px); }
+.gold-miner-overlay small { color: #d8e4df; font-size: clamp(13px, 1.8vw, 18px); }
+.gold-miner-overlay > span { margin-top: 8px; padding: 8px 14px; border-radius: 5px; color: #252a28; background: #f1c650; font-size: 13px; font-weight: 900; }
+
+.gold-miner-guide {
+  display: grid;
+  align-content: center;
+  gap: 17px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 7px;
+  background: #222b2c;
+  box-shadow: 0 15px 32px rgba(0,0,0,.24);
+}
+
+.gold-miner-guide .eyebrow { color: #75bfc1; }
+.gold-miner-guide h2 { margin: 3px 0 0; color: #fff2c4; font-size: 21px; }
+.gold-miner-guide ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gold-miner-guide li { min-height: 32px; display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: 7px; color: #c8d4d1; font-size: 12px; }
+.gold-miner-guide li strong { color: #ffe190; font-size: 11px; }
+.gold-miner-guide li i { width: 20px; height: 18px; display: grid; place-items: center; font-style: normal; }
+.legend-gold { border: 2px solid #9e641f; background: #f4bd42; clip-path: polygon(16% 3%, 76% 0, 100% 36%, 81% 96%, 18% 90%, 0 49%); }
+.legend-diamond { background: #67dce3; clip-path: polygon(50% 0,100% 35%,50% 100%,0 35%); }
+.legend-bag { border: 2px solid #60332d; border-radius: 48% 48% 38% 38%; color: #ffe08a; background: #a94e3e; font-size: 11px; font-weight: 900; }
+.legend-rock { border: 2px solid #3e4644; border-radius: 45%; background: #77817e; }
+
+.gold-miner-control-note {
+  gap: 8px;
+  color: #9fb1ae;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.gold-miner-control-note svg { flex: 0 0 auto; color: #f0bd4b; }
+.gold-miner-drop { width: 100%; min-height: 43px; justify-content: center; background: #e9b940; color: #272a27; }
+.gold-miner-drop:hover { background: #f4ca5c; }
+.gold-miner-drop:disabled { opacity: .42; cursor: not-allowed; }
+
+@keyframes gold-score-rise {
+  0% { opacity: 0; transform: translate(-50%, 14px) scale(.72); }
+  24% { opacity: 1; transform: translate(-50%, 0) scale(1.12); }
+  100% { opacity: 0; transform: translate(-50%, -56px) scale(.96); }
+}
+
+@keyframes gold-timer-pulse { to { box-shadow: 0 0 12px rgba(239,111,94,.22); } }
+@keyframes miner-breathe { to { transform: translateY(2px) rotate(1deg); } }
+
+@media (max-width: 980px) {
+  .gold-miner-header { grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; }
+  .gold-miner-brand span { display: none; }
+  .gold-miner-stats > span { min-width: 0; }
+  .gold-miner-stats > span:first-child,
+  .gold-miner-stats > span:last-child { display: none; }
+  .gold-miner-main { grid-template-columns: minmax(0,1fr) 188px; }
+  .gold-miner-guide { padding: 15px; }
+}
+
+@media (max-width: 720px) {
+  .gold-miner-header {
+    min-height: 58px;
+    grid-template-columns: minmax(0,1fr) auto;
+    padding: 7px 9px;
+  }
+  .gold-miner-brand { display: none; }
+  .gold-miner-stats { justify-content: flex-start; gap: 5px; overflow: hidden; }
+  .gold-miner-stats > span { min-height: 34px; padding: 4px 7px; font-size: 10px; }
+  .gold-miner-stats > span:first-child { display: flex; }
+  .gold-miner-stats > span:last-child { display: none; }
+  .gold-miner-stats strong { font-size: 13px; }
+  .gold-miner-icon { width: 36px; height: 36px; }
+  .gold-miner-header-actions .gold-miner-icon:nth-child(2) { display: none; }
+  .gold-miner-main {
+    grid-template-columns: minmax(0,1fr);
+    align-content: center;
+    gap: 9px;
+    padding: 9px;
+  }
+  .gold-miner-stage { max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 138px); }
+  .gold-miner-guide { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+  .gold-miner-guide > div:first-child,
+  .gold-miner-guide ul { display: none; }
+  .gold-miner-control-note { flex: 1; }
+  .gold-miner-drop { width: auto; min-width: 132px; }
+}
+
+@media (max-width: 480px) and (orientation: portrait) {
+  .gold-miner-header { align-items: stretch; }
+  .gold-miner-stats > span:first-child { display: none; }
+  .gold-miner-main { align-content: start; padding-top: max(12px, 4vh); }
+  .gold-miner-stage { width: 100%; height: min(72vh, calc(100vh - var(--safe-top) - var(--safe-bottom) - 150px)); min-height: 330px; max-height: 620px; aspect-ratio: auto; }
+  .gold-miner-guide { align-self: start; }
+  .gold-miner-control-note { font-size: 10px; }
+  .gold-miner-drop { min-width: 116px; min-height: 40px; padding-inline: 10px; }
+  .miner-character { transform: scale(.82); transform-origin: bottom right; }
+  .miner-cart { transform: scale(.82); transform-origin: bottom right; }
+  .miner-winch { transform: scale(.8); transform-origin: center; }
+  .gold-miner-message { bottom: 2%; }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .gold-miner-header { min-height: 50px; padding-block: 4px; }
+  .gold-miner-brand span { display: none; }
+  .gold-miner-main { grid-template-columns: minmax(0,1fr) 185px; padding-block: 7px; }
+  .gold-miner-stage { width: auto; height: 100%; max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 65px); justify-self: center; }
+  .gold-miner-guide { display: grid; padding: 11px; gap: 7px; }
+  .gold-miner-guide > div:first-child { display: block; }
+  .gold-miner-guide h2 { font-size: 16px; }
+  .gold-miner-guide ul { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
+  .gold-miner-guide li { min-height: 23px; grid-template-columns: 18px 1fr; font-size: 10px; }
+  .gold-miner-guide li strong { display: none; }
+  .gold-miner-guide li i { width: 15px; height: 14px; }
+  .gold-miner-control-note { font-size: 9px; line-height: 1.35; }
+  .gold-miner-drop { min-height: 36px; }
+}
+
+.tv-mode .gold-miner-header { min-height: 82px; }
+.tv-mode .gold-miner-main { width: min(1500px, 100%); grid-template-columns: minmax(0,1fr) 275px; }
+.tv-mode .gold-miner-guide { padding: 24px; }
+.tv-mode .gold-miner-icon:focus,
+.tv-mode .gold-miner-stage:focus,
+.tv-mode .gold-miner-drop:focus { outline: 4px solid #f9d36c; outline-offset: 4px; box-shadow: 0 0 0 7px rgba(40,90,91,.58); }
+
+@media (prefers-reduced-motion: reduce) {
+  .miner-character,
+  .gold-miner-stats .is-urgent { animation: none; }
+}

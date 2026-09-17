@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { AudioLines, Mic, Play, RefreshCw, ShieldCheck, Sparkles, Square, Volume2, Waves, X } from 'lucide-react'
+import { AudioLines, MessageCircle, Mic, Play, RefreshCw, ShieldCheck, Sparkles, Square, Volume2, Waves, X } from 'lucide-react'
 import { Pet3DViewer } from './Pet3DViewer'
 import type { PetSpecies } from './types'
 import { renderCharacterVoice, voiceProfileFor } from './voiceEffects'
+import { characterGreetingFor, chooseGreetingVoice } from './voiceGreetings'
 
 type EchoState = 'idle' | 'requesting' | 'recording' | 'processing' | 'ready' | 'playing' | 'error'
 
@@ -13,16 +14,17 @@ function recorderMimeType(): string | undefined {
     .find((type) => MediaRecorder.isTypeSupported(type))
 }
 
-export function EchoCompanion({ species, initialSpeciesId, onClose }: {
+export function EchoCompanion({ species, initialSpeciesId, listenerName, onClose }: {
   species: PetSpecies[]
   initialSpeciesId?: string
+  listenerName: string
   onClose: () => void
 }) {
   const [selectedId, setSelectedId] = useState(
     species.some((item) => item.id === initialSpeciesId) ? initialSpeciesId! : species[0]?.id ?? '',
   )
   const [state, setState] = useState<EchoState>('idle')
-  const [message, setMessage] = useState('点一下麦克风说句话，伙伴会用自己的角色声线演一遍。')
+  const [message, setMessage] = useState('伙伴会先向你问好；也可以录一句话，听它用角色声线演一遍。')
   const [animationNonce, setAnimationNonce] = useState(0)
   const [compareOriginal, setCompareOriginal] = useState(false)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -36,6 +38,9 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
   const maximumTimerRef = useRef(0)
   const captureAudioContextRef = useRef<AudioContext | null>(null)
   const renderTokenRef = useRef(0)
+  const greetingTokenRef = useRef(0)
+  const initialGreetingTimerRef = useRef(0)
+  const greetingUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const disposedRef = useRef(false)
   const selectedIdRef = useRef(selectedId)
   const onCloseRef = useRef(onClose)
@@ -45,6 +50,10 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
     [selectedId, species],
   )
   const voice = voiceProfileFor(selected?.id ?? '')
+  const greeting = useMemo(
+    () => characterGreetingFor(selected?.id ?? '', listenerName),
+    [listenerName, selected?.id],
+  )
 
   useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
@@ -60,12 +69,59 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
   }
 
   const stopPlayback = () => {
+    window.clearTimeout(initialGreetingTimerRef.current)
+    initialGreetingTimerRef.current = 0
+    greetingTokenRef.current += 1
+    greetingUtteranceRef.current = null
+    window.speechSynthesis?.cancel()
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
     audioRef.current = null
     clearTransientPlaybackUrl()
+  }
+
+  const playGreeting = (speciesId: string) => {
+    stopPlayback()
+    setCompareOriginal(false)
+    const nextGreeting = characterGreetingFor(speciesId, listenerName)
+    const synthesizer = window.speechSynthesis
+    if (!synthesizer || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      setState(rawRecordingRef.current ? 'ready' : 'idle')
+      setMessage('这台设备没有可用的系统语音，仍可录下你的话试听角色变声。')
+      return
+    }
+    const token = ++greetingTokenRef.current
+    const utterance = new SpeechSynthesisUtterance(nextGreeting.spokenText)
+    utterance.lang = 'zh-CN'
+    utterance.pitch = nextGreeting.pitch
+    utterance.rate = nextGreeting.rate
+    utterance.volume = 1
+    utterance.voice = chooseGreetingVoice(synthesizer.getVoices(), nextGreeting) ?? null
+    utterance.onstart = () => {
+      if (disposedRef.current || token !== greetingTokenRef.current) return
+      setAnimationNonce((value) => value + 1)
+      setState('playing')
+      setMessage(`${nextGreeting.title}正在和 ${listenerName.trim() || '小伙伴'} 打招呼…`)
+    }
+    utterance.onend = () => {
+      if (disposedRef.current || token !== greetingTokenRef.current) return
+      greetingUtteranceRef.current = null
+      setState(rawRecordingRef.current ? 'ready' : 'idle')
+      setMessage(`${nextGreeting.title}试听完成。换一位伙伴，可以直接比较它们的语气。`)
+    }
+    utterance.onerror = () => {
+      if (disposedRef.current || token !== greetingTokenRef.current) return
+      greetingUtteranceRef.current = null
+      setState(rawRecordingRef.current ? 'ready' : 'idle')
+      setMessage('系统语音这次没有播放成功，可以再点一次，或录下你的话试玩。')
+    }
+    greetingUtteranceRef.current = utterance
+    setState('playing')
+    setAnimationNonce((value) => value + 1)
+    setMessage(`${nextGreeting.title}正在准备…`)
+    synthesizer.speak(utterance)
   }
 
   const releaseCapture = () => {
@@ -161,9 +217,7 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
     if (recording) {
       void renderAndPlay(recording, speciesId)
     } else {
-      const next = voiceProfileFor(speciesId)
-      setState('idle')
-      setMessage(`${next.role}已经准备好。录一句话听听它的完整角色声线。`)
+      playGreeting(speciesId)
     }
   }
 
@@ -269,6 +323,9 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    initialGreetingTimerRef.current = window.setTimeout(() => {
+      if (!disposedRef.current && selectedIdRef.current) playGreeting(selectedIdRef.current)
+    }, 180)
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCloseRef.current()
     }
@@ -276,6 +333,7 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
     return () => {
       disposedRef.current = true
       renderTokenRef.current += 1
+      window.clearTimeout(initialGreetingTimerRef.current)
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', closeOnEscape)
       const recorder = recorderRef.current
@@ -306,11 +364,18 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
             <div className="echo-voice-title"><Volume2 size={18} /><div><strong>{selected.name} · {voice.label}</strong><span>{voice.role}</span></div></div>
             <p className="echo-voice-description">{voice.description}</p>
             <div className="echo-voice-tags" aria-label="声线特征">{voice.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+            <div className="echo-greeting-card">
+              <span>{greeting.title}</span>
+              <p className="echo-greeting-quote">“{greeting.spokenText}”</p>
+            </div>
             <div className={`echo-wave ${isRecording ? 'is-listening' : state === 'processing' ? 'is-processing' : ''}`} aria-hidden="true">
               {Array.from({ length: 9 }, (_, index) => <i key={index} style={{ '--echo-bar': index } as CSSProperties} />)}
             </div>
             <p className="echo-message" role="status">{message}</p>
             <div className="echo-controls">
+              <button type="button" className="button button-quiet echo-greeting-play" aria-label={`听${selected.name}打招呼`} onClick={() => playGreeting(selected.id)} disabled={isRecording || state === 'processing' || state === 'requesting'}>
+                <MessageCircle size={17} />听它打招呼
+              </button>
               <button type="button" className={`button button-primary echo-record ${isRecording ? 'is-recording' : ''}`} onClick={isRecording ? stopRecording : () => void startRecording()} disabled={disabled}>
                 {isRecording ? <Square size={17} fill="currentColor" /> : state === 'processing' ? <Sparkles size={18} /> : <Mic size={18} />}
                 {isRecording ? '说完了' : state === 'requesting' ? '等待授权' : state === 'processing' ? '正在塑造声线' : rawRecordingRef.current ? '重新录一句' : '开始说话'}
@@ -329,10 +394,11 @@ export function EchoCompanion({ species, initialSpeciesId, onClose }: {
         <div className="echo-species-grid" role="list" aria-label="声声岛伙伴声线">
           {species.map((item) => {
             const profile = voiceProfileFor(item.id)
+            const itemGreeting = characterGreetingFor(item.id, listenerName)
             const active = item.id === selected.id
             return (
-              <button key={item.id} type="button" role="listitem" className={`echo-species ${active ? 'is-selected' : ''}`} style={{ '--pet-accent': item.accent } as CSSProperties} aria-pressed={active} onClick={() => chooseSpecies(item.id)} disabled={isRecording || state === 'processing' || state === 'requesting'}>
-                <span aria-hidden="true">{item.emoji}</span><strong>{item.name}</strong><small>{profile.label}</small><em>{profile.tags[0]}</em>
+              <button key={item.id} type="button" role="listitem" className={`echo-species ${active ? 'is-selected' : ''}`} style={{ '--pet-accent': item.accent } as CSSProperties} aria-pressed={active} title={`${itemGreeting.title}：${itemGreeting.spokenText}`} data-greeting={itemGreeting.spokenText} onClick={() => chooseSpecies(item.id)} disabled={isRecording || state === 'processing' || state === 'requesting'}>
+                <span aria-hidden="true">{item.emoji}</span><strong>{item.name}</strong><small>{profile.label}</small><em>{itemGreeting.catchphrase}</em><b>点按试听</b>
               </button>
             )
           })}

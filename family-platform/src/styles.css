@@ -7200,6 +7200,9 @@ html.mobile-mode:fullscreen .player-community {
 .echo-voice-description { max-width: 340px; margin: -7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .echo-voice-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
 .echo-voice-tags span { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 30%, var(--line)); border-radius: 999px; color: var(--pet-accent, var(--accent)); background: color-mix(in srgb, var(--pet-accent, var(--accent)) 7%, white); font-size: 8px; font-weight: 700; }
+.echo-greeting-card { width: min(350px, 100%); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 24%, var(--line)); background: color-mix(in srgb, var(--pet-accent, var(--accent)) 6%, white); text-align: left; }
+.echo-greeting-card > span { color: var(--pet-accent, var(--accent)); font-size: 8px; font-weight: 800; letter-spacing: .08em; }
+.echo-greeting-quote { margin: 5px 0 0; color: var(--ink); font-family: Georgia, "Noto Serif SC", serif; font-size: 10px; line-height: 1.65; }
 .echo-wave { display: flex; width: min(260px, 90%); height: 64px; align-items: center; justify-content: center; gap: 7px; }
 .echo-wave i { width: 5px; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--pet-accent, var(--accent)) 62%, #fff); transition: height .2s ease; }
 .echo-wave.is-listening i { animation: echo-wave 720ms ease-in-out infinite alternate; animation-delay: calc(var(--echo-bar) * -77ms); }
@@ -7217,11 +7220,12 @@ html.mobile-mode:fullscreen .player-community {
 .echo-picker-heading strong { color: var(--ink); font-size: 13px; }
 .echo-picker-heading > span { color: var(--muted); font-size: 10px; }
 .echo-species-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; padding: 0 22px 22px; }
-.echo-species { display: grid; min-width: 0; min-height: 81px; place-items: center; align-content: center; gap: 2px; padding: 7px 4px; border: 1px solid var(--line); border-top: 3px solid var(--pet-accent, var(--accent)); color: var(--ink); background: #fff; cursor: pointer; }
+.echo-species { display: grid; min-width: 0; min-height: 108px; place-items: center; align-content: center; gap: 2px; padding: 8px 5px; border: 1px solid var(--line); border-top: 3px solid var(--pet-accent, var(--accent)); color: var(--ink); background: #fff; cursor: pointer; }
 .echo-species > span { font-size: 22px; }
 .echo-species strong { max-width: 100%; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .echo-species small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.echo-species em { max-width: 100%; overflow: hidden; color: var(--pet-accent, var(--accent)); font-size: 7px; font-style: normal; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.echo-species em { display: -webkit-box; max-width: 100%; min-height: 18px; overflow: hidden; color: var(--pet-accent, var(--accent)); font-size: 7px; font-style: normal; font-weight: 700; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.echo-species b { margin-top: 2px; color: var(--muted); font-size: 7px; font-weight: 600; }
 .echo-species:hover:not(:disabled),
 .echo-species:focus-visible,
 .echo-species.is-selected { border-color: var(--pet-accent, var(--accent)); outline: none; background: color-mix(in srgb, var(--pet-accent, var(--accent)) 11%, white); box-shadow: inset 0 0 0 1px var(--pet-accent, var(--accent)); }
@@ -7276,5 +7280,5 @@ html.mobile-mode:fullscreen .player-community {
   .echo-wave { height: 48px; }
   .echo-picker-heading { padding: 14px 14px 9px; }
   .echo-species-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 14px 18px; }
-  .echo-species { min-height: 75px; }
+  .echo-species { min-height: 104px; }
 }

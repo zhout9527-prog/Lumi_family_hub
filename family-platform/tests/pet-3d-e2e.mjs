@@ -238,9 +238,50 @@ try {
       play() { setTimeout(() => this.onended?.(), 80); return Promise.resolve() }
       pause() {}
     }
+    class FakeSpeechSynthesisUtterance {
+      constructor(text) {
+        this.text = text
+        this.lang = ''
+        this.pitch = 1
+        this.rate = 1
+        this.volume = 1
+        this.voice = null
+        this.onstart = null
+        this.onend = null
+        this.onerror = null
+      }
+    }
+    const fakeVoices = Array.from({ length: 12 }, (_, index) => ({
+      default: index === 0,
+      lang: 'zh-CN',
+      localService: true,
+      name: `Lumi Test Voice ${index + 1}`,
+      voiceURI: `lumi-test-${index + 1}`,
+    }))
+    const fakeSpeechSynthesis = {
+      speaking: false,
+      pending: false,
+      paused: false,
+      getVoices: () => fakeVoices,
+      cancel() { this.speaking = false },
+      pause() { this.paused = true },
+      resume() { this.paused = false },
+      speak(utterance) {
+        this.speaking = true
+        window.__lumiLastGreeting = { text: utterance.text, pitch: utterance.pitch, rate: utterance.rate, voice: utterance.voice?.name ?? '' }
+        setTimeout(() => utterance.onstart?.(), 5)
+        setTimeout(() => { this.speaking = false; utterance.onend?.() }, 80)
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() { return true },
+      onvoiceschanged: null,
+    }
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } })
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder })
     Object.defineProperty(window, 'Audio', { configurable: true, value: FakeAudio })
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: FakeSpeechSynthesisUtterance })
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: fakeSpeechSynthesis })
   })
   collectFailures(desktop, failures, 'desktop')
   await login(desktop)
@@ -260,8 +301,19 @@ try {
   await desktop.getByRole('button', { name: /停止连续展示/ }).click()
   await desktop.getByRole('button', { name: /去声声岛玩/ }).click()
   await desktop.locator('.echo-modal').waitFor()
+  await desktop.getByText('林间邀请试听完成。换一位伙伴，可以直接比较它们的语气。').waitFor()
   check(await desktop.locator('.echo-species').count() === 12, '声声岛没有提供全部 12 种伙伴声线')
   check(await desktop.getByText('小猫', { exact: true }).count() === 0, '已移除的小猫仍出现在伙伴目录')
+  const greetingSamples = await desktop.locator('.echo-species').evaluateAll((items) => items.map((item) => item.getAttribute('data-greeting') ?? ''))
+  check(new Set(greetingSamples).size === 12, '12 种伙伴没有各自独立的试听台词')
+  check(greetingSamples.every((line) => line.includes('小豆')), '伙伴试听台词没有代入当前账户名')
+  check((await desktop.locator('.echo-greeting-quote').textContent())?.includes('小豆'), '声声岛没有展示当前伙伴的个性化台词')
+  const deerGreeting = await desktop.evaluate(() => window.__lumiLastGreeting)
+  check(deerGreeting?.text.includes('Hello，小豆'), '小鹿展示时没有自动读出账户名和中英文问候')
+  await desktop.locator('.echo-species').filter({ hasText: '小狐狸' }).click()
+  await desktop.getByText('侦探暗号试听完成。换一位伙伴，可以直接比较它们的语气。').waitFor()
+  const foxGreeting = await desktop.evaluate(() => window.__lumiLastGreeting)
+  check(foxGreeting?.text !== deerGreeting?.text && foxGreeting?.pitch !== deerGreeting?.pitch, '切换伙伴后没有使用不同台词和说话风格')
   await desktop.getByRole('button', { name: '开始说话' }).click()
   await desktop.getByRole('button', { name: '说完了' }).waitFor()
   await desktop.getByRole('button', { name: '说完了' }).click()
@@ -359,7 +411,7 @@ try {
   await narrowContext.close()
 
   check(failures.length === 0, failures.join('\n'))
-  console.log(JSON.stringify({ status: 'ok', species: 12, nativeActionRange: '12-13', echoVoices: 12, characterVoice: true, detail759: true, desktop: true, mobile: true, tv: true, animated: true }))
+  console.log(JSON.stringify({ status: 'ok', species: 12, nativeActionRange: '12-13', echoVoices: 12, greetingPreviews: true, characterVoice: true, detail759: true, desktop: true, mobile: true, tv: true, animated: true }))
 } finally {
   await browser.close()
 }

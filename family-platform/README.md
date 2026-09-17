@@ -16,7 +16,8 @@
 - 动画、图书、音频、益智游戏、创作和户外发现的统一目录
 - 家长 Client 独有的家庭海报墙，可在全部、本地和在线影片之间筛选、收藏并直接播放；儿童账户不返回该导航入口
 - Client 内置跨 Windows、Android 手机和 Android TV 的俄罗斯方块，规则内核统一，分别适配键盘、触控按钮与电视遥控器
-- Client 内置 12 种可领养 3D 伙伴，可读取并逐个/连续展示模型实际动作；“声声岛”使用 PSOLA 变频和本地音频效果生成每种伙伴独立的角色声线，保留原话节奏，录音不上传 Server
+- Client 内置 12 种可领养 3D 伙伴，可读取并逐个/连续展示模型实际动作；“声声岛”会按当前账户显示并朗读 12 套不同的中英文个性问候，选择伙伴时可直接比较台词、语气、语速和音高
+- 声声岛使用 PSOLA 变频和本地音频效果生成每种伙伴独立的角色声线，保留原话节奏，录音不上传 Server；未录音时使用设备自带中文语音完成问候试听，系统缺少中文语音时仍显示完整台词
 - 声声岛的音高迁移基于 MIT 许可的 `@audio/shift-psola`，许可原文随应用保存在 `public/licenses/AUDIO-SHIFT-MIT.txt`
 - Server 可配置视频、图书、音乐、图片、缓存、投递箱和隔离区目录，并扫描、导入、编辑、发布或归档本机资源
 - 支持开放媒体直链、B站按需播放、夸克公开媒体预览以及抖音等官方页面入口；在线项目只保存链接、封面与元数据，不长期占用家庭硬盘
@@ -29,6 +30,12 @@
 - PC 原生启动脚本、备份脚本、Worker 单次运行脚本和开机任务脚本
 - Docker Compose 基础栈，以及可选的 Jellyfin/Kavita/Audiobookshelf 服务
 - 原生跨平台壳层：Tauri 2 Windows 独立 EXE/NSIS `setup.exe`、Android 手机 APK/AAB、Android TV Leanback 入口
+
+### 伙伴语音助手的免费路线
+
+语音助手可以先做成不产生云 API 费用的家庭主机版：Client 按住说话，Server 使用 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 或经模型许可复核后的 [FunASR](https://github.com/modelscope/FunASR) 完成本地识别；[Qwen3](https://github.com/QwenLM/Qwen3) 小参数量量化模型通过 [llama.cpp](https://github.com/ggml-org/llama.cpp) 回答；[Kokoro](https://github.com/hexgrad/kokoro) 朗读，再经 Lumi 的 12 套角色声线参数生成伙伴声音。显卡较好的家庭主机可选 [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) 提高中文表现和流式体验。免费本地版不等于零硬件成本，普通 CPU 上的延迟会高于云端实时通话，因此首版采用按住说话、分句返回和随时打断。
+
+[Qwen2.5-Omni](https://github.com/QwenLM/Qwen2.5-Omni) 与 [GLM-4-Voice](https://github.com/THUDM/GLM-4-Voice) 可作为端到端语音研究和高性能机器实验方案，但资源需求更高，且具体模型权重许可仍需在发布前逐项确认。豆包实时语音保留为家长主动开启的云端增强 Provider；试用额度随账号和活动变化，不能作为永久免费承诺。所有链路仍由 Server 执行儿童安全、家长规则、费用上限和最小化记忆，Client 不保存供应商密钥。
 
 平台不会自动登录百度网盘、夸克网盘或 UP 主账号，也不会绕过付费、DRM、验证码或站点保护。家长可以使用对应平台的官方客户端手动下载/转存到 `inbox\cloud`，平台只负责后续校验、隔离、审核和入库。Bilibili 公开视频可以由 Server 的运维队列调用内置的 `yt-dlp + FFmpeg` 下载；任务仍必须经过家庭使用权利确认、隔离扫描和人工审核，但不强制填写公开的权利证明链接。来源地址或授权说明只是可选的内部备注，儿童端看不到这些信息和下载操作。
 
@@ -56,20 +63,20 @@ Windows/Android/Android TV Client（儿童、家长）
 日常使用不要求安装 Python、Node.js 或编译工具。优先运行：
 
 ```text
-artifacts\windows\Lumi-Server_1.4.6_x64-setup.exe
+artifacts\windows\Lumi-Server_1.4.7_x64-setup.exe
 ```
 
 不想安装时，完整保留并运行便携目录；其中两个 EXE 缺一不可：
 
 ```text
-artifacts\windows\Lumi-Server_1.4.6_x64-portable\
+artifacts\windows\Lumi-Server_1.4.7_x64-portable\
   lumi-server.exe
   lumi-server-core\
     lumi-server-core.exe
     （Server Core 运行库文件）
 ```
 
-`artifacts\windows\lumi-server_1.4.6_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
+`artifacts\windows\lumi-server_1.4.7_x64.exe` 可以直接在产物目录中双击，但必须和同目录的 `lumi-server-core\` 文件夹一起保留；移动到其他电脑时应整体复制便携目录。安装版会自动把两部分安装到正确位置。
 
 关闭 Server 主窗口右上角的叉号只会把它收进系统托盘，家庭服务仍会运行；需要让手机和其他 Client 断开时，请在托盘菜单选择“退出并停止服务”。即使 GUI 被任务管理器强制结束，Core 也会检测父进程退出并停止，不再留下单独监听 `2521` 的后台进程。
 
@@ -95,7 +102,7 @@ npm run build
 
 ## 原生客户端与跨平台发布
 
-前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows、Android 发布版本统一为 `1.4.6`。
+前端组件只维护一份，但使用 Client/Server 两个编译模式生成不同产品。Client 本身不携带数据库或家庭媒体库；Server 安装包会携带并自动启动服务端核心。Windows Client 默认连接本机 `127.0.0.1:2521`，Android Client 会记住首次填写的家庭主机地址。当前 Windows、Android 发布版本统一为 `1.4.7`。
 
 | 目标 | 产物 | 最低系统 | 说明 |
 | --- | --- | --- | --- |

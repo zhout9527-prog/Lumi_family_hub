@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Lumi Server",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "identifier": "cn.lumi.familyhub.server",
   "build": {
     "frontendDist": "../dist-server",

@@ -1,7 +1,7 @@
 {
   "name": "family-platform",
   "private": true,
-  "version": "1.4.6",
+  "version": "1.4.7",
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js --mode client",

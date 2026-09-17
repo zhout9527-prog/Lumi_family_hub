@@ -226,6 +226,7 @@ export function PetView({
     <EchoCompanion
       species={species}
       initialSpeciesId={pet?.species ?? selected?.id}
+      listenerName={user.displayName}
       onClose={() => setEchoOpen(false)}
     />
   ) : null

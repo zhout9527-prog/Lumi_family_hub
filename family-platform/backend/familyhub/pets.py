@@ -50,6 +50,7 @@ def pet_to_dict(db: Session, pet: Pet) -> dict[str, Any]:
         "owner_user_id": pet.owner_user_id,
         "owner_name": owner.display_name if owner else "家庭成员",
         "name": pet.name,
+        # 目录下线的旧品种会映射到仍受支持的真实模型，客户端不会收到空资源。
         "species": species["id"],
         "species_name": species["name"],
         "species_english_name": species["english_name"],
@@ -89,7 +90,8 @@ def adopt(db: Session, principal: SessionPrincipal, *, species_id: str, name: st
     if principal.role != "child":
         raise PetServiceError(403, "只有儿童账号可以领养自己的伙伴")
     species = get_species(species_id)
-    if species is None:
+    # 旧数据库中的下线品种可以兼容展示，但不能再通过领养接口创建。
+    if species is None or species["id"] != species_id:
         raise PetServiceError(422, "请选择有效的伙伴形象")
     cleaned_name = " ".join(name.strip().split())
     if not 1 <= len(cleaned_name) <= 24:
@@ -104,7 +106,7 @@ def adopt(db: Session, principal: SessionPrincipal, *, species_id: str, name: st
         household_id=principal.household_id,
         owner_user_id=principal.id,
         name=cleaned_name,
-        species=species_id,
+        species=species["id"],
         personality="curious",
         growth_stage="初遇",
         growth_points=0,

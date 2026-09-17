@@ -7197,10 +7197,15 @@ html.mobile-mode:fullscreen .player-community {
 .echo-voice-title > div { display: grid; gap: 2px; }
 .echo-voice-title strong { color: var(--ink); font-size: 16px; }
 .echo-voice-title span { color: var(--muted); font-size: 10px; }
+.echo-voice-description { max-width: 340px; margin: -7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.echo-voice-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.echo-voice-tags span { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--pet-accent, var(--accent)) 30%, var(--line)); border-radius: 999px; color: var(--pet-accent, var(--accent)); background: color-mix(in srgb, var(--pet-accent, var(--accent)) 7%, white); font-size: 8px; font-weight: 700; }
 .echo-wave { display: flex; width: min(260px, 90%); height: 64px; align-items: center; justify-content: center; gap: 7px; }
 .echo-wave i { width: 5px; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--pet-accent, var(--accent)) 62%, #fff); transition: height .2s ease; }
 .echo-wave.is-listening i { animation: echo-wave 720ms ease-in-out infinite alternate; animation-delay: calc(var(--echo-bar) * -77ms); }
+.echo-wave.is-processing i { animation: echo-processing 1.1s ease-in-out infinite; animation-delay: calc(var(--echo-bar) * -88ms); }
 @keyframes echo-wave { from { height: 9px; opacity: .55; } to { height: calc(18px + var(--echo-bar) * 3px); opacity: 1; } }
+@keyframes echo-processing { 0%, 100% { height: 8px; opacity: .35; transform: translateY(7px); } 50% { height: 34px; opacity: 1; transform: translateY(-3px); } }
 .echo-message { min-height: 35px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .echo-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .echo-record.is-recording { border-color: #bf5d50; background: #bf5d50; animation: echo-record-pulse 1.2s ease-in-out infinite; }
@@ -7211,11 +7216,12 @@ html.mobile-mode:fullscreen .player-community {
 .echo-picker-heading > div { display: flex; align-items: center; gap: 8px; color: var(--accent); }
 .echo-picker-heading strong { color: var(--ink); font-size: 13px; }
 .echo-picker-heading > span { color: var(--muted); font-size: 10px; }
-.echo-species-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; padding: 0 22px 22px; }
+.echo-species-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; padding: 0 22px 22px; }
 .echo-species { display: grid; min-width: 0; min-height: 81px; place-items: center; align-content: center; gap: 2px; padding: 7px 4px; border: 1px solid var(--line); border-top: 3px solid var(--pet-accent, var(--accent)); color: var(--ink); background: #fff; cursor: pointer; }
 .echo-species > span { font-size: 22px; }
 .echo-species strong { max-width: 100%; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .echo-species small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.echo-species em { max-width: 100%; overflow: hidden; color: var(--pet-accent, var(--accent)); font-size: 7px; font-style: normal; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .echo-species:hover:not(:disabled),
 .echo-species:focus-visible,
 .echo-species.is-selected { border-color: var(--pet-accent, var(--accent)); outline: none; background: color-mix(in srgb, var(--pet-accent, var(--accent)) 11%, white); box-shadow: inset 0 0 0 1px var(--pet-accent, var(--accent)); }

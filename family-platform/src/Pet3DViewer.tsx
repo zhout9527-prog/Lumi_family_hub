@@ -6,7 +6,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { PetAction } from './types'
 
 type ViewerAnimation = PetAction | 'idle'
-type ProceduralAnimation = 'nod' | 'spin' | 'hop' | 'stretch' | 'listen' | 'talk' | 'sway' | 'bow'
 
 export interface PetAnimationInfo {
   id: string
@@ -24,17 +23,6 @@ const ACTION_CLIPS: Record<ViewerAnimation, string[]> = {
   story: ['idle_2', 'gesture-positive', 'idle'],
   talk: ['gesture-negative', 'idle_hitreact2', 'idle_2_headlow', 'idle_2'],
 }
-
-const CAT_PROCEDURAL_ANIMATIONS: Array<{ kind: ProceduralAnimation; label: string; duration: number }> = [
-  { kind: 'nod', label: '点头问好', duration: 2.4 },
-  { kind: 'spin', label: '开心转圈', duration: 3.1 },
-  { kind: 'hop', label: '轻轻蹦跳', duration: 2.6 },
-  { kind: 'stretch', label: '伸个懒腰', duration: 3.2 },
-  { kind: 'listen', label: '歪头倾听', duration: 2.8 },
-  { kind: 'talk', label: '跟你说话', duration: 3.4 },
-  { kind: 'sway', label: '开心摇摆', duration: 3 },
-  { kind: 'bow', label: '礼貌鞠躬', duration: 2.5 },
-]
 
 const FRIENDLY_CLIP_LABELS: Record<string, string> = {
   attack: '勇敢挥爪',
@@ -86,7 +74,6 @@ function isLoopingClip(clip: THREE.AnimationClip): boolean {
   const key = normalized(clip.name)
   return ['idle', 'idle2', 'idleheadlow', 'idle2headlow', 'static', 'walk', 'run', 'gallop', 'eating', 'eat', 'dance']
     .includes(key)
-    || key.endsWith('idlecat')
 }
 
 function releaseObject(root: THREE.Object3D): void {
@@ -103,16 +90,8 @@ function releaseObject(root: THREE.Object3D): void {
   })
 }
 
-function resetProceduralTransform(pivot: THREE.Group): void {
-  pivot.position.set(0, 0, 0)
-  pivot.rotation.x = 0
-  pivot.rotation.z = 0
-  pivot.scale.set(1, 1, 1)
-}
-
 export function Pet3DViewer({
   assetPath,
-  speciesId,
   name,
   accent,
   animation = 'idle',
@@ -137,17 +116,10 @@ export function Pet3DViewer({
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const clipsRef = useRef<THREE.AnimationClip[]>([])
   const currentActionRef = useRef<THREE.AnimationAction | null>(null)
-  const modelPivotRef = useRef<THREE.Group | null>(null)
   const turnTargetRef = useRef<number | null>(null)
   const playAbstractRef = useRef<(requested: ViewerAnimation) => void>(() => undefined)
   const playShowcaseRef = useRef<(requested: string) => void>(() => undefined)
   const onAnimationsChangeRef = useRef(onAnimationsChange)
-  const proceduralRef = useRef<{
-    kind: ProceduralAnimation
-    startedAt: number
-    duration: number
-    baseRotationY: number
-  } | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>(assetPath ? 'loading' : 'error')
   const [clipName, setClipName] = useState('准备动作')
 
@@ -206,14 +178,11 @@ export function Pet3DViewer({
     let loadedRoot: THREE.Object3D | null = null
     const clock = new THREE.Clock()
     const pivot = new THREE.Group()
-    modelPivotRef.current = pivot
     scene.add(pivot)
 
     const playNative = (clip: THREE.AnimationClip, loop: boolean, label = petAnimationLabel(clip.name)) => {
       const mixer = mixerRef.current
       if (!mixer) return
-      resetProceduralTransform(pivot)
-      proceduralRef.current = null
       const next = mixer.clipAction(clip)
       if (currentActionRef.current !== next) currentActionRef.current?.fadeOut(0.18)
       next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.18)
@@ -227,32 +196,7 @@ export function Pet3DViewer({
       setClipName(label)
     }
 
-    const playProcedural = (kind: ProceduralAnimation) => {
-      const definition = CAT_PROCEDURAL_ANIMATIONS.find((item) => item.kind === kind)
-      if (!definition) return
-      const idle = pickClip(clipsRef.current, 'idle')
-      if (idle) playNative(idle, true, definition.label)
-      proceduralRef.current = {
-        kind,
-        startedAt: clock.elapsedTime,
-        duration: definition.duration,
-        baseRotationY: pivot.rotation.y,
-      }
-      setClipName(definition.label)
-    }
-
     const playAbstract = (requested: ViewerAnimation) => {
-      if (speciesId === 'cat' && requested !== 'idle') {
-        const catActions: Record<PetAction, ProceduralAnimation> = {
-          feed: 'stretch',
-          play: 'hop',
-          groom: 'sway',
-          story: 'listen',
-          talk: 'talk',
-        }
-        playProcedural(catActions[requested])
-        return
-      }
       const clip = pickClip(clipsRef.current, requested)
       if (!clip) return
       playNative(clip, requested === 'idle' || isLoopingClip(clip))
@@ -260,10 +204,6 @@ export function Pet3DViewer({
     }
 
     const playShowcase = (requested: string) => {
-      if (requested.startsWith('lumi:')) {
-        playProcedural(requested.slice('lumi:'.length) as ProceduralAnimation)
-        return
-      }
       const sourceName = requested.startsWith('native:') ? requested.slice('native:'.length) : requested
       const clip = clipsRef.current.find((item) => item.name === sourceName)
       if (clip) playNative(clip, isLoopingClip(clip))
@@ -286,15 +226,6 @@ export function Pet3DViewer({
           if (!mesh.isMesh) return
           mesh.castShadow = !compact
           mesh.receiveShadow = !compact
-          if (speciesId === 'cat') {
-            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-            materials.filter(Boolean).forEach((material) => {
-              const standard = material as THREE.MeshStandardMaterial
-              if (standard.color) standard.color.lerp(new THREE.Color('#a8b8c5'), 0.12)
-              if ('roughness' in standard) standard.roughness = Math.max(0.68, standard.roughness ?? 0.68)
-              if ('metalness' in standard) standard.metalness = 0
-            })
-          }
         })
         const bounds = new THREE.Box3().setFromObject(loadedRoot)
         const size = bounds.getSize(new THREE.Vector3())
@@ -312,15 +243,6 @@ export function Pet3DViewer({
           duration: Math.max(0.8, clip.duration || 2),
           native: true,
         }))
-        if (speciesId === 'cat') {
-          animations.push(...CAT_PROCEDURAL_ANIMATIONS.map((item) => ({
-            id: `lumi:${item.kind}`,
-            label: item.label,
-            sourceName: `Lumi ${item.kind}`,
-            duration: item.duration,
-            native: false,
-          })))
-        }
         onAnimationsChangeRef.current?.(animations)
         mixerRef.current.addEventListener('finished', () => playAbstract('idle'))
         playAbstract('idle')
@@ -351,36 +273,8 @@ export function Pet3DViewer({
       frame = window.requestAnimationFrame(render)
       const delta = Math.min(clock.getDelta(), 0.05)
       mixerRef.current?.update(delta)
-      const procedural = proceduralRef.current
-      if (procedural) {
-        const progress = Math.min(1, Math.max(0, (clock.elapsedTime - procedural.startedAt) / procedural.duration))
-        const envelope = Math.sin(Math.PI * progress)
-        resetProceduralTransform(pivot)
-        pivot.rotation.y = procedural.baseRotationY
-        if (procedural.kind === 'nod') pivot.rotation.x = Math.sin(progress * Math.PI * 4) * 0.13 * envelope
-        if (procedural.kind === 'spin') pivot.rotation.y = procedural.baseRotationY + progress * Math.PI * 2
-        if (procedural.kind === 'hop') pivot.position.y = Math.abs(Math.sin(progress * Math.PI * 2)) * 0.34 * envelope
-        if (procedural.kind === 'stretch') {
-          pivot.scale.set(1 - envelope * 0.07, 1 + envelope * 0.18, 1 - envelope * 0.07)
-          pivot.rotation.x = -envelope * 0.1
-        }
-        if (procedural.kind === 'listen') pivot.rotation.z = Math.sin(progress * Math.PI * 3) * 0.16 * envelope
-        if (procedural.kind === 'talk') {
-          pivot.position.y = Math.abs(Math.sin(progress * Math.PI * 7)) * 0.055 * envelope
-          pivot.rotation.z = Math.sin(progress * Math.PI * 5) * 0.055 * envelope
-        }
-        if (procedural.kind === 'sway') pivot.rotation.z = Math.sin(progress * Math.PI * 5) * 0.18 * envelope
-        if (procedural.kind === 'bow') pivot.rotation.x = Math.sin(Math.PI * progress) * 0.26
-        if (progress >= 1) {
-          resetProceduralTransform(pivot)
-          pivot.rotation.y = (procedural.baseRotationY + (procedural.kind === 'spin' ? Math.PI * 2 : 0)) % (Math.PI * 2)
-          proceduralRef.current = null
-          const idle = pickClip(clipsRef.current, 'idle')
-          setClipName(idle ? petAnimationLabel(idle.name) : '安静待机')
-        }
-      }
       const target = turnTargetRef.current
-      if (target !== null && !proceduralRef.current) {
+      if (target !== null) {
         pivot.rotation.y = THREE.MathUtils.damp(pivot.rotation.y, target, 5, delta)
         if (Math.abs(target - pivot.rotation.y) < 0.015) {
           pivot.rotation.y = target % (Math.PI * 2)
@@ -401,8 +295,6 @@ export function Pet3DViewer({
       mixerRef.current = null
       clipsRef.current = []
       currentActionRef.current = null
-      modelPivotRef.current = null
-      proceduralRef.current = null
       playAbstractRef.current = () => undefined
       playShowcaseRef.current = () => undefined
       if (loadedRoot) releaseObject(loadedRoot)
@@ -411,7 +303,7 @@ export function Pet3DViewer({
       renderer.dispose()
       renderer.domElement.remove()
     }
-  }, [accent, assetPath, compact, speciesId])
+  }, [accent, assetPath, compact])
 
   useEffect(() => {
     if (state === 'ready') playAbstractRef.current(animation)

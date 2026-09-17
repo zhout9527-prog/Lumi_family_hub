@@ -1,24 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Mic, Play, RefreshCw, ShieldCheck, Square, Volume2, Waves, X } from 'lucide-react'
+import { AudioLines, Mic, Play, RefreshCw, ShieldCheck, Sparkles, Square, Volume2, Waves, X } from 'lucide-react'
 import { Pet3DViewer } from './Pet3DViewer'
 import type { PetSpecies } from './types'
-
-const VOICE_PROFILES: Record<string, { label: string; rate: number }> = {
-  alpaca: { label: '软绵绵声线', rate: 1.18 },
-  bull: { label: '沉稳低音', rate: 0.76 },
-  cow: { label: '温柔慢声', rate: 0.88 },
-  deer: { label: '林间清声', rate: 1.1 },
-  donkey: { label: '憨厚鼻音', rate: 0.82 },
-  fox: { label: '机灵高音', rate: 1.3 },
-  horse: { label: '爽朗中音', rate: 0.94 },
-  'horse-white': { label: '轻柔亮声', rate: 1.04 },
-  husky: { label: '活力低音', rate: 0.84 },
-  shibainu: { label: '元气声线', rate: 1.2 },
-  stag: { label: '森林深声', rate: 0.72 },
-  wolf: { label: '勇敢低声', rate: 0.68 },
-  cat: { label: '奶呼呼声线', rate: 1.38 },
-}
+import { renderCharacterVoice, voiceProfileFor } from './voiceEffects'
 
 type EchoState = 'idle' | 'requesting' | 'recording' | 'processing' | 'ready' | 'playing' | 'error'
 
@@ -28,11 +13,7 @@ function recorderMimeType(): string | undefined {
     .find((type) => MediaRecorder.isTypeSupported(type))
 }
 
-export function EchoCompanion({
-  species,
-  initialSpeciesId,
-  onClose,
-}: {
+export function EchoCompanion({ species, initialSpeciesId, onClose }: {
   species: PetSpecies[]
   initialSpeciesId?: string
   onClose: () => void
@@ -41,16 +22,20 @@ export function EchoCompanion({
     species.some((item) => item.id === initialSpeciesId) ? initialSpeciesId! : species[0]?.id ?? '',
   )
   const [state, setState] = useState<EchoState>('idle')
-  const [message, setMessage] = useState('点一下麦克风，说完后停顿一秒，伙伴就会学你说话。')
+  const [message, setMessage] = useState('点一下麦克风说句话，伙伴会用自己的角色声线演一遍。')
   const [animationNonce, setAnimationNonce] = useState(0)
+  const [compareOriginal, setCompareOriginal] = useState(false)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const audioUrlRef = useRef('')
+  const rawRecordingRef = useRef<Blob | null>(null)
+  const renderedUrlRef = useRef('')
+  const transientPlaybackUrlRef = useRef('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const analyserFrameRef = useRef(0)
   const maximumTimerRef = useRef(0)
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const captureAudioContextRef = useRef<AudioContext | null>(null)
+  const renderTokenRef = useRef(0)
   const disposedRef = useRef(false)
   const selectedIdRef = useRef(selectedId)
   const onCloseRef = useRef(onClose)
@@ -59,21 +44,28 @@ export function EchoCompanion({
     () => species.find((item) => item.id === selectedId) ?? species[0],
     [selectedId, species],
   )
-  const voice = VOICE_PROFILES[selected?.id ?? ''] ?? { label: '伙伴声线', rate: 1.08 }
+  const voice = voiceProfileFor(selected?.id ?? '')
 
-  useEffect(() => {
-    selectedIdRef.current = selectedId
-  }, [selectedId])
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
+  const clearRenderedUrl = () => {
+    if (renderedUrlRef.current) URL.revokeObjectURL(renderedUrlRef.current)
+    renderedUrlRef.current = ''
+  }
+
+  const clearTransientPlaybackUrl = () => {
+    if (transientPlaybackUrlRef.current) URL.revokeObjectURL(transientPlaybackUrlRef.current)
+    transientPlaybackUrlRef.current = ''
+  }
 
   const stopPlayback = () => {
-    if (!audioRef.current) return
-    audioRef.current.pause()
-    audioRef.current.currentTime = 0
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
     audioRef.current = null
+    clearTransientPlaybackUrl()
   }
 
   const releaseCapture = () => {
@@ -83,43 +75,95 @@ export function EchoCompanion({
     maximumTimerRef.current = 0
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
-    void audioContextRef.current?.close().catch(() => undefined)
-    audioContextRef.current = null
+    void captureAudioContextRef.current?.close().catch(() => undefined)
+    captureAudioContextRef.current = null
   }
 
-  const playEcho = async () => {
-    const source = audioUrlRef.current
+  const playSource = async (source: string, original = false) => {
     if (!source) return
     stopPlayback()
-    const profile = VOICE_PROFILES[selectedIdRef.current] ?? { label: '伙伴声线', rate: 1.08 }
+    if (original) transientPlaybackUrlRef.current = source
     const audio = new Audio(source)
     audio.preload = 'auto'
-    audio.playbackRate = profile.rate
-    audio.preservesPitch = false
+    // 角色音频已经离线渲染完成，播放时保持正常速度，避免旧版“快放变声”。
+    audio.playbackRate = 1
+    audio.preservesPitch = true
     const webkitAudio = audio as HTMLAudioElement & { webkitPreservesPitch?: boolean }
-    webkitAudio.webkitPreservesPitch = false
+    webkitAudio.webkitPreservesPitch = true
     audio.onended = () => {
       if (!disposedRef.current) {
         setState('ready')
-        setMessage('还想听一次，或者换一位伙伴试试吗？')
+        setMessage(original ? '这是原声；点“角色声线”听伙伴演绎。' : '角色声线演完啦，可以换伙伴比较不同风格。')
       }
       audioRef.current = null
+      clearTransientPlaybackUrl()
     }
     audio.onerror = () => {
       if (!disposedRef.current) {
         setState('error')
-        setMessage('这次录音没有播放成功，请重新录一句。')
+        setMessage('这次音频没有播放成功，请重新录一句。')
       }
+      clearTransientPlaybackUrl()
     }
     audioRef.current = audio
     setAnimationNonce((value) => value + 1)
     setState('playing')
-    setMessage(`${profile.label}正在学你说话…`)
+    setMessage(original ? '正在播放未经处理的原声…' : `${voiceProfileFor(selectedIdRef.current).label}正在演绎你的话…`)
     try {
       await audio.play()
     } catch {
+      stopPlayback()
       setState('ready')
-      setMessage('系统暂时阻止了自动播放，点“再听一次”就可以播放。')
+      setMessage('系统暂时阻止了播放，再点一次播放按钮即可。')
+    }
+  }
+
+  const playCharacter = async () => {
+    if (!renderedUrlRef.current) return
+    setCompareOriginal(false)
+    await playSource(renderedUrlRef.current)
+  }
+
+  const playOriginal = async () => {
+    const recording = rawRecordingRef.current
+    if (!recording) return
+    setCompareOriginal(true)
+    const source = URL.createObjectURL(recording)
+    await playSource(source, true)
+  }
+
+  const renderAndPlay = async (recording: Blob, speciesId: string) => {
+    const token = ++renderTokenRef.current
+    stopPlayback()
+    clearRenderedUrl()
+    setState('processing')
+    setMessage(`${voiceProfileFor(speciesId).role}正在准备角色声线…`)
+    try {
+      const transformed = await renderCharacterVoice(recording, speciesId)
+      if (disposedRef.current || token !== renderTokenRef.current) return
+      renderedUrlRef.current = URL.createObjectURL(transformed)
+      setState('ready')
+      setCompareOriginal(false)
+      await playSource(renderedUrlRef.current)
+    } catch {
+      if (disposedRef.current || token !== renderTokenRef.current) return
+      setState('error')
+      setMessage('这台设备暂时无法完成角色变声。原声仍可播放，也可以换一台设备再试。')
+    }
+  }
+
+  const chooseSpecies = (speciesId: string) => {
+    stopPlayback()
+    selectedIdRef.current = speciesId
+    setSelectedId(speciesId)
+    setCompareOriginal(false)
+    const recording = rawRecordingRef.current
+    if (recording) {
+      void renderAndPlay(recording, speciesId)
+    } else {
+      const next = voiceProfileFor(speciesId)
+      setState('idle')
+      setMessage(`${next.role}已经准备好。录一句话听听它的完整角色声线。`)
     }
   }
 
@@ -127,7 +171,7 @@ export function EchoCompanion({
     const recorder = recorderRef.current
     if (!recorder || recorder.state === 'inactive') return
     setState('processing')
-    setMessage('伙伴正在认真学这句话…')
+    setMessage('伙伴正在分离音高与角色音色…')
     recorder.stop()
   }
 
@@ -138,6 +182,7 @@ export function EchoCompanion({
       return
     }
     stopPlayback()
+    renderTokenRef.current += 1
     setState('requesting')
     setMessage('请允许 Lumi 使用麦克风；录音只在这台设备里处理。')
     try {
@@ -167,20 +212,19 @@ export function EchoCompanion({
           setMessage('没有听清这句话，请靠近麦克风再试一次。')
           return
         }
-        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
-        audioUrlRef.current = URL.createObjectURL(new Blob(chunks, { type }))
-        setState('ready')
-        void playEcho()
+        const recording = new Blob(chunks, { type })
+        rawRecordingRef.current = recording
+        void renderAndPlay(recording, selectedIdRef.current)
       }
       recorder.start(160)
       setState('recording')
-      setMessage('我在听，说完后停顿一秒，或再点一下结束。')
+      setMessage('我在听。正常说话即可，说完停顿一秒会自动结束。')
 
       try {
         const AudioContextConstructor = window.AudioContext
         if (AudioContextConstructor) {
           const audioContext = new AudioContextConstructor()
-          audioContextRef.current = audioContext
+          captureAudioContextRef.current = audioContext
           const analyser = audioContext.createAnalyser()
           analyser.fftSize = 1024
           audioContext.createMediaStreamSource(stream).connect(analyser)
@@ -231,18 +275,19 @@ export function EchoCompanion({
     document.addEventListener('keydown', closeOnEscape)
     return () => {
       disposedRef.current = true
+      renderTokenRef.current += 1
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', closeOnEscape)
       const recorder = recorderRef.current
       if (recorder && recorder.state !== 'inactive') recorder.stop()
       releaseCapture()
       stopPlayback()
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+      clearRenderedUrl()
+      rawRecordingRef.current = null
     }
   }, [])
 
   if (!selected) return null
-
   const isRecording = state === 'recording'
   const disabled = state === 'requesting' || state === 'processing'
 
@@ -250,68 +295,44 @@ export function EchoCompanion({
     <div className="echo-backdrop" onMouseDown={onClose}>
       <section className="echo-modal" role="dialog" aria-modal="true" aria-labelledby="echo-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="echo-header">
-          <div><span className="eyebrow">VOICE PLAYGROUND</span><h2 id="echo-title">声声岛</h2><p>你说一句，伙伴会换成自己的声线学一句。</p></div>
+          <div><span className="eyebrow">CHARACTER VOICE LAB</span><h2 id="echo-title">声声岛</h2><p>保留你的原话和节奏，由伙伴换上完整的角色声线。</p></div>
           <button type="button" className="icon-button echo-close" aria-label="关闭声声岛" onClick={onClose}><X size={20} /></button>
         </header>
         <div className="echo-stage">
           <div className="echo-model" style={{ '--pet-accent': selected.accent } as CSSProperties}>
-            <Pet3DViewer
-              assetPath={selected.assetPath}
-              speciesId={selected.id}
-              name={selected.name}
-              accent={selected.accent}
-              animation={state === 'playing' ? 'talk' : 'idle'}
-              animationNonce={animationNonce}
-            />
+            <Pet3DViewer assetPath={selected.assetPath} speciesId={selected.id} name={selected.name} accent={selected.accent} animation={state === 'playing' ? 'talk' : 'idle'} animationNonce={animationNonce} />
           </div>
           <div className="echo-console">
-            <div className="echo-voice-title"><Volume2 size={18} /><div><strong>{selected.name}</strong><span>{voice.label} · {voice.rate.toFixed(2)} 倍音高</span></div></div>
-            <div className={`echo-wave ${isRecording ? 'is-listening' : ''}`} aria-hidden="true">
+            <div className="echo-voice-title"><Volume2 size={18} /><div><strong>{selected.name} · {voice.label}</strong><span>{voice.role}</span></div></div>
+            <p className="echo-voice-description">{voice.description}</p>
+            <div className="echo-voice-tags" aria-label="声线特征">{voice.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+            <div className={`echo-wave ${isRecording ? 'is-listening' : state === 'processing' ? 'is-processing' : ''}`} aria-hidden="true">
               {Array.from({ length: 9 }, (_, index) => <i key={index} style={{ '--echo-bar': index } as CSSProperties} />)}
             </div>
             <p className="echo-message" role="status">{message}</p>
             <div className="echo-controls">
-              <button
-                type="button"
-                className={`button button-primary echo-record ${isRecording ? 'is-recording' : ''}`}
-                onClick={isRecording ? stopRecording : () => void startRecording()}
-                disabled={disabled}
-              >
-                {isRecording ? <Square size={17} fill="currentColor" /> : <Mic size={18} />}
-                {isRecording ? '说完了' : state === 'requesting' ? '等待授权' : '开始说话'}
+              <button type="button" className={`button button-primary echo-record ${isRecording ? 'is-recording' : ''}`} onClick={isRecording ? stopRecording : () => void startRecording()} disabled={disabled}>
+                {isRecording ? <Square size={17} fill="currentColor" /> : state === 'processing' ? <Sparkles size={18} /> : <Mic size={18} />}
+                {isRecording ? '说完了' : state === 'requesting' ? '等待授权' : state === 'processing' ? '正在塑造声线' : rawRecordingRef.current ? '重新录一句' : '开始说话'}
               </button>
-              <button type="button" className="button button-quiet" onClick={() => void playEcho()} disabled={!audioUrlRef.current || isRecording || disabled}>
-                {state === 'ready' ? <Play size={17} fill="currentColor" /> : <RefreshCw size={17} />}再听一次
+              <button type="button" className={`button button-quiet ${!compareOriginal ? 'is-active' : ''}`} onClick={() => void playCharacter()} disabled={!renderedUrlRef.current || isRecording || disabled}>
+                {state === 'ready' ? <Play size={17} fill="currentColor" /> : <RefreshCw size={17} />}角色声线
+              </button>
+              <button type="button" className={`button button-quiet ${compareOriginal ? 'is-active' : ''}`} onClick={() => void playOriginal()} disabled={!rawRecordingRef.current || isRecording || disabled}>
+                <AudioLines size={17} />原声对比
               </button>
             </div>
-            <div className="echo-privacy"><ShieldCheck size={15} /><span>录音不上传、不保存到 Server，关闭声声岛后立即清除。</span></div>
+            <div className="echo-privacy"><ShieldCheck size={15} /><span>录音和变声都在当前设备完成，不上传、不保存到 Server，关闭后立即清除。</span></div>
           </div>
         </div>
-        <div className="echo-picker-heading"><div><Waves size={17} /><strong>换一位伙伴试玩</strong></div><span>{species.length} 种声线</span></div>
+        <div className="echo-picker-heading"><div><Waves size={17} /><strong>换一位伙伴试玩</strong></div><span>{species.length} 种角色声线</span></div>
         <div className="echo-species-grid" role="list" aria-label="声声岛伙伴声线">
           {species.map((item) => {
-            const profile = VOICE_PROFILES[item.id] ?? { label: '伙伴声线', rate: 1.08 }
+            const profile = voiceProfileFor(item.id)
             const active = item.id === selected.id
             return (
-              <button
-                key={item.id}
-                type="button"
-                role="listitem"
-                className={`echo-species ${active ? 'is-selected' : ''}`}
-                style={{ '--pet-accent': item.accent } as CSSProperties}
-                aria-pressed={active}
-                onClick={() => {
-                  stopPlayback()
-                  selectedIdRef.current = item.id
-                  setSelectedId(item.id)
-                  if (audioUrlRef.current) {
-                    setState('ready')
-                    setMessage(`已经换成${item.name}，点“再听一次”比较它的声音。`)
-                  }
-                }}
-                disabled={isRecording || state === 'processing' || state === 'requesting'}
-              >
-                <span aria-hidden="true">{item.emoji}</span><strong>{item.name}</strong><small>{profile.label}</small>
+              <button key={item.id} type="button" role="listitem" className={`echo-species ${active ? 'is-selected' : ''}`} style={{ '--pet-accent': item.accent } as CSSProperties} aria-pressed={active} onClick={() => chooseSpecies(item.id)} disabled={isRecording || state === 'processing' || state === 'requesting'}>
+                <span aria-hidden="true">{item.emoji}</span><strong>{item.name}</strong><small>{profile.label}</small><em>{profile.tags[0]}</em>
               </button>
             )
           })}

@@ -38,19 +38,7 @@ const species = speciesSource.map(([id, name, englishName, fileName]) => ({
   temperament: '喜欢陪伴你',
   asset_path: `/pets/quaternius/${fileName}`,
   animation_hint: 'Idle · Eating · Walk · Gallop · Jump',
-})).concat({
-  id: 'cat',
-  name: '小猫',
-  english_name: 'Cat',
-  source: 'Cat by J-Toastie · Poly Pizza',
-  source_url: 'https://poly.pizza/m/DJ9rpAhrh3',
-  license_url: 'https://creativecommons.org/licenses/by/3.0/',
-  accent: '#849cab',
-  emoji: '3D',
-  temperament: '温柔好奇，喜欢倾听和学你说话',
-  asset_path: '/pets/poly-pizza/cat.glb',
-  animation_hint: 'IdleCat · Lumi procedural actions',
-})
+}))
 
 const child = {
   id: 'pet-child',
@@ -228,7 +216,17 @@ try {
       }
       start() {
         this.state = 'recording'
-        setTimeout(() => this.ondataavailable?.({ data: new Blob(['echo-sample'], { type: this.mimeType }) }), 20)
+        const sampleRate = 16_000
+        const frames = sampleRate / 2
+        const bytes = new ArrayBuffer(44 + frames * 2)
+        const view = new DataView(bytes)
+        const text = (offset, value) => [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)))
+        text(0, 'RIFF'); view.setUint32(4, 36 + frames * 2, true); text(8, 'WAVE'); text(12, 'fmt ')
+        view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+        view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+        text(36, 'data'); view.setUint32(40, frames * 2, true)
+        for (let index = 0; index < frames; index += 1) view.setInt16(44 + index * 2, Math.sin(index / sampleRate * 440 * Math.PI * 2) * 0x3fff, true)
+        setTimeout(() => this.ondataavailable?.({ data: new Blob([bytes], { type: 'audio/wav' }) }), 20)
       }
       stop() {
         this.state = 'inactive'
@@ -240,15 +238,9 @@ try {
       play() { setTimeout(() => this.onended?.(), 80); return Promise.resolve() }
       pause() {}
     }
-    class FakeAudioContext {
-      createAnalyser() { return { fftSize: 1024, getByteTimeDomainData: (samples) => samples.fill(128) } }
-      createMediaStreamSource() { return { connect() {} } }
-      close() { return Promise.resolve() }
-    }
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } })
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder })
     Object.defineProperty(window, 'Audio', { configurable: true, value: FakeAudio })
-    Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext })
   })
   collectFailures(desktop, failures, 'desktop')
   await login(desktop)
@@ -268,14 +260,16 @@ try {
   await desktop.getByRole('button', { name: /停止连续展示/ }).click()
   await desktop.getByRole('button', { name: /去声声岛玩/ }).click()
   await desktop.locator('.echo-modal').waitFor()
-  check(await desktop.locator('.echo-species').count() === 13, '声声岛没有提供全部 13 种伙伴声线')
+  check(await desktop.locator('.echo-species').count() === 12, '声声岛没有提供全部 12 种伙伴声线')
+  check(await desktop.getByText('小猫', { exact: true }).count() === 0, '已移除的小猫仍出现在伙伴目录')
   await desktop.getByRole('button', { name: '开始说话' }).click()
   await desktop.getByRole('button', { name: '说完了' }).waitFor()
   await desktop.getByRole('button', { name: '说完了' }).click()
-  await desktop.getByText('还想听一次，或者换一位伙伴试试吗？').waitFor()
-  await desktop.locator('.echo-species').filter({ hasText: '小猫' }).click()
-  await desktop.getByRole('button', { name: '再听一次' }).click()
-  await desktop.getByText('还想听一次，或者换一位伙伴试试吗？').waitFor()
+  await desktop.getByText('角色声线演完啦，可以换伙伴比较不同风格。').waitFor()
+  await desktop.locator('.echo-species').filter({ hasText: '小狼' }).click()
+  await desktop.getByText('角色声线演完啦，可以换伙伴比较不同风格。').waitFor()
+  await desktop.getByRole('button', { name: '原声对比' }).click()
+  await desktop.getByText('这是原声；点“角色声线”听伙伴演绎。').waitFor()
   await desktop.screenshot({ path: `${artifactsPath}echo-companion-desktop-${runId}.png` })
   await desktop.getByRole('button', { name: '关闭声声岛' }).click()
   check(!await desktop.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '桌面宠物页横向溢出')
@@ -295,7 +289,7 @@ try {
   await login(mobile)
   await openPetView(mobile, true)
   await waitForModel(mobile)
-  check(await mobile.locator('.pet-species-card').count() === 13, '手机端没有提供全部 13 种真实 3D 宠物')
+  check(await mobile.locator('.pet-species-card').count() === 12, '手机端没有提供全部 12 种真实 3D 宠物')
   await mobile.locator('.pet-species-card').first().click()
   for (const item of species) {
     const card = mobile.locator('.pet-species-card').filter({ hasText: item.name })
@@ -307,16 +301,16 @@ try {
     if (modelResponse) await modelResponse
     await waitForModel(mobile)
     await mobile.locator('.pet-preview-index strong').getByText(item.name, { exact: true }).waitFor()
-    const expectedActions = item.id === 'cat' ? 9 : ['fox', 'husky', 'shibainu', 'wolf'].includes(item.id) ? 12 : 13
+    const expectedActions = ['fox', 'husky', 'shibainu', 'wolf'].includes(item.id) ? 12 : 13
     check(await mobile.locator('.pet-animation-chip').count() === expectedActions, `${item.name} 的动作图鉴数量不正确`)
     check((await canvasStats(mobile)).spread > 20, `${item.name} 的 3D 模型没有形成有效画面`)
   }
   await mobile.getByRole('button', { name: '下一个伙伴' }).click()
   await mobile.locator('.pet-preview-index strong').getByText('羊驼', { exact: true }).waitFor()
-  await mobile.locator('.pet-species-card').filter({ hasText: '小猫' }).click()
+  await mobile.locator('.pet-species-card').filter({ hasText: '小狼' }).click()
   await waitForModel(mobile)
   const mobileFrame = await canvasStats(mobile)
-  checkCanvas(mobileFrame, '手机端猫咪')
+  checkCanvas(mobileFrame, '手机端小狼')
   const viewer = await mobile.locator('.pet-3d-viewer').boundingBox()
   check(viewer && viewer.x >= 0 && viewer.x + viewer.width <= 390, '手机端 3D 模型超出屏幕')
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机宠物页横向溢出')
@@ -365,7 +359,7 @@ try {
   await narrowContext.close()
 
   check(failures.length === 0, failures.join('\n'))
-  console.log(JSON.stringify({ status: 'ok', species: 13, nativeActionRange: '12-13', catActions: 9, echoVoices: 13, detail759: true, desktop: true, mobile: true, tv: true, animated: true }))
+  console.log(JSON.stringify({ status: 'ok', species: 12, nativeActionRange: '12-13', echoVoices: 12, characterVoice: true, detail759: true, desktop: true, mobile: true, tv: true, animated: true }))
 } finally {
   await browser.close()
 }

@@ -34,6 +34,7 @@
     "native:release:prepare": "node scripts/prepare-tauri-release-config.mjs"
   },
   "dependencies": {
+    "@audio/shift-psola": "1.0.3",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.11.0",

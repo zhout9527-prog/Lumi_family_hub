@@ -6,8 +6,6 @@ from typing import Any
 # 模型由官方 CC0 资源组成，文件随客户端离线打包，不依赖外网才能显示。
 QUATERNIUS_SOURCE_URL = "https://quaternius.com/packs/ultimateanimatedanimals.html"
 QUATERNIUS_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/"
-POLY_PIZZA_CAT_URL = "https://poly.pizza/m/DJ9rpAhrh3"
-CC_BY_3_LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
 
 
 def _quaternius(
@@ -47,19 +45,6 @@ PET_SPECIES: tuple[dict[str, Any], ...] = (
     _quaternius("shibainu", "柴犬", "Shiba Inu", "🐕‍🦺", "#d29458", "聪明，喜欢获得小奖励", "shibainu"),
     _quaternius("stag", "大角鹿", "Stag", "🦌", "#a8744d", "稳重，喜欢听完整故事", "stag"),
     _quaternius("wolf", "小狼", "Wolf", "🐺", "#8294a6", "勇敢，愿意陪你探索", "wolf"),
-    {
-        "id": "cat",
-        "name": "小猫",
-        "english_name": "Cat",
-        "source": "Cat by J-Toastie · Poly Pizza",
-        "source_url": POLY_PIZZA_CAT_URL,
-        "license_url": CC_BY_3_LICENSE_URL,
-        "accent": "#849cab",
-        "emoji": "🐱",
-        "temperament": "温柔好奇，喜欢倾听和学你说话",
-        "asset_path": "/pets/poly-pizza/cat.glb",
-        "animation_hint": "IdleCat · Lumi Nod · Spin · Hop · Stretch · Listen · Talk · Sway · Bow",
-    },
 )
 
 
@@ -81,7 +66,9 @@ LEGACY_SPECIES_ALIASES: dict[str, str] = {
     "llama": "alpaca",
     "rabbit": "shibainu",
     "bear": "husky",
-    "chicken": "cat",
+    "chicken": "shibainu",
+    # 1.4.6 曾短暂提供过猫模型，移除后保留映射以确保已领养账号正常显示。
+    "cat": "shibainu",
 }
 
 

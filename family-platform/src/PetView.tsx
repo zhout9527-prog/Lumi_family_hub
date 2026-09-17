@@ -238,9 +238,9 @@ export function PetView({
             <div className="pet-hero-copy">
               <span className="eyebrow">LUMI COMPANION</span>
               <h1>{user.role === 'child' ? `${user.displayName}，挑选你的伙伴` : '家庭伙伴'}</h1>
-              <p>{user.role === 'child' ? '从 12 种 Quaternius 动物和一只全新的蓝灰小猫中选择一位伙伴。每个模型的全部动作都能逐个试玩，也可以连续展示。每个儿童账号目前先养一只。' : '孩子还没有领养伙伴。这里会同步显示 Server 中的伙伴目录，也可以先试玩模型动作和声线。'}</p>
+              <p>{user.role === 'child' ? '从 12 种 Quaternius 动物中选择一位伙伴。每个模型的全部动作都能逐个试玩，也可以连续展示。每个儿童账号目前先养一只。' : '孩子还没有领养伙伴。这里会同步显示 Server 中的伙伴目录，也可以先试玩模型动作和声线。'}</p>
               <div className="pet-hero-buttons"><button type="button" className="button button-quiet" onClick={() => setEchoOpen(true)}><Mic2 size={16} />进入声声岛</button></div>
-              <div className="pet-credit-row"><PawPrint size={15} /><span>低多边形动画动物 · CC0 / CC BY 资源</span><a href="https://quaternius.com/packs/ultimateanimatedanimals.html" target="_blank" rel="noreferrer">查看模型来源</a></div>
+              <div className="pet-credit-row"><PawPrint size={15} /><span>低多边形动画动物 · CC0 资源</span><a href="https://quaternius.com/packs/ultimateanimatedanimals.html" target="_blank" rel="noreferrer">查看模型来源</a></div>
             </div>
             {selected && (
               <div className="pet-adoption-model">

@@ -399,6 +399,31 @@ class Favorite(Base):
     __table_args__ = (UniqueConstraint("user_id", "content_id", name="uq_favorite_user_content"),)
 
 
+class GameProfile(Base):
+    """按家庭账户隔离的游戏进度与排行榜纪录。"""
+
+    __tablename__ = "game_profiles"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(String(40), index=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    game_id: Mapped[str] = mapped_column(String(40), index=True)
+    progress_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    best_score: Mapped[int] = mapped_column(BigInteger, default=0)
+    best_score_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    client_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    user: Mapped[User] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "game_id", name="uq_game_profile_user_game"),
+        Index("ix_game_profile_household_game_score", "household_id", "game_id", "best_score"),
+    )
+
+
 class SystemSetting(Base):
     __tablename__ = "system_settings"
 

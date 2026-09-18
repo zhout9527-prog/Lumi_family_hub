@@ -18,6 +18,8 @@ import {
   X,
 } from 'lucide-react'
 import { DEVICE_PROFILE } from './device'
+import { submitGameScoreApi } from './api'
+import { GameLeaderboard } from './GameLeaderboard'
 
 type GameState = 'PAUSED' | 'PLAYING' | 'LOST'
 
@@ -36,9 +38,9 @@ interface GameController {
 const NO_LIBRARY_KEYBOARD_CONTROLS = {}
 const BEST_SCORE_KEY = 'lumi:tetris-best-score'
 
-function readBestScore(): number {
+function readBestScore(playerId: string): number {
   try {
-    const score = Number(window.localStorage.getItem(BEST_SCORE_KEY) ?? 0)
+    const score = Number(window.localStorage.getItem(`${BEST_SCORE_KEY}:${playerId}`) ?? 0)
     return Number.isFinite(score) && score > 0 ? score : 0
   } catch {
     return 0
@@ -79,6 +81,7 @@ function TetrisScene({
   state,
   controller,
   onClose,
+  playerId,
 }: {
   HeldPiece: ComponentType
   Gameboard: ComponentType
@@ -89,24 +92,30 @@ function TetrisScene({
   state: GameState
   controller: GameController
   onClose: () => void
+  playerId: string
 }) {
   const shellRef = useRef<HTMLDivElement>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
-  const [bestScore, setBestScore] = useState(readBestScore)
+  const scoreSyncTimerRef = useRef<number | null>(null)
+  const [bestScore, setBestScore] = useState(() => readBestScore(playerId))
 
   useEffect(() => {
     shellRef.current?.focus({ preventScroll: true })
-  }, [])
+    const localBest = readBestScore(playerId)
+    if (localBest > 0) void submitGameScoreApi('tetris', localBest).catch(() => undefined)
+  }, [playerId])
 
   useEffect(() => {
     if (points <= bestScore) return
     setBestScore(points)
     try {
-      window.localStorage.setItem(BEST_SCORE_KEY, String(points))
+      window.localStorage.setItem(`${BEST_SCORE_KEY}:${playerId}`, String(points))
     } catch {
       // 禁用本地存储时只保留本次游戏的最高分。
     }
-  }, [bestScore, points])
+    if (scoreSyncTimerRef.current !== null) window.clearTimeout(scoreSyncTimerRef.current)
+    scoreSyncTimerRef.current = window.setTimeout(() => { void submitGameScoreApi('tetris', points).catch(() => undefined) }, 700)
+  }, [bestScore, playerId, points])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -233,7 +242,7 @@ function TetrisScene({
   )
 }
 
-export function TetrisGame({ onClose }: { onClose: () => void }) {
+export function TetrisGame({ onClose, playerId }: { onClose: () => void; playerId: string }) {
   useEffect(() => {
     const previousRootOverflow = document.documentElement.style.overflow
     const previousBodyOverflow = document.body.style.overflow
@@ -248,7 +257,7 @@ export function TetrisGame({ onClose }: { onClose: () => void }) {
   return (
     <div className="tetris-backdrop" role="dialog" aria-modal="true" aria-label="俄罗斯方块">
       <Tetris keyboardControls={NO_LIBRARY_KEYBOARD_CONTROLS}>
-        {(game) => <TetrisScene {...game} onClose={onClose} />}
+        {(game) => <TetrisScene {...game} onClose={onClose} playerId={playerId} />}
       </Tetris>
     </div>
   )
@@ -261,6 +270,7 @@ export function GamesView({
   onPlaySnake,
   onOpenArtStudio,
   onOpenStickman,
+  currentUserId,
 }: {
   onPlayTetris: () => void
   onPlayBlockMower: () => void
@@ -268,13 +278,15 @@ export function GamesView({
   onPlaySnake: () => void
   onOpenArtStudio: () => void
   onOpenStickman: () => void
+  currentUserId: string
 }) {
   const showStickman = DEVICE_PROFILE !== 'tv'
+  const [rankingOpen, setRankingOpen] = useState(false)
   return (
     <div className="dashboard games-dashboard">
       <section className="page-intro games-intro">
         <div><span className="eyebrow">PLAYGROUND</span><h1>小游戏</h1><p>短短一局，动动脑筋。</p></div>
-        <span className="soft-badge"><Gamepad2 size={14} /> {showStickman ? 6 : 5} 个游戏</span>
+        <div className="games-intro-actions"><button type="button" className="button button-secondary" onClick={() => setRankingOpen(true)}><Trophy size={16} />排行榜</button><span className="soft-badge"><Gamepad2 size={14} /> {showStickman ? 6 : 5} 个游戏</span></div>
       </section>
       <div className="game-launch-grid-list">
         <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
@@ -352,6 +364,7 @@ export function GamesView({
           </button>
         )}
       </div>
+      {rankingOpen && <GameLeaderboard currentUserId={currentUserId} onClose={() => setRankingOpen(false)} />}
     </div>
   )
 }

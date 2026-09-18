@@ -6,6 +6,7 @@ import {
   Check,
   Clock3,
   Coins,
+  Crosshair,
   Dumbbell,
   Gamepad2,
   Gem,
@@ -23,11 +24,12 @@ import {
   Zap,
 } from 'lucide-react'
 import { DEVICE_PROFILE } from './device'
+import { submitGameScoreApi } from './api'
 
 type TreasureKind = 'gold-large' | 'gold-medium' | 'gold-small' | 'diamond' | 'rock' | 'mystery' | 'barrel' | 'trash-ball' | 'trash-bottle' | 'trash-tire'
 type HookPhase = 'swinging' | 'extending' | 'retracting'
 type RoundStatus = 'playing' | 'shop' | 'failed'
-type ToolKind = 'lucky-charm' | 'strength' | 'dynamite' | 'gold-book' | 'diamond-book'
+type ToolKind = 'lucky-charm' | 'strength' | 'dynamite' | 'gold-book' | 'diamond-book' | 'aim-guide'
 type PassiveToolKind = Exclude<ToolKind, 'dynamite'>
 
 interface Treasure {
@@ -66,6 +68,7 @@ interface RoundEffects {
   strength: boolean
   goldBook: boolean
   diamondBook: boolean
+  aimGuide: boolean
 }
 
 interface SavedProgress {
@@ -85,9 +88,10 @@ const MIN_LENGTH = 66
 const MAX_LENGTH = 610
 const BEST_SCORE_KEY = 'lumi:deep-mine-best'
 const PROGRESS_KEY = 'lumi:deep-mine-progress:v2'
-const EMPTY_INVENTORY: Inventory = { 'lucky-charm': 0, strength: 0, dynamite: 0, 'gold-book': 0, 'diamond-book': 0 }
-const EMPTY_QUEUED: QueuedBoosts = { 'lucky-charm': false, strength: false, 'gold-book': false, 'diamond-book': false }
-const EMPTY_EFFECTS: RoundEffects = { luckyCharm: false, strength: false, goldBook: false, diamondBook: false }
+const SWING_SPEED_MULTIPLIER = 0.68
+const EMPTY_INVENTORY: Inventory = { 'lucky-charm': 0, strength: 0, dynamite: 0, 'gold-book': 0, 'diamond-book': 0, 'aim-guide': 0 }
+const EMPTY_QUEUED: QueuedBoosts = { 'lucky-charm': false, strength: false, 'gold-book': false, 'diamond-book': false, 'aim-guide': false }
+const EMPTY_EFFECTS: RoundEffects = { luckyCharm: false, strength: false, goldBook: false, diamondBook: false, aimGuide: false }
 
 const TREASURE_META: Record<TreasureKind, { label: string; value: number; pullSpeed: number; radius: number; pullHint: string }> = {
   'gold-large': { label: '大金块', value: 500, pullSpeed: 44, radius: 29, pullHint: '沉甸甸的，慢慢把它拉回来！' },
@@ -161,14 +165,16 @@ const TOOL_META: Record<ToolKind, { name: string; price: number; description: st
   dynamite: { name: '安全炸药', price: 80, description: '抓到石头或不想要的目标时炸掉，本次立即空钩返回。' },
   'gold-book': { name: '幸运金块书', price: 160, description: '下一关额外刷新 4 块金块。', highValue: true },
   'diamond-book': { name: '幸运钻石书', price: 220, description: '下一关额外刷新 3 颗钻石。', highValue: true },
+  'aim-guide': { name: '矿洞瞄准镜', price: 480, description: '下一关持续显示瞄准辅助线；福袋中的整体掉落概率仅 5%。', highValue: true },
 }
 
-const PASSIVE_TOOLS: PassiveToolKind[] = ['lucky-charm', 'strength', 'gold-book', 'diamond-book']
+const PASSIVE_TOOLS: PassiveToolKind[] = ['lucky-charm', 'strength', 'gold-book', 'diamond-book', 'aim-guide']
 
 function toolIcon(kind: ToolKind, size = 18) {
   if (kind === 'lucky-charm') return <Sparkles size={size} />
   if (kind === 'strength') return <Dumbbell size={size} />
   if (kind === 'dynamite') return <Bomb size={size} />
+  if (kind === 'aim-guide') return <Crosshair size={size} />
   if (kind === 'diamond-book') return <Gem size={size} />
   return <BookOpen size={size} />
 }
@@ -294,16 +300,20 @@ function createTreasures(level: number, seed: number, effects: RoundEffects): Tr
   return items
 }
 
-function readBestScore(): number {
+function accountKey(key: string, playerId: string): string {
+  return `${key}:${playerId}`
+}
+
+function readBestScore(playerId: string): number {
   try {
-    const value = Number(window.localStorage.getItem(BEST_SCORE_KEY) ?? 0)
+    const value = Number(window.localStorage.getItem(accountKey(BEST_SCORE_KEY, playerId)) ?? 0)
     return Number.isFinite(value) && value > 0 ? value : 0
   } catch { return 0 }
 }
 
-function readProgress(): SavedProgress {
+function readProgress(playerId: string): SavedProgress {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(PROGRESS_KEY) ?? '{}') as Partial<SavedProgress>
+    const parsed = JSON.parse(window.localStorage.getItem(accountKey(PROGRESS_KEY, playerId)) ?? '{}') as Partial<SavedProgress>
     const inventory = { ...EMPTY_INVENTORY, ...(parsed.inventory ?? {}) }
     const savedLevel = Math.max(1, Math.min(99, Math.floor(Number(parsed.level) || 1)))
     const migratedScore = parsed.score ?? ((Number(parsed.coins) || 0) + (savedLevel > 1 ? levelConfig(savedLevel - 1).goal : 0))
@@ -331,8 +341,11 @@ function isValuableTreasure(kind: TreasureKind): boolean {
 function mysteryTool(item: Treasure, level: number, lucky: boolean): ToolKind | null {
   const numericId = item.id.split('-').reduce((sum, part) => sum + Array.from(part).reduce((value, character) => value + character.charCodeAt(0), 0), 0)
   const random = seeded(numericId * 97 + level * 131)
+  const dropRoll = random()
+  // 瞄准镜固定占所有福袋的 5%，幸运徽章不会把它变成常见道具。
+  if (dropRoll < 0.05) return 'aim-guide'
   const chance = lucky ? 0.86 : 0.56
-  if (random() > chance) return null
+  if (dropRoll >= chance) return null
   const roll = random()
   if (lucky) {
     if (roll < 0.25) return 'diamond-book'
@@ -348,12 +361,13 @@ function mysteryTool(item: Treasure, level: number, lucky: boolean): ToolKind | 
   return 'dynamite'
 }
 
-export function GoldMinerGame({ onClose }: { onClose: () => void }) {
-  const initialProgress = useMemo(readProgress, [])
+export function GoldMinerGame({ onClose, playerId }: { onClose: () => void; playerId: string }) {
+  const initialProgress = useMemo(() => readProgress(playerId), [playerId])
   const initialConfig = levelConfig(initialProgress.level)
   const shellRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLButtonElement>(null)
   const restartCancelRef = useRef<HTMLButtonElement>(null)
+  const scoreSyncTimerRef = useRef<number | null>(null)
   const hookRef = useRef<HookState>({ angle: -48, direction: 1, length: MIN_LENGTH, phase: 'swinging', caughtId: null })
   const treasuresRef = useRef<Treasure[]>([])
   const scoreRef = useRef(initialProgress.score)
@@ -369,7 +383,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
   const [treasures, setTreasures] = useState(() => createTreasures(initialProgress.level, 1, initialProgress.activeEffects))
   const [hook, setHook] = useState<HookState>(hookRef.current)
   const [score, setScore] = useState(initialProgress.score)
-  const [bestScore, setBestScore] = useState(readBestScore)
+  const [bestScore, setBestScore] = useState(() => readBestScore(playerId))
   const [secondsLeft, setSecondsLeft] = useState(initialConfig.seconds)
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState<RoundStatus>('playing')
@@ -395,7 +409,13 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
     activeEffects.strength && '大力回收',
     activeEffects.goldBook && '金块增量',
     activeEffects.diamondBook && '钻石增量',
+    activeEffects.aimGuide && '瞄准辅助',
   ].filter(Boolean) as string[]
+
+  useEffect(() => {
+    const localBest = readBestScore(playerId)
+    if (localBest > 0) void submitGameScoreApi('gold-miner', localBest).catch(() => undefined)
+  }, [playerId])
 
   const resetRound = useCallback((nextLevel = level, effects = activeEffects, prefix = '重新布置好了矿洞。', startingScore = roundStartScoreRef.current) => {
     const nextSeed = roundSeed + 1
@@ -434,7 +454,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
       inventory: freshInventory,
       activeEffects: freshEffects,
     }
-    try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(freshProgress)) } catch { /* 本次会话仍可正常重新开始。 */ }
+    try { window.localStorage.setItem(accountKey(PROGRESS_KEY, playerId), JSON.stringify(freshProgress)) } catch { /* 本次会话仍可正常重新开始。 */ }
     setRestartConfirmOpen(false)
     setHighestLevel(1)
     setInventory(freshInventory)
@@ -443,7 +463,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
     setLastEarnings(0)
     setLevel(1)
     resetRound(1, freshEffects, '新的淘金旅程开始了！', 0)
-  }, [resetRound])
+  }, [playerId, resetRound])
 
   useEffect(() => {
     if (!restartConfirmOpen) return
@@ -525,6 +545,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
       strength: queuedBoosts.strength,
       goldBook: queuedBoosts['gold-book'],
       diamondBook: queuedBoosts['diamond-book'],
+      aimGuide: queuedBoosts['aim-guide'],
     }
     setInventory((items) => {
       const next = { ...items }
@@ -552,9 +573,9 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ level, highestLevel, score, inventory, activeEffects } satisfies SavedProgress))
+      window.localStorage.setItem(accountKey(PROGRESS_KEY, playerId), JSON.stringify({ level, highestLevel, score, inventory, activeEffects } satisfies SavedProgress))
     } catch { /* 无法使用本地存储时仅保留当前游戏会话。 */ }
-  }, [activeEffects, highestLevel, inventory, level, score])
+  }, [activeEffects, highestLevel, inventory, level, playerId, score])
 
   useEffect(() => {
     if (paused || restartConfirmOpen || status !== 'playing' || timeExpired) return
@@ -585,8 +606,10 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (score <= bestScore) return
     setBestScore(score)
-    try { window.localStorage.setItem(BEST_SCORE_KEY, String(score)) } catch { /* 本地存储不可用时只保留当前成绩。 */ }
-  }, [bestScore, score])
+    try { window.localStorage.setItem(accountKey(BEST_SCORE_KEY, playerId), String(score)) } catch { /* 本地存储不可用时只保留当前成绩。 */ }
+    if (scoreSyncTimerRef.current !== null) window.clearTimeout(scoreSyncTimerRef.current)
+    scoreSyncTimerRef.current = window.setTimeout(() => { void submitGameScoreApi('gold-miner', score).catch(() => undefined) }, 700)
+  }, [bestScore, playerId, score])
 
   useEffect(() => {
     let animationFrame = 0
@@ -598,7 +621,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
         let next = current
         if (current.phase === 'swinging') {
           if (!timeExpired) {
-            let angle = current.angle + current.direction * config.swingSpeed * delta
+            let angle = current.angle + current.direction * config.swingSpeed * SWING_SPEED_MULTIPLIER * delta
             let direction = current.direction
             if (angle >= 68) { angle = 68; direction = -1 }
             if (angle <= -68) { angle = -68; direction = 1 }
@@ -774,7 +797,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
               <button type="button" ref={stageRef} className="gold-miner-stage" aria-label="放下吊钩" data-tv-initial data-phase={hook.phase} data-angle={hook.angle.toFixed(2)} onClick={status === 'failed' ? retryLevel : paused ? () => setPaused(false) : dropHook}>
                 <span className="gold-miner-surface" aria-hidden="true"><span className="miner-cart" /><span className="miner-character"><i className="miner-hat" /><i className="miner-head" /><i className="miner-beard" /><i className="miner-body" /><i className="miner-arm" /></span><span className="miner-winch" /></span>
                 <svg className="gold-miner-hook-layer" viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
-                  {config.aimAssist && hook.phase === 'swinging' && !timeExpired && <line className="gold-miner-aim" x1={PIVOT_X} y1={PIVOT_Y} x2={aimTip.x} y2={aimTip.y} />}
+                  {(config.aimAssist || activeEffects.aimGuide) && hook.phase === 'swinging' && !timeExpired && <line className="gold-miner-aim" x1={PIVOT_X} y1={PIVOT_Y} x2={aimTip.x} y2={aimTip.y} />}
                   <line className="gold-miner-rope" x1={PIVOT_X} y1={PIVOT_Y} x2={tip.x} y2={tip.y} />
                   <g className="gold-miner-claw" transform={`translate(${tip.x} ${tip.y}) rotate(${-hook.angle}) scale(.7)`}><path d="M -13 -3 L -5 11 L 0 4 L 5 11 L 13 -3" /><circle cx="0" cy="-7" r="6" /></g>
                 </svg>

@@ -9513,6 +9513,111 @@ html.mobile-mode:fullscreen .player-community {
   .mower-v3-scene canvas { animation: none !important; }
 }
 
+/* 固定关卡选择与家庭排行榜 */
+.games-intro-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.game-ranking-backdrop {
+  position: fixed;
+  z-index: 390;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: calc(18px + var(--safe-top)) calc(18px + var(--safe-right)) calc(18px + var(--safe-bottom)) calc(18px + var(--safe-left));
+  background: rgba(14, 21, 18, .76);
+  backdrop-filter: blur(8px);
+}
+
+.game-ranking-panel {
+  display: grid;
+  width: min(660px, 100%);
+  max-height: min(720px, 92dvh);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #cbd8d0;
+  border-radius: 8px;
+  color: #26372f;
+  background: #f7faf8;
+  box-shadow: 0 28px 80px rgba(10, 24, 17, .32);
+}
+
+.game-ranking-panel > header,
+.game-ranking-panel > header h2,
+.game-ranking-tabs,
+.game-ranking-list article {
+  display: flex;
+  align-items: center;
+}
+
+.game-ranking-panel > header {
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #dce5df;
+}
+
+.game-ranking-panel > header h2 { gap: 8px; margin: 4px 0 2px; font-size: 22px; }
+.game-ranking-panel > header p { margin: 0; color: #718078; font-size: 11px; }
+.game-ranking-panel > header > button { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid #d2ddd6; border-radius: 7px; background: #fff; }
+.game-ranking-tabs { gap: 6px; padding: 10px 14px; overflow-x: auto; border-bottom: 1px solid #dce5df; }
+.game-ranking-tabs button { min-height: 36px; flex: 1 0 auto; padding: 0 13px; border: 1px solid #d3ddd7; border-radius: 6px; color: #53645b; background: #fff; font-size: 11px; font-weight: 700; }
+.game-ranking-tabs button.is-active { border-color: #376e55; color: #fff; background: #376e55; }
+.game-ranking-list { display: grid; align-content: start; gap: 7px; min-height: 270px; padding: 14px; overflow: auto; }
+.game-ranking-list article { min-height: 58px; gap: 12px; padding: 9px 13px; border: 1px solid #dce5df; border-radius: 7px; background: #fff; }
+.game-ranking-list article.is-current { border-color: #77a68d; background: #edf7f1; }
+.game-ranking-rank { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #5e6d65; background: #edf1ee; font-weight: 900; }
+.game-ranking-list .rank-1 .game-ranking-rank { color: #7c5b08; background: #f8e79a; }
+.game-ranking-list .rank-2 .game-ranking-rank { color: #59656b; background: #dce4e8; }
+.game-ranking-list .rank-3 .game-ranking-rank { color: #7b4b2e; background: #edc5a9; }
+.game-ranking-list article > div { display: grid; min-width: 0; gap: 3px; }
+.game-ranking-list article strong { font-size: 13px; }
+.game-ranking-list article small { color: #7c8982; font-size: 9px; }
+.game-ranking-list article > b { margin-left: auto; color: #315f49; font-size: 18px; font-variant-numeric: tabular-nums; }
+.game-ranking-empty { display: grid; min-height: 250px; place-items: center; align-content: center; gap: 9px; color: #78867f; text-align: center; }
+.game-ranking-empty strong { color: #405148; }
+
+.mower-v2-field { min-height: 440px; }
+.mower-clear-badge { display: inline-flex; min-height: 25px; align-items: center; align-self: center; padding: 0 9px; border: 1px solid #57616d; border-radius: 5px; color: #bbc6cf; background: #303740; font-size: 9px; font-weight: 800; }
+.mower-clear-badge.is-first { border-color: #d7df63; color: #1d2428; background: #e8ef72; }
+.mower-level-overlay { padding: 16px; }
+.mower-level-select { display: grid; width: min(920px, 100%); max-height: calc(100dvh - 100px); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid #46515d; border-radius: 8px; color: #edf3f7; background: #252b33; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+.mower-level-select > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid #414b57; }
+.mower-level-select > header h2 { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 21px; }
+.mower-level-select > header p { margin: 0; color: #aeb9c3; font-size: 10px; }
+.mower-level-select > header > button { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid #46505e; border-radius: 7px; color: #dfe8ef; background: #282f39; }
+.mower-level-chapters { display: grid; gap: 12px; padding: 14px; overflow: auto; }
+.mower-level-chapters > section { display: grid; grid-template-columns: 170px minmax(0, 1fr); align-items: center; gap: 12px; padding: 11px; border: 1px solid #414a55; border-radius: 7px; background: #2b323b; }
+.mower-level-chapters > section > div:first-child { display: grid; gap: 4px; }
+.mower-level-chapters > section > div:first-child strong { font-size: 12px; }
+.mower-level-chapters > section > div:first-child small { color: #9eabb5; font-size: 9px; }
+.mower-level-grid { display: grid; grid-template-columns: repeat(10, minmax(45px, 1fr)); gap: 6px; }
+.mower-level-grid button { display: grid; min-width: 0; min-height: 52px; place-items: center; align-content: center; gap: 3px; border: 1px solid #4d5865; border-radius: 6px; color: #dce5eb; background: #222831; }
+.mower-level-grid button strong { font-size: 14px; }
+.mower-level-grid button span { display: flex; align-items: center; gap: 2px; color: #8996a1; font-size: 7px; }
+.mower-level-grid button.is-complete { border-color: #6d9d73; color: #eaf8e8; background: #294136; }
+.mower-level-grid button.is-current { border-color: #e7ef6a; outline: 2px solid rgba(231,239,106,.24); color: #f5f8bd; }
+.mower-level-grid button:disabled { opacity: .32; }
+
+@media (max-width: 720px) {
+  .games-intro-actions { width: 100%; justify-content: space-between; }
+  .game-ranking-backdrop { padding: calc(8px + var(--safe-top)) calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left)); }
+  .game-ranking-panel { max-height: 94dvh; }
+  .game-ranking-panel > header { padding: 15px; }
+  .mower-level-overlay { padding: 6px; }
+  .mower-level-select { max-height: calc(100dvh - 70px); }
+  .mower-level-chapters > section { grid-template-columns: 1fr; }
+  .mower-level-grid { grid-template-columns: repeat(5, minmax(42px, 1fr)); }
+  .mower-level-select > header p { display: none; }
+  .mower-v2-field { min-height: 380px; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 1000px) {
+  .mower-v2-field { min-height: 245px; }
+}
+
 /* 深岩淘金：扩大矿洞比例，并补充高关卡机关与垃圾物件 */
 .miner-character,
 .miner-cart,

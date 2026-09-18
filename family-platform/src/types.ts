@@ -213,6 +213,26 @@ export interface SessionUser {
   childAge?: number
 }
 
+export type LumiGameId = 'tetris' | 'block-defense' | 'gold-miner' | 'snake'
+
+export interface GameProfile<TProgress = Record<string, unknown>> {
+  gameId: LumiGameId
+  userId: string
+  progress: TProgress
+  bestScore: number
+  bestScoreAt?: string
+  clientUpdatedAt?: string
+  updatedAt?: string
+}
+
+export interface GameLeaderboardEntry {
+  rank: number
+  userId: string
+  displayName: string
+  score: number
+  achievedAt: string
+}
+
 export interface RegistrationDraft {
   username: string
   password: string

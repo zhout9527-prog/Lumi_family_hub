@@ -693,6 +693,34 @@ class CompleteIn(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
+class GameProgressIn(BaseModel):
+    progress: dict[str, Any] = Field(default_factory=dict)
+    score: int = Field(default=0, ge=0, le=2_000_000_000)
+    client_updated_at: datetime | None = None
+
+
+class GameScoreIn(BaseModel):
+    score: int = Field(ge=0, le=2_000_000_000)
+
+
+class GameProfileOut(BaseModel):
+    game_id: str
+    user_id: str
+    progress: dict[str, Any] = Field(default_factory=dict)
+    best_score: int = 0
+    best_score_at: datetime | None = None
+    client_updated_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class GameLeaderboardEntryOut(BaseModel):
+    rank: int
+    user_id: str
+    display_name: str
+    score: int
+    achieved_at: datetime
+
+
 class HealthOut(ApiModel):
     status: Literal["ok", "degraded"]
     version: str

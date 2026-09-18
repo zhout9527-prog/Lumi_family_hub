@@ -1189,6 +1189,9 @@
     (() => {
       "use strict";
 
+      const PLAYER_ID = (new URLSearchParams(window.location.search).get("player") || "guest").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "guest";
+      const SETTINGS_STORAGE_KEY = `snake-settings:${PLAYER_ID}`;
+      const BEST_SCORE_STORAGE_KEY = `snake-best-score:${PLAYER_ID}`;
       const INITIAL_GRID_SIZE = 15;
       const MAX_GRID_SIZE = 120;
       const VIEWPORT_CELLS = 24;
@@ -1353,7 +1356,7 @@
 
       function loadSettings() {
         try {
-          const saved = JSON.parse(localStorage.getItem("snake-settings") || "{}");
+          const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
           if ((Number(saved.version) || 1) < SETTINGS_VERSION && Number(saved.superLifetime) === 15) {
             saved.superLifetime = 10;
           }
@@ -1376,7 +1379,7 @@
 
       function saveSettings() {
         try {
-          localStorage.setItem("snake-settings", JSON.stringify({ ...settings, version: SETTINGS_VERSION }));
+          localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ ...settings, version: SETTINGS_VERSION }));
         } catch {
           // Settings are optional; the round remains playable without storage.
         }
@@ -1384,7 +1387,7 @@
 
       function loadBestScore() {
         try {
-          return Math.max(0, Number.parseInt(localStorage.getItem("snake-best-score") || "0", 10) || 0);
+          return Math.max(0, Number.parseInt(localStorage.getItem(BEST_SCORE_STORAGE_KEY) || "0", 10) || 0);
         } catch {
           return 0;
         }
@@ -1402,10 +1405,11 @@
 
       function saveBestScore() {
         try {
-          localStorage.setItem("snake-best-score", String(bestScore));
+          localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(bestScore));
         } catch {
           // The game still works when storage is unavailable.
         }
+        if (window.parent !== window) window.parent.postMessage({ type: "lumi-game-score", gameId: "snake", score: bestScore }, "*");
       }
 
       function readSettingsFromInputs() {

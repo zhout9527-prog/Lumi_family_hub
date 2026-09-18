@@ -3076,7 +3076,7 @@ export default function App() {
       return <PetView user={currentUser} pet={store.pet} species={store.petSpecies} canAdopt={store.petCanAdopt} connection={store.connection} busy={store.busy} onAdopt={store.adoptPet} onAction={(petId, action: PetAction) => store.performPetAction(petId, action)} />
     }
     if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
-      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} onPlayGoldMiner={() => { setSelectedItem(null); setPlayback(null); setGoldMinerOpen(true) }} onPlaySnake={() => { setSelectedItem(null); setPlayback(null); setSnakeOpen(true) }} onOpenArtStudio={() => { setSelectedItem(null); setPlayback(null); setArtStudioOpen(true) }} onOpenStickman={() => { void openOfficialGame('https://drawastickman.com/?m=1').catch(reportError) }} />
+      return <GamesView currentUserId={currentUser.id} onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} onPlayGoldMiner={() => { setSelectedItem(null); setPlayback(null); setGoldMinerOpen(true) }} onPlaySnake={() => { setSelectedItem(null); setPlayback(null); setSnakeOpen(true) }} onOpenArtStudio={() => { setSelectedItem(null); setPlayback(null); setArtStudioOpen(true) }} onOpenStickman={() => { void openOfficialGame('https://drawastickman.com/?m=1').catch(reportError) }} />
     }
     if (activeNav === 'poster-wall' && state.role === 'guardian') {
       return <PosterWall items={items} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
@@ -3145,10 +3145,10 @@ export default function App() {
         />
       )}
       {playback && <MediaPlayerModal item={playback.item} url={playback.url} mode={playback.mode} service={playback.service} onClose={closePlayback} onSelectEpisode={handleLaunch} />}
-      {tetrisOpen && <TetrisGame onClose={() => setTetrisOpen(false)} />}
-      {blockMowerOpen && <BlockMowerGame onClose={() => setBlockMowerOpen(false)} />}
-      {goldMinerOpen && <GoldMinerGame onClose={() => setGoldMinerOpen(false)} />}
-      {snakeOpen && <SnakeGame onClose={() => setSnakeOpen(false)} />}
+      {tetrisOpen && <TetrisGame playerId={currentUser.id} onClose={() => setTetrisOpen(false)} />}
+      {blockMowerOpen && <BlockMowerGame playerId={currentUser.id} onClose={() => setBlockMowerOpen(false)} />}
+      {goldMinerOpen && <GoldMinerGame playerId={currentUser.id} onClose={() => setGoldMinerOpen(false)} />}
+      {snakeOpen && <SnakeGame playerId={currentUser.id} onClose={() => setSnakeOpen(false)} />}
       {artStudioOpen && <KidsArtStudio onClose={() => setArtStudioOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>

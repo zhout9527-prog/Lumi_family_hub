@@ -13,6 +13,8 @@ import {
   Gauge,
   Heart,
   Layers3,
+  ListChecks,
+  MapPinned,
   Pause,
   Play,
   RefreshCw,
@@ -28,6 +30,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { gameProfileApi, saveGameProfileApi } from './api'
 
 type BlockHue = 'coral' | 'cyan' | 'blue' | 'violet' | 'lime' | 'amber'
 type BlockShape = 'cube' | 'round' | 'diamond'
@@ -78,6 +81,7 @@ interface ShotEffect {
 interface RoundReward {
   coins: number
   gears: number
+  firstClear: boolean
 }
 
 interface RoundState {
@@ -106,6 +110,9 @@ interface RoundState {
 
 interface ProgressState {
   unlockedLevel: number
+  currentLevel: number
+  completedLevels: number[]
+  levelBestScores: Record<string, number>
   coins: number
   gears: number
   ammoLevel: number
@@ -118,6 +125,26 @@ interface ProgressState {
   bestScore: number
 }
 
+interface LevelDefinition {
+  level: number
+  chapter: string
+  name: string
+  seed: number
+  lanes: number
+  layerCount: number
+  occupancy: number
+  catalogCount: number
+  startProgress: number
+  layerGap: number
+  speed: number
+  freeRerolls: number
+}
+
+interface ProgressSnapshot {
+  progress: ProgressState
+  updatedAt: string
+}
+
 interface UpgradeDefinition {
   id: 'ammo' | 'charge' | 'slot' | 'reserve' | 'penetration'
   title: string
@@ -128,11 +155,12 @@ interface UpgradeDefinition {
   gearBase: number
 }
 
-const STORAGE_KEY = 'lumi:block-defense-progress:v3'
+const STORAGE_KEY_PREFIX = 'lumi:block-defense-progress:v4'
 const TICK_MS = 100
 const FIRE_INTERVAL_MS = 760
 const MAX_SHIELDS = 3
 const DEADLOCK_RESCUE_MS = 2800
+const MAX_LEVEL = 60
 
 const SIGNATURES: SignatureDefinition[] = [
   { id: 'coral-cube-plain', hue: 'coral', shape: 'cube', pattern: 'plain', label: '珊瑚红方块', shortLabel: '红方', color: '#ef6967', darkColor: '#a93f47' },
@@ -153,6 +181,9 @@ const SIGNATURE_MAP = new Map(SIGNATURES.map((signature) => [signature.id, signa
 
 const DEFAULT_PROGRESS: ProgressState = {
   unlockedLevel: 1,
+  currentLevel: 1,
+  completedLevels: [],
+  levelBestScores: {},
   coins: 0,
   gears: 0,
   ammoLevel: 0,
@@ -164,6 +195,37 @@ const DEFAULT_PROGRESS: ProgressState = {
   universalLaunchers: 0,
   bestScore: 0,
 }
+
+const LEVEL_CHAPTERS = [
+  { name: '色彩启程', label: '辨认颜色与基础换装' },
+  { name: '形状街区', label: '颜色与形状组合' },
+  { name: '花纹工厂', label: '加入花纹和更宽战场' },
+  { name: '纵深峡谷', label: '稀疏前排与逐列遮挡' },
+  { name: '高速都市', label: '更快推进与资源取舍' },
+  { name: '星际防线', label: '完整类型与终局挑战' },
+] as const
+
+export const BLOCK_DEFENSE_LEVELS: LevelDefinition[] = Array.from({ length: MAX_LEVEL }, (_, index) => {
+  const level = index + 1
+  const chapterIndex = Math.floor(index / 10)
+  const stage = index % 10
+  const chapter = LEVEL_CHAPTERS[chapterIndex]
+  return {
+    level,
+    chapter: chapter.name,
+    name: `${chapter.name} ${stage + 1}`,
+    seed: 17_029 + level * 7_919,
+    lanes: Math.min(11, 8 + Math.floor(chapterIndex / 2) + (stage >= 7 ? 1 : 0)),
+    layerCount: Math.min(19, 8 + chapterIndex * 2 + Math.floor(stage / 3)),
+    occupancy: Math.min(0.94, 0.68 + chapterIndex * 0.045 + stage * 0.009),
+    catalogCount: Math.min(SIGNATURES.length, 3 + chapterIndex + Math.floor(stage / 3)),
+    // 第一批色块比旧版后退约四分之一棋盘，给孩子观察和换装时间。
+    startProgress: 42 + chapterIndex * 1.4 + Math.floor(stage / 5),
+    layerGap: Math.max(4.8, 6.4 - chapterIndex * 0.24),
+    speed: 0.54 + chapterIndex * 0.07 + stage * 0.01,
+    freeRerolls: level === 1 ? 3 : level <= 3 ? 1 : 0,
+  }
+})
 
 const UPGRADES: UpgradeDefinition[] = [
   { id: 'ammo', title: '扩容弹仓', detail: '每级增加 3 发，最高 99 发', icon: BatteryCharging, maxLevel: 30, coinBase: 90, gearBase: 1 },
@@ -189,20 +251,51 @@ function seededShuffle<T>(items: T[], seed: number): T[] {
   return result
 }
 
-function loadProgress(): ProgressState {
+function levelDefinition(level: number): LevelDefinition {
+  return BLOCK_DEFENSE_LEVELS[Math.max(0, Math.min(MAX_LEVEL - 1, Math.floor(level) - 1))]
+}
+
+function normalizeProgress(value: Partial<ProgressState> | null | undefined): ProgressState {
+  const unlockedLevel = Math.max(1, Math.min(MAX_LEVEL, Math.floor(Number(value?.unlockedLevel) || 1)))
+  const completedLevels = Array.from(new Set((Array.isArray(value?.completedLevels) ? value.completedLevels : [])
+    .map((level) => Math.floor(Number(level)))
+    .filter((level) => level >= 1 && level <= MAX_LEVEL))).sort((left, right) => left - right)
+  const rawBestScores = value?.levelBestScores && typeof value.levelBestScores === 'object' ? value.levelBestScores : {}
+  const levelBestScores = Object.fromEntries(Object.entries(rawBestScores)
+    .map(([level, score]) => [String(Math.max(1, Math.min(MAX_LEVEL, Math.floor(Number(level) || 1)))), Math.max(0, Math.floor(Number(score) || 0))]))
+  return {
+    ...DEFAULT_PROGRESS,
+    ...value,
+    unlockedLevel,
+    currentLevel: Math.max(1, Math.min(unlockedLevel, Math.floor(Number(value?.currentLevel) || unlockedLevel))),
+    completedLevels,
+    levelBestScores,
+    coins: Math.max(0, Math.floor(Number(value?.coins) || 0)),
+    gears: Math.max(0, Math.floor(Number(value?.gears) || 0)),
+    ammoLevel: Math.max(0, Math.min(30, Math.floor(Number(value?.ammoLevel) || 0))),
+    chargeLevel: Math.max(0, Math.min(10, Math.floor(Number(value?.chargeLevel) || 0))),
+    slotLevel: Math.max(0, Math.min(2, Math.floor(Number(value?.slotLevel) || 0))),
+    reserveLevel: Math.max(0, Math.min(4, Math.floor(Number(value?.reserveLevel) || 0))),
+    penetrationLevel: Math.max(0, Math.min(3, Math.floor(Number(value?.penetrationLevel) || 0))),
+    rerolls: Math.max(0, Math.floor(Number(value?.rerolls) || 0)),
+    universalLaunchers: Math.max(0, Math.floor(Number(value?.universalLaunchers) || 0)),
+    bestScore: Math.max(0, Math.floor(Number(value?.bestScore) || 0)),
+  }
+}
+
+function storageKey(playerId: string): string {
+  return `${STORAGE_KEY_PREFIX}:${playerId}`
+}
+
+function loadProgress(playerId: string): ProgressSnapshot {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<ProgressState>
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey(playerId)) ?? '{}') as Partial<ProgressSnapshot>
     return {
-      ...DEFAULT_PROGRESS,
-      ...parsed,
-      unlockedLevel: Math.max(1, Number(parsed.unlockedLevel) || 1),
-      coins: Math.max(0, Number(parsed.coins) || 0),
-      gears: Math.max(0, Number(parsed.gears) || 0),
-      rerolls: Math.max(0, Number(parsed.rerolls) || 0),
-      universalLaunchers: Math.max(0, Number(parsed.universalLaunchers) || 0),
+      progress: normalizeProgress(parsed.progress),
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString(),
     }
   } catch {
-    return { ...DEFAULT_PROGRESS }
+    return { progress: normalizeProgress(DEFAULT_PROGRESS), updatedAt: new Date(0).toISOString() }
   }
 }
 
@@ -227,20 +320,18 @@ function penetrationDepth(progress: ProgressState): number {
 }
 
 function catalogForLevel(level: number): string[] {
-  const count = Math.min(SIGNATURES.length, 3 + Math.floor((level - 1) / 2))
-  return SIGNATURES.slice(0, count).map((signature) => signature.id)
+  return SIGNATURES.slice(0, levelDefinition(level).catalogCount).map((signature) => signature.id)
 }
 
 function createLayers(level: number, lanes: number, catalog: string[]): BlockLayer[] {
-  const layerCount = Math.min(17, 10 + Math.floor(level * 0.8))
-  const occupancy = Math.min(0.94, 0.78 + level * 0.012)
+  const definition = levelDefinition(level)
   const layers: BlockLayer[] = []
-  for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+  for (let layerIndex = 0; layerIndex < definition.layerCount; layerIndex += 1) {
     const blocks: FieldBlock[] = []
     for (let lane = 0; lane < lanes; lane += 1) {
-      const shouldFill = seededValue(level * 991 + layerIndex * 67 + lane * 17) <= occupancy
+      const shouldFill = seededValue(definition.seed + layerIndex * 67 + lane * 17) <= definition.occupancy
       if (!shouldFill && blocks.length >= Math.max(3, lanes - 3)) continue
-      const signatureIndex = Math.floor(seededValue(level * 313 + layerIndex * 41 + lane * 19) * catalog.length)
+      const signatureIndex = Math.floor(seededValue(definition.seed * 3 + layerIndex * 41 + lane * 19) * catalog.length)
       blocks.push({
         id: `block-${level}-${layerIndex}-${lane}`,
         signatureId: catalog[Math.min(catalog.length - 1, signatureIndex)],
@@ -249,7 +340,7 @@ function createLayers(level: number, lanes: number, catalog: string[]): BlockLay
     }
     layers.push({
       id: `layer-${level}-${layerIndex}`,
-      progress: 69 - layerIndex * 6.4,
+      progress: definition.startProgress - layerIndex * definition.layerGap,
       blocks,
     })
   }
@@ -264,13 +355,25 @@ function signatureStyle(signatureId: string): CSSProperties {
   } as CSSProperties
 }
 
-function firstUrgentSignature(layers: BlockLayer[], represented: Set<string>): string | null {
-  const frontLayers = layers.filter((layer) => layer.blocks.length > 0).sort((left, right) => right.progress - left.progress)
-  for (const layer of frontLayers.slice(0, 2)) {
-    const missing = layer.blocks.find((block) => !represented.has(block.signatureId))
-    if (missing) return missing.signatureId
+function exposedTargets(layers: BlockLayer[], depth: number): Array<{ layerId: string; block: FieldBlock; progress: number }> {
+  const result: Array<{ layerId: string; block: FieldBlock; progress: number }> = []
+  const sorted = [...layers].filter((layer) => layer.blocks.length > 0).sort((left, right) => right.progress - left.progress)
+  const lanes = new Set(sorted.flatMap((layer) => layer.blocks.map((block) => block.lane)))
+  for (const lane of lanes) {
+    let visible = 0
+    for (const layer of sorted) {
+      const block = layer.blocks.find((candidate) => candidate.lane === lane)
+      if (!block) continue
+      result.push({ layerId: layer.id, block, progress: layer.progress })
+      visible += 1
+      if (visible >= depth) break
+    }
   }
-  return null
+  return result
+}
+
+function firstUrgentSignature(layers: BlockLayer[], represented: Set<string>): string | null {
+  return exposedTargets(layers, 1).find(({ block }) => !represented.has(block.signatureId))?.block.signatureId ?? null
 }
 
 function chooseOfferSignature(
@@ -315,10 +418,11 @@ function createLauncher(signatureId: string, id: string, progress: ProgressState
 }
 
 function createRound(level: number, progress: ProgressState): RoundState {
-  const lanes = Math.min(11, 8 + Math.floor((level - 1) / 3))
+  const definition = levelDefinition(level)
+  const lanes = definition.lanes
   const catalog = catalogForLevel(level)
   const layers = createLayers(level, lanes, catalog)
-  const frontSignatures = Array.from(new Set(layers[0]?.blocks.map((block) => block.signatureId) ?? catalog))
+  const frontSignatures = Array.from(new Set(exposedTargets(layers, 1).map(({ block }) => block.signatureId)))
   const active: Array<Launcher | null> = Array.from({ length: activeSlotCount(progress) }, (_, index) => {
     const signatureId = frontSignatures[index % Math.max(1, frontSignatures.length)] ?? catalog[index % catalog.length]
     return createLauncher(signatureId, `active-${level}-${index}`, progress, false)
@@ -342,7 +446,7 @@ function createRound(level: number, progress: ProgressState): RoundState {
     selectedActive: 0,
     selectedReserve: 0,
     drawIndex,
-    freeRerolls: level === 1 ? 3 : level <= 3 ? 1 : 0,
+    freeRerolls: definition.freeRerolls,
     deadlockMs: 0,
     shields: MAX_SHIELDS,
     destroyed: 0,
@@ -356,8 +460,7 @@ function createRound(level: number, progress: ProgressState): RoundState {
 }
 
 function advanceSpeed(level: number): number {
-  if (level <= 3) return 0.58 + level * 0.036
-  return Math.min(1.12, 0.72 + (level - 3) * 0.036)
+  return levelDefinition(level).speed
 }
 
 function blockedSignature(
@@ -366,31 +469,26 @@ function blockedSignature(
   reserve: Launcher[],
   depth: number,
 ): string | null {
-  const accessible = layers
-    .filter((layer) => layer.blocks.length > 0)
-    .sort((left, right) => right.progress - left.progress)
-    .slice(0, depth)
+  const accessible = exposedTargets(layers, depth)
   const stocked = new Set([
     ...active.flatMap((launcher) => launcher && launcher.ammo > 0 ? [launcher.signatureId] : []),
     ...reserve.flatMap((launcher) => launcher.ammo > 0 ? [launcher.signatureId] : []),
   ])
-  const accessibleTypes = Array.from(new Set(accessible.flatMap((layer) => layer.blocks.map((block) => block.signatureId))))
+  const accessibleTypes = Array.from(new Set(accessible.map(({ block }) => block.signatureId)))
   return accessibleTypes.some((signatureId) => stocked.has(signatureId)) ? null : accessibleTypes[0] ?? null
 }
 
 function findTarget(layers: BlockLayer[], signatureId: string, launcherIndex: number, launcherCount: number, laneCount: number, depth: number): { layerId: string; block: FieldBlock; progress: number } | null {
-  const accessible = layers
-    .filter((layer) => layer.blocks.length > 0)
-    .sort((left, right) => right.progress - left.progress)
-    .slice(0, depth)
+  const accessible = exposedTargets(layers, depth)
   const launcherLane = launcherCount <= 1 ? 0.5 : launcherIndex / (launcherCount - 1)
-  for (const layer of accessible) {
-    const matches = layer.blocks
-      .filter((block) => block.signatureId === signatureId)
-      .sort((left, right) => Math.abs(left.lane / Math.max(1, laneCount - 1) - launcherLane) - Math.abs(right.lane / Math.max(1, laneCount - 1) - launcherLane))
-    if (matches[0]) return { layerId: layer.id, block: matches[0], progress: layer.progress }
-  }
-  return null
+  return accessible
+    .filter(({ block }) => block.signatureId === signatureId)
+    .sort((left, right) => {
+      const progressDifference = right.progress - left.progress
+      if (Math.abs(progressDifference) > 0.01) return progressDifference
+      return Math.abs(left.block.lane / Math.max(1, laneCount - 1) - launcherLane)
+        - Math.abs(right.block.lane / Math.max(1, laneCount - 1) - launcherLane)
+    })[0] ?? null
 }
 
 function stepRound(previous: RoundState, progress: ProgressState): RoundState {
@@ -499,10 +597,7 @@ function upgradeCost(upgrade: UpgradeDefinition, currentLevel: number): { coins:
 }
 
 function levelName(level: number): string {
-  if (level <= 3) return ['认识颜色', '换装练习', '守住前层'][level - 1]
-  if (level <= 6) return '形状挑战'
-  if (level <= 9) return '花纹迷阵'
-  return '多层防线'
+  return levelDefinition(level).name
 }
 
 function formatTime(milliseconds: number): string {
@@ -720,11 +815,11 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
           position.y += Math.sin(elapsed * 1.8 + block.lane * 0.7 + shown) * 0.012
           dummy.position.copy(position)
           dummy.rotation.set(0, signature.shape === 'diamond' ? Math.PI / 4 : 0, 0)
-          dummy.scale.setScalar(current.targetable.has(layer.id) ? 1 : 0.965)
+          dummy.scale.setScalar(current.targetable.has(block.id) ? 1 : 0.965)
           dummy.updateMatrix()
           mesh.setMatrixAt(index, dummy.matrix)
           const instanceColor = new THREE.Color(signature.color)
-          if (!current.targetable.has(layer.id)) instanceColor.lerp(coveredTint, 0.22)
+          if (!current.targetable.has(block.id)) instanceColor.lerp(coveredTint, 0.22)
           else instanceColor.lerp(white, 0.045)
           mesh.setColorAt(index, instanceColor)
           if (eyeIndex + 1 < MAX_SCENE_EYES) {
@@ -859,38 +954,90 @@ function LauncherFace({ launcher, compact = false }: { launcher: Launcher; compa
   )
 }
 
-export function BlockMowerGame({ onClose }: { onClose: () => void }) {
+export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; playerId: string }) {
   const shellRef = useRef<HTMLDivElement>(null)
   const rewardKeyRef = useRef<string | null>(null)
-  const progressRef = useRef<ProgressState>(loadProgress())
+  const initialSnapshotRef = useRef<ProgressSnapshot>(loadProgress(playerId))
+  const progressRef = useRef<ProgressState>(initialSnapshotRef.current.progress)
+  const snapshotRef = useRef<ProgressSnapshot>(initialSnapshotRef.current)
+  const syncTimerRef = useRef<number | null>(null)
   const [progress, setProgress] = useState(progressRef.current)
-  const [round, setRound] = useState(() => createRound(progressRef.current.unlockedLevel, progressRef.current))
+  const [round, setRound] = useState(() => createRound(progressRef.current.currentLevel, progressRef.current))
   const [paused, setPaused] = useState(false)
   const [workshopOpen, setWorkshopOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [levelSelectOpen, setLevelSelectOpen] = useState(false)
   const [universalTarget, setUniversalTarget] = useState<number | null>(null)
+  const [syncState, setSyncState] = useState<'syncing' | 'synced' | 'offline'>('syncing')
+
+  const persistProgress = useCallback((nextValue: ProgressState, sync = true) => {
+    const next = normalizeProgress(nextValue)
+    const updatedAt = new Date().toISOString()
+    const snapshot = { progress: next, updatedAt }
+    progressRef.current = next
+    snapshotRef.current = snapshot
+    setProgress(next)
+    try { window.localStorage.setItem(storageKey(playerId), JSON.stringify(snapshot)) } catch { /* 本地存储不可用时只影响进度保留 */ }
+    if (!sync) return
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current)
+    setSyncState('syncing')
+    syncTimerRef.current = window.setTimeout(() => {
+      void saveGameProfileApi('block-defense', next, next.bestScore, updatedAt)
+        .then(() => setSyncState('synced'))
+        .catch(() => setSyncState('offline'))
+    }, 450)
+  }, [playerId])
 
   const updateProgress = useCallback((updater: (current: ProgressState) => ProgressState) => {
-    setProgress((current) => {
-      const next = updater(current)
-      progressRef.current = next
-      try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch { /* 本地存储不可用时只影响进度保留 */ }
-      return next
-    })
-  }, [])
+    persistProgress(updater(progressRef.current))
+  }, [persistProgress])
 
   useEffect(() => {
     shellRef.current?.focus({ preventScroll: true })
   }, [])
 
   useEffect(() => {
-    if (paused || workshopOpen || helpOpen || resetOpen || universalTarget !== null || round.phase !== 'playing') return undefined
+    let cancelled = false
+    const local = snapshotRef.current
+    setSyncState('syncing')
+    void gameProfileApi<Partial<ProgressState>>('block-defense').then((remote) => {
+      if (cancelled) return
+      const hasRemoteProgress = remote.progress && Object.keys(remote.progress).length > 0
+      const remoteUpdatedAt = remote.clientUpdatedAt ?? remote.updatedAt ?? new Date(0).toISOString()
+      if (hasRemoteProgress && Date.parse(remoteUpdatedAt) >= Date.parse(local.updatedAt)) {
+        const next = normalizeProgress({ ...remote.progress, bestScore: Math.max(Number(remote.progress.bestScore) || 0, remote.bestScore) })
+        const snapshot = { progress: next, updatedAt: remoteUpdatedAt }
+        progressRef.current = next
+        snapshotRef.current = snapshot
+        setProgress(next)
+        try { window.localStorage.setItem(storageKey(playerId), JSON.stringify(snapshot)) } catch { /* 本地缓存不可用时继续使用服务端副本 */ }
+        rewardKeyRef.current = null
+        setRound(createRound(next.currentLevel, next))
+        setSyncState('synced')
+        return
+      }
+      return saveGameProfileApi('block-defense', local.progress, local.progress.bestScore, local.updatedAt)
+        .then(() => { if (!cancelled) setSyncState('synced') })
+    }).catch(() => {
+      if (!cancelled) setSyncState('offline')
+    })
+    return () => { cancelled = true }
+  }, [playerId])
+
+  useEffect(() => () => {
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current)
+    const snapshot = snapshotRef.current
+    void saveGameProfileApi('block-defense', snapshot.progress, snapshot.progress.bestScore, snapshot.updatedAt).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    if (paused || workshopOpen || helpOpen || resetOpen || levelSelectOpen || universalTarget !== null || round.phase !== 'playing') return undefined
     const timer = window.setInterval(() => {
       setRound((current) => stepRound(current, progressRef.current))
     }, TICK_MS)
     return () => window.clearInterval(timer)
-  }, [helpOpen, paused, resetOpen, round.phase, universalTarget, workshopOpen])
+  }, [helpOpen, levelSelectOpen, paused, resetOpen, round.phase, universalTarget, workshopOpen])
 
   useEffect(() => {
     if (round.phase === 'playing' || round.reward) return
@@ -898,14 +1045,20 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
     if (rewardKeyRef.current === rewardKey) return
     rewardKeyRef.current = rewardKey
     const completion = round.total > 0 ? round.destroyed / round.total : 0
+    const firstClear = round.phase === 'won' && !progressRef.current.completedLevels.includes(round.level)
     const reward: RoundReward = round.phase === 'won'
-      ? { coins: 120 + round.level * 28, gears: 2 + Math.ceil(round.level / 3) }
-      : { coins: Math.max(20, Math.round(65 * completion)), gears: completion >= 0.5 ? 1 : 0 }
+      ? firstClear
+        ? { coins: 120 + round.level * 28, gears: 2 + Math.ceil(round.level / 3), firstClear: true }
+        : { coins: 32 + round.level * 7, gears: Math.max(1, Math.ceil(round.level / 15)), firstClear: false }
+      : { coins: Math.max(12, Math.round(42 * completion)), gears: completion >= 0.65 ? 1 : 0, firstClear: false }
     updateProgress((current) => ({
       ...current,
       coins: current.coins + reward.coins,
       gears: current.gears + reward.gears,
-      unlockedLevel: round.phase === 'won' ? Math.max(current.unlockedLevel, round.level + 1) : current.unlockedLevel,
+      unlockedLevel: round.phase === 'won' ? Math.min(MAX_LEVEL, Math.max(current.unlockedLevel, round.level + 1)) : current.unlockedLevel,
+      currentLevel: round.phase === 'won' ? Math.min(MAX_LEVEL, round.level + 1) : round.level,
+      completedLevels: round.phase === 'won' ? Array.from(new Set([...current.completedLevels, round.level])).sort((left, right) => left - right) : current.completedLevels,
+      levelBestScores: { ...current.levelBestScores, [round.level]: Math.max(current.levelBestScores[String(round.level)] ?? 0, round.score) },
       bestScore: Math.max(current.bestScore, round.score),
     }))
     setRound((current) => current.id === round.id ? { ...current, reward } : current)
@@ -922,11 +1075,12 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
   const closeTopLayer = useCallback(() => {
     if (universalTarget !== null) setUniversalTarget(null)
     else if (resetOpen) setResetOpen(false)
+    else if (levelSelectOpen) setLevelSelectOpen(false)
     else if (helpOpen) setHelpOpen(false)
     else if (workshopOpen) setWorkshopOpen(false)
     else if (paused) setPaused(false)
     else onClose()
-  }, [helpOpen, onClose, paused, resetOpen, universalTarget, workshopOpen])
+  }, [helpOpen, levelSelectOpen, onClose, paused, resetOpen, universalTarget, workshopOpen])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1039,19 +1193,23 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
   }
 
   const startLevel = useCallback((level: number) => {
+    const targetLevel = Math.max(1, Math.min(MAX_LEVEL, Math.floor(level)))
+    if (targetLevel > progressRef.current.unlockedLevel) return
     rewardKeyRef.current = null
     setPaused(false)
     setWorkshopOpen(false)
     setHelpOpen(false)
+    setLevelSelectOpen(false)
     setUniversalTarget(null)
-    setRound(createRound(level, progressRef.current))
-  }, [])
+    if (progressRef.current.currentLevel !== targetLevel) {
+      persistProgress({ ...progressRef.current, currentLevel: targetLevel })
+    }
+    setRound(createRound(targetLevel, progressRef.current))
+  }, [persistProgress])
 
   const resetAdventure = () => {
-    const fresh = { ...DEFAULT_PROGRESS }
-    progressRef.current = fresh
-    setProgress(fresh)
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)) } catch { /* 忽略 */ }
+    const fresh = normalizeProgress(DEFAULT_PROGRESS)
+    persistProgress(fresh)
     setResetOpen(false)
     startLevel(1)
   }
@@ -1065,8 +1223,8 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
     () => [...round.layers].sort((left, right) => left.progress - right.progress),
     [round.layers],
   )
-  const frontLayerIds = useMemo(
-    () => new Set([...round.layers].sort((left, right) => right.progress - left.progress).slice(0, penetrationDepth(progress)).map((layer) => layer.id)),
+  const targetableBlockIds = useMemo(
+    () => new Set(exposedTargets(round.layers, penetrationDepth(progress)).map(({ block }) => block.id)),
     [progress, round.layers],
   )
 
@@ -1076,7 +1234,7 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
         <header className="mower-v2-header">
           <div className="mower-v2-brand">
             <span className="mower-v2-logo"><Box size={20} /></span>
-            <div><strong>彩块防线</strong><span>BLOCK DEFENSE · 第 {round.level} 关「{levelName(round.level)}」</span></div>
+            <div><strong>彩块防线</strong><span>BLOCK DEFENSE · {round.level}/{MAX_LEVEL}「{levelName(round.level)}」· {syncState === 'synced' ? '已同步' : syncState === 'syncing' ? '同步中' : '离线存档'}</span></div>
           </div>
           <div className="mower-v2-hud">
             <span><Trophy size={14} />{round.score.toLocaleString('zh-CN')}</span>
@@ -1085,6 +1243,7 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
             <span><TimerReset size={14} />{formatTime(round.elapsedMs)}</span>
           </div>
           <div className="mower-v2-header-actions">
+            <button type="button" title="选择关卡" aria-label="选择关卡" onClick={() => setLevelSelectOpen(true)}><MapPinned size={18} /></button>
             <button type="button" title="玩法说明" aria-label="玩法说明" onClick={() => setHelpOpen(true)}><CircleDot size={18} /></button>
             <button type="button" title="成长工坊" aria-label="成长工坊" onClick={() => setWorkshopOpen(true)}><ShoppingBag size={18} /></button>
             <button type="button" title={paused ? '继续' : '暂停'} aria-label={paused ? '继续游戏' : '暂停游戏'} onClick={() => setPaused((current) => !current)}>{paused ? <Play size={18} /> : <Pause size={18} />}</button>
@@ -1099,13 +1258,13 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
                 {Array.from({ length: MAX_SHIELDS }, (_, index) => <Heart key={index} size={17} fill={index < round.shields ? 'currentColor' : 'none'} className={index < round.shields ? 'is-on' : ''} />)}
               </div>
               <div className="mower-v2-goal"><span>清理进度</span><strong>{round.destroyed}/{round.total}</strong><i><b style={{ width: `${Math.min(100, round.total > 0 ? round.destroyed / round.total * 100 : 0)}%` }} /></i></div>
-              <span className="mower-v2-depth"><Layers3 size={15} />可攻击前 {penetrationDepth(progress)} 层</span>
+              <span className="mower-v2-depth"><Layers3 size={15} />每列可攻击前 {penetrationDepth(progress)} 个</span>
             </div>
 
             <div className="mower-v2-field" style={{ '--mower-lanes': round.lanes } as CSSProperties}>
               <div className="mower-v2-horizon"><span>方块正在靠近防线</span></div>
               <div className="mower-v2-grid-plane" aria-hidden="true" />
-              <BlockDefenseScene layers={round.layers} effects={round.effects} targetable={frontLayerIds} lanes={round.lanes} />
+              <BlockDefenseScene layers={round.layers} effects={round.effects} targetable={targetableBlockIds} lanes={round.lanes} />
               <div className="mower-v2-block-plane" aria-hidden="true">
                 {sortedLayers.flatMap((layer) => layer.blocks.map((block) => {
                   const signature = SIGNATURE_MAP.get(block.signatureId) ?? SIGNATURES[0]
@@ -1115,9 +1274,11 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
                   return (
                     <span
                       key={block.id}
-                      className={`mower-v2-block shape-${signature.shape} pattern-${signature.pattern} ${frontLayerIds.has(layer.id) ? 'is-targetable' : 'is-covered'}`}
+                      data-lane={block.lane}
+                      data-layer={layer.id}
+                      className={`mower-v2-block shape-${signature.shape} pattern-${signature.pattern} ${targetableBlockIds.has(block.id) ? 'is-targetable' : 'is-covered'}`}
                       style={{ ...signatureStyle(signature.id), left: `${left}%`, top: `${top}%`, zIndex: Math.round(layer.progress + 100), transform: `translate(-50%, -50%) scale(${scale})` }}
-                      title={`${signature.label}${frontLayerIds.has(layer.id) ? '，可攻击' : '，被前层遮挡'}`}
+                      title={`${signature.label}${targetableBlockIds.has(block.id) ? '，可攻击' : '，被同列前方色块遮挡'}`}
                     >
                       <i className="mower-v2-eyes"><b /><b /></i>
                     </span>
@@ -1191,7 +1352,7 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
           </aside>
         </main>
 
-        {paused && round.phase === 'playing' && !workshopOpen && !helpOpen && !resetOpen && universalTarget === null && (
+        {paused && round.phase === 'playing' && !workshopOpen && !helpOpen && !resetOpen && !levelSelectOpen && universalTarget === null && (
           <div className="mower-v2-overlay"><section className="mower-pause-card"><Pause size={30} /><h2>游戏已暂停</h2><p>方块和充能计时都已停止。</p><button type="button" className="button button-primary" autoFocus onClick={() => setPaused(false)}><Play size={17} />继续守护</button></section></div>
         )}
 
@@ -1201,11 +1362,49 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
               <span className="mower-result-icon">{round.phase === 'won' ? <Trophy size={38} /> : <Shield size={38} />}</span>
               <span className="eyebrow">LEVEL {round.level}</span>
               <h2>{round.phase === 'won' ? '防线守住了' : '这次差一点'}</h2>
-              <p>{round.phase === 'won' ? '你正确安排了发射器，所有彩块都被逐层清理。' : `已清理 ${round.destroyed}/${round.total} 个方块，失败也会获得成长材料。`}</p>
+              <p>{round.phase === 'won' ? (round.reward?.firstClear ? '首次守住这一关，获得完整首通奖励。' : '重复挑战成功，仍会获得少量升级材料。') : `已清理 ${round.destroyed}/${round.total} 个方块，本关可以直接重新挑战。`}</p>
+              {round.phase === 'won' && <span className={`mower-clear-badge ${round.reward?.firstClear ? 'is-first' : ''}`}>{round.reward?.firstClear ? '首次通关奖励' : '重复通关奖励'}</span>}
               <div className="mower-reward-row"><span><Coins size={18} />+{round.reward?.coins ?? 0}</span><span><Settings2 size={18} />+{round.reward?.gears ?? 0}</span></div>
               <div className="mower-result-actions">
+                <button type="button" className="button button-quiet" onClick={() => setLevelSelectOpen(true)}><MapPinned size={17} />选择关卡</button>
                 <button type="button" className="button button-quiet" onClick={() => setWorkshopOpen(true)}><ShoppingBag size={17} />先升级</button>
-                <button type="button" className="button button-primary" autoFocus onClick={() => startLevel(round.phase === 'won' ? round.level + 1 : round.level)}>{round.phase === 'won' ? '下一关' : '再试一次'}<ChevronRight size={17} /></button>
+                <button type="button" className="button button-primary" autoFocus onClick={() => startLevel(round.phase === 'won' ? Math.min(MAX_LEVEL, round.level + 1) : round.level)}>{round.phase === 'won' ? (round.level >= MAX_LEVEL ? '再次挑战' : '下一关') : '重试本关'}<ChevronRight size={17} /></button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {levelSelectOpen && (
+          <div className="mower-v2-overlay mower-level-overlay">
+            <section className="mower-level-select" role="dialog" aria-modal="true" aria-label="彩块防线选关">
+              <header><div><span className="eyebrow">60 FIXED LEVELS</span><h2><ListChecks size={22} />选择关卡</h2><p>每关布局固定；失败重试当前关，已经解锁的关卡可以随时重玩。</p></div><button type="button" aria-label="关闭选关" onClick={() => setLevelSelectOpen(false)}><X size={20} /></button></header>
+              <div className="mower-level-chapters">
+                {LEVEL_CHAPTERS.map((chapter, chapterIndex) => (
+                  <section key={chapter.name}>
+                    <div><strong>{chapterIndex + 1}. {chapter.name}</strong><small>{chapter.label}</small></div>
+                    <div className="mower-level-grid">
+                      {BLOCK_DEFENSE_LEVELS.slice(chapterIndex * 10, chapterIndex * 10 + 10).map((definition) => {
+                        const unlocked = definition.level <= progress.unlockedLevel
+                        const completed = progress.completedLevels.includes(definition.level)
+                        const current = definition.level === round.level
+                        return (
+                          <button
+                            type="button"
+                            key={definition.level}
+                            disabled={!unlocked}
+                            className={`${completed ? 'is-complete' : ''} ${current ? 'is-current' : ''}`}
+                            aria-label={`第 ${definition.level} 关，${completed ? '已通关' : unlocked ? '已解锁' : '未解锁'}`}
+                            data-tv-initial={current ? true : undefined}
+                            onClick={() => startLevel(definition.level)}
+                          >
+                            <strong>{definition.level}</strong>
+                            <span>{completed ? <Check size={13} /> : unlocked ? '可挑战' : '锁定'}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </section>
           </div>
@@ -1214,7 +1413,7 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
         {workshopOpen && (
           <div className="mower-v2-overlay mower-workshop-overlay">
             <section className="mower-workshop" role="dialog" aria-modal="true" aria-label="成长工坊">
-              <header><div><span className="eyebrow">GROWTH WORKSHOP</span><h2>成长工坊</h2><p>成功或失败都会获得资源，升级是取舍，不需要付费。</p></div><button type="button" aria-label="关闭成长工坊" onClick={() => setWorkshopOpen(false)}><X size={20} /></button></header>
+              <header><div><span className="eyebrow">GROWTH WORKSHOP</span><h2>成长工坊</h2><p>首通奖励最高，重复通关也能积攒少量资源，升级不需要付费。</p></div><button type="button" aria-label="关闭成长工坊" onClick={() => setWorkshopOpen(false)}><X size={20} /></button></header>
               <div className="mower-wallet"><span><Coins size={17} />金币 <strong>{progress.coins}</strong></span><span><Settings2 size={17} />零件 <strong>{progress.gears}</strong></span></div>
               <div className="mower-upgrade-grid">
                 {UPGRADES.map((upgrade) => {
@@ -1247,11 +1446,11 @@ export function BlockMowerGame({ onClose }: { onClose: () => void }) {
             <section className="mower-help-card" role="dialog" aria-modal="true" aria-label="彩块防线玩法说明">
               <header><div><span className="eyebrow">HOW TO PLAY</span><h2>不是无脑点点点</h2></div><button type="button" aria-label="关闭玩法说明" onClick={() => setHelpOpen(false)}><X size={20} /></button></header>
               <ol>
-                <li><span>1</span><div><strong>看最前层</strong><p>发射器自动攻击最近的同类型方块。没有穿透能力时，不能越过最前层。</p></div></li>
+                <li><span>1</span><div><strong>看每列最前方</strong><p>发射器会攻击各投影列最前面的同类型方块；某列被挡住，不影响旁边空列后方的色块。</p></div></li>
                 <li><span>2</span><div><strong>换装要预判</strong><p>选择战场槽位，再点备用发射器。装入后要充能数秒，弹仓用完也必须换装。</p></div></li>
                 <li><span>3</span><div><strong>局外做取舍</strong><p>用每局奖励升级弹量、充能、槽位、备用池或穿透，也可购买两种非付费道具。</p></div></li>
               </ol>
-              <p className="mower-help-tip">前 3 关侧重颜色和换装；之后逐步加入形状、花纹和更多层数，每关约 1 至 2 分钟。</p>
+              <p className="mower-help-tip">共 60 个固定关卡，分六章加入颜色、形状、花纹和纵深；失败可重试本关，也可回到任意已解锁关卡。</p>
               <button type="button" className="button button-primary" autoFocus onClick={() => setHelpOpen(false)}><Play size={17} />明白了</button>
             </section>
           </div>

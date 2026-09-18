@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { Gamepad2, X } from 'lucide-react'
 import { DEVICE_PROFILE } from './device'
+import { submitGameScoreApi } from './api'
 
 interface SnakeGameBridge {
-  getState: () => { state: string }
+  getState: () => { state: string; score: number; bestScore: number }
   start: () => void
   pause: () => void
 }
@@ -20,7 +21,7 @@ const EMBEDDED_STYLE = `
   body.lumi-snake-tv .guide-overlay { zoom: .8; }
 `
 
-export function SnakeGame({ onClose }: { onClose: () => void }) {
+export function SnakeGame({ onClose, playerId }: { onClose: () => void; playerId: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const frameCleanupRef = useRef<(() => void) | null>(null)
 
@@ -41,6 +42,9 @@ export function SnakeGame({ onClose }: { onClose: () => void }) {
       const guideVisible = Boolean(guide && !guide.hasAttribute('hidden'))
       ;(guideVisible ? frameDocument.getElementById('guideDoneButton') : frameDocument.getElementById('overlayButton'))?.focus({ preventScroll: true })
     }
+
+    const existingBest = Math.max(0, Math.floor(Number(frameWindow.__snakeGame?.getState().bestScore) || 0))
+    if (existingBest > 0) void submitGameScoreApi('snake', existingBest).catch(() => undefined)
 
     const handleFrameKey = (event: globalThis.KeyboardEvent) => {
       if (['Escape', 'BrowserBack', 'GoBack'].includes(event.key)) {
@@ -89,6 +93,18 @@ export function SnakeGame({ onClose }: { onClose: () => void }) {
     }
   }, [onClose])
 
+  useEffect(() => {
+    const handleScore = (event: MessageEvent) => {
+      if (event.source !== frameRef.current?.contentWindow) return
+      const payload = event.data as { type?: unknown; gameId?: unknown; score?: unknown } | null
+      if (!payload || payload.type !== 'lumi-game-score' || payload.gameId !== 'snake') return
+      const score = Math.max(0, Math.floor(Number(payload.score) || 0))
+      if (score > 0) void submitGameScoreApi('snake', score).catch(() => undefined)
+    }
+    window.addEventListener('message', handleScore)
+    return () => window.removeEventListener('message', handleScore)
+  }, [])
+
   return (
     <div className="snake-game-backdrop" role="dialog" aria-modal="true" aria-label="贪吃蛇">
       <header className="snake-game-toolbar">
@@ -99,7 +115,7 @@ export function SnakeGame({ onClose }: { onClose: () => void }) {
         ref={frameRef}
         className="snake-game-frame"
         title="贪吃蛇游戏"
-        src="/games/snake/index.html"
+        src={`/games/snake/index.html?player=${encodeURIComponent(playerId)}`}
         allow="autoplay"
         onLoad={configureFrame}
       />

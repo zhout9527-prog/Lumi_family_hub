@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import secrets
 import threading
 import time
@@ -77,6 +78,7 @@ from .models import (
     ContentSource,
     DownloadJob,
     Favorite,
+    GameProfile,
     OperatorRecovery,
     Pet,
     SessionScope,
@@ -110,6 +112,10 @@ from .schemas import (
     ExternalFeedOut,
     ExternalItemIn,
     HealthOut,
+    GameLeaderboardEntryOut,
+    GameProfileOut,
+    GameProgressIn,
+    GameScoreIn,
     JobOut,
     LoginIn,
     LoginOut,
@@ -177,6 +183,9 @@ def get_settings(request: Request) -> Settings:
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 _artwork_backfill_lock = threading.Lock()
+_game_profile_lock = threading.Lock()
+SUPPORTED_GAME_IDS = {"tetris", "block-defense", "gold-miner", "snake"}
+MAX_GAME_PROGRESS_BYTES = 64 * 1024
 
 
 def _require_server_loopback(request: Request, settings: Settings) -> None:
@@ -1150,6 +1159,146 @@ def bootstrap(request: Request, user: CurrentUser, db: Db, settings: SettingsDep
         result["external_feeds"] = load_external_feeds(db)
         result["bilibili_account"] = bilibili_account_status(db, settings)
     return result
+
+
+def _game_id(value: str) -> str:
+    normalized = value.strip().casefold()
+    if normalized not in SUPPORTED_GAME_IDS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到这个游戏")
+    return normalized
+
+
+def _game_profile_out(profile: GameProfile | None, game_id: str, user_id: str) -> GameProfileOut:
+    if profile is None:
+        return GameProfileOut(game_id=game_id, user_id=user_id)
+    return GameProfileOut(
+        game_id=profile.game_id,
+        user_id=profile.user_id,
+        progress=profile.progress_json or {},
+        best_score=profile.best_score,
+        best_score_at=profile.best_score_at,
+        client_updated_at=profile.client_updated_at,
+        updated_at=profile.updated_at,
+    )
+
+
+def _load_game_profile(db: Session, user: SessionPrincipal, game_id: str) -> GameProfile | None:
+    return db.scalar(
+        select(GameProfile).where(
+            GameProfile.user_id == user.id,
+            GameProfile.game_id == game_id,
+        )
+    )
+
+
+def _update_best_score(profile: GameProfile, score: int) -> None:
+    if score > (profile.best_score or 0):
+        profile.best_score = score
+        profile.best_score_at = utcnow()
+
+
+@router.get("/games/{game_id}/profile", response_model=GameProfileOut, tags=["games"])
+def game_profile(game_id: str, user: CurrentUser, db: Db) -> GameProfileOut:
+    normalized = _game_id(game_id)
+    return _game_profile_out(_load_game_profile(db, user, normalized), normalized, user.id)
+
+
+@router.put("/games/{game_id}/profile", response_model=GameProfileOut, tags=["games"])
+def save_game_profile(
+    game_id: str,
+    payload: GameProgressIn,
+    user: CurrentUser,
+    db: Db,
+) -> GameProfileOut:
+    normalized = _game_id(game_id)
+    encoded = json.dumps(payload.progress, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > MAX_GAME_PROGRESS_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="游戏进度数据过大")
+    incoming_at = payload.client_updated_at
+    if incoming_at is not None and incoming_at.tzinfo is not None:
+        incoming_at = incoming_at.astimezone(UTC).replace(tzinfo=None)
+    now = utcnow()
+    if incoming_at is not None and incoming_at > now + timedelta(minutes=5):
+        incoming_at = now
+    # Server 只有一个写进程；这里同时覆盖“两个客户端第一次存档”的唯一键竞争。
+    with _game_profile_lock:
+        profile = _load_game_profile(db, user, normalized)
+        if profile is None:
+            profile = GameProfile(
+                household_id=user.household_id,
+                user_id=user.id,
+                game_id=normalized,
+            )
+            db.add(profile)
+        if incoming_at is None or profile.client_updated_at is None or incoming_at >= profile.client_updated_at:
+            profile.progress_json = payload.progress
+            profile.client_updated_at = incoming_at or now
+        _update_best_score(profile, payload.score)
+        db.commit()
+        db.refresh(profile)
+    return _game_profile_out(profile, normalized, user.id)
+
+
+@router.post("/games/{game_id}/scores", response_model=GameProfileOut, tags=["games"])
+def submit_game_score(
+    game_id: str,
+    payload: GameScoreIn,
+    user: CurrentUser,
+    db: Db,
+) -> GameProfileOut:
+    normalized = _game_id(game_id)
+    with _game_profile_lock:
+        profile = _load_game_profile(db, user, normalized)
+        if profile is None:
+            profile = GameProfile(
+                household_id=user.household_id,
+                user_id=user.id,
+                game_id=normalized,
+                progress_json={},
+            )
+            db.add(profile)
+        _update_best_score(profile, payload.score)
+        db.commit()
+        db.refresh(profile)
+    return _game_profile_out(profile, normalized, user.id)
+
+
+@router.get(
+    "/games/{game_id}/leaderboard",
+    response_model=list[GameLeaderboardEntryOut],
+    tags=["games"],
+)
+def game_leaderboard(
+    game_id: str,
+    user: CurrentUser,
+    db: Db,
+    limit: int = Query(default=20, ge=1, le=50),
+) -> list[GameLeaderboardEntryOut]:
+    normalized = _game_id(game_id)
+    rows = db.execute(
+        select(GameProfile, User)
+        .join(User, User.id == GameProfile.user_id)
+        .where(
+            GameProfile.household_id == user.household_id,
+            GameProfile.game_id == normalized,
+            GameProfile.best_score > 0,
+            GameProfile.best_score_at.is_not(None),
+            User.status == "active",
+        )
+        .order_by(GameProfile.best_score.desc(), GameProfile.best_score_at.asc(), User.display_name.asc())
+        .limit(limit)
+    ).all()
+    return [
+        GameLeaderboardEntryOut(
+            rank=index,
+            user_id=profile.user_id,
+            display_name=account.display_name,
+            score=profile.best_score,
+            achieved_at=profile.best_score_at,
+        )
+        for index, (profile, account) in enumerate(rows, start=1)
+        if profile.best_score_at is not None
+    ]
 
 
 @router.get("/pets/mine", response_model=PetBootstrapOut, tags=["pets"])

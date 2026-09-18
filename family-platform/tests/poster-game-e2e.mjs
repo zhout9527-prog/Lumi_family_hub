@@ -19,6 +19,9 @@ function collectFailures(page, failures, label) {
 }
 
 async function login(page, username, password, role) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('lumi-family-platform-api-base-v1', 'http://127.0.0.1:2521/api/v1')
+  })
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
   await page.getByLabel('账号').fill(username)
   await page.getByLabel('密码', { exact: true }).fill(password)
@@ -88,6 +91,11 @@ try {
   await child.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
   await child.getByRole('heading', { name: '小游戏' }).waitFor()
   check(await child.locator('.game-launch-card').count() === 6, '电脑端没有展示完整的六个游戏入口')
+  await child.getByRole('button', { name: '排行榜', exact: true }).click()
+  await child.getByRole('dialog', { name: '家庭游戏排行榜' }).waitFor()
+  check(await child.getByRole('tab').count() === 4, '家庭排行榜没有覆盖四款积分游戏')
+  await child.screenshot({ path: `${artifactsPath}game-leaderboard-desktop-${runId}.png` })
+  await child.getByRole('button', { name: '关闭排行榜' }).click()
   await child.screenshot({ path: `${artifactsPath}games-desktop-${runId}.png`, fullPage: true })
   await child.getByRole('button', { name: /俄罗斯方块/ }).click()
   await child.getByRole('dialog', { name: '俄罗斯方块' }).waitFor()
@@ -104,10 +112,18 @@ try {
   check(await child.getByRole('dialog', { name: '俄罗斯方块' }).count() === 0, '电脑端没有退出游戏')
   await child.getByRole('button', { name: /彩块防线/ }).click()
   await child.getByRole('dialog', { name: '彩块防线' }).waitFor()
-  check(await child.locator('.mower-v2-block').count() >= 60, '彩块防线没有生成密集方块阵列')
+  check(await child.locator('.mower-v2-block').count() >= 55, '彩块防线没有生成密集方块阵列')
   check(await child.locator('.mower-active-slot').count() === 2, '彩块防线初始发射槽位不是两个')
   check(await child.locator('.mower-reserve-card').count() === 3, '彩块防线初始备用池不是三格')
   check(await child.locator('.mower-v2-block.is-targetable').count() > 0 && await child.locator('.mower-v2-block.is-covered').count() > 0, '彩块防线没有区分可攻击前层与被遮挡后层')
+  const targetableLanes = await child.locator('.mower-v2-block.is-targetable').evaluateAll((blocks) => blocks.map((block) => block.getAttribute('data-lane')))
+  check(new Set(targetableLanes).size === targetableLanes.length, '彩块防线同一投影列暴露了多个未穿透目标')
+  await child.getByRole('button', { name: '选择关卡' }).click()
+  await child.getByRole('dialog', { name: '彩块防线选关' }).waitFor()
+  check(await child.locator('.mower-level-grid button').count() === 60, '彩块防线没有生成 60 个固定关卡')
+  check(await child.locator('.mower-level-grid button:not([disabled])').count() === 1, '新账户应只解锁第 1 关')
+  await child.screenshot({ path: `${artifactsPath}block-defense-levels-desktop-${runId}.png` })
+  await child.getByRole('button', { name: '关闭选关' }).click()
   await child.locator('.mower-reserve-card').first().click()
   await child.getByText(/已装入，正在充能/).waitFor()
   check(await child.locator('.mower-active-slot.is-charging').count() > 0, '备用发射器换装后没有充能等待')
@@ -143,7 +159,7 @@ try {
   await child.keyboard.press('Escape')
   check(await child.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电脑端没有退出深岩淘金')
   await child.evaluate(() => {
-    const key = 'lumi:deep-mine-progress:v2'
+    const key = 'lumi:deep-mine-progress:v2:child-demo'
     const progress = JSON.parse(localStorage.getItem(key) ?? '{}')
     progress.inventory = { ...(progress.inventory ?? {}), dynamite: 2 }
     localStorage.setItem(key, JSON.stringify(progress))
@@ -172,12 +188,12 @@ try {
   await child.getByText('炸药 × 0', { exact: true }).waitFor()
   await child.getByText('300', { exact: true }).first().waitFor()
   await child.waitForFunction(() => {
-    const progress = JSON.parse(localStorage.getItem('lumi:deep-mine-progress:v2') ?? '{}')
+    const progress = JSON.parse(localStorage.getItem('lumi:deep-mine-progress:v2:child-demo') ?? '{}')
     return progress.level === 1 && progress.highestLevel === 1 && progress.score === 0 && progress.inventory?.dynamite === 0
   })
   await child.keyboard.press('Escape')
 
-  await child.evaluate(() => localStorage.setItem('lumi:deep-mine-progress:v2', JSON.stringify({
+  await child.evaluate(() => localStorage.setItem('lumi:deep-mine-progress:v2:child-demo', JSON.stringify({
     level: 15,
     highestLevel: 15,
     score: 25_000,
@@ -188,11 +204,11 @@ try {
   check(await child.locator('.gold-treasure[data-kind="barrel"]').count() >= 2, '第 15 关没有引入炸药桶')
   await child.keyboard.press('Escape')
   await child.evaluate(() => {
-    const progress = JSON.parse(localStorage.getItem('lumi:deep-mine-progress:v2') ?? '{}')
+    const progress = JSON.parse(localStorage.getItem('lumi:deep-mine-progress:v2:child-demo') ?? '{}')
     progress.level = 20
     progress.highestLevel = 20
     progress.score = 45_000
-    localStorage.setItem('lumi:deep-mine-progress:v2', JSON.stringify(progress))
+    localStorage.setItem('lumi:deep-mine-progress:v2:child-demo', JSON.stringify(progress))
   })
   await child.getByRole('button', { name: /深岩淘金/ }).click()
   check(await child.locator('.gold-treasure[data-kind^="trash-"]').count() >= 7, '第 20 关没有生成完整垃圾干扰物')
@@ -272,7 +288,9 @@ try {
   await mobile.getByRole('button', { name: /目标达成，提前收工/ }).click()
   await mobile.getByRole('heading', { name: '矿镇补给站' }).waitFor()
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机补给站横向溢出')
-  check(await mobile.locator('.gold-shop-card').count() === 5, '手机补给站没有展示完整五类道具')
+  check(await mobile.locator('.gold-shop-card').count() === 6, '手机补给站没有展示完整六类道具')
+  await mobile.locator('.gold-shop-card.tool-aim-guide').getByText('矿洞瞄准镜', { exact: true }).waitFor()
+  await mobile.locator('.gold-shop-card.tool-aim-guide').getByRole('button', { name: '购买 480' }).waitFor()
   await mobile.screenshot({ path: `${artifactsPath}gold-miner-shop-mobile-${runId}.png` })
   await mobile.getByRole('button', { name: '进入第 2 关' }).scrollIntoViewIfNeeded()
   check(await mobile.getByRole('button', { name: '进入第 2 关' }).isVisible(), '手机补给站无法滚动到下一关按钮')

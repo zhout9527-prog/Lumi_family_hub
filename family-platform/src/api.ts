@@ -32,6 +32,9 @@ import type {
   PetActionResult,
   PetSpecies,
   PetState,
+  GameLeaderboardEntry,
+  GameProfile,
+  LumiGameId,
 } from './types'
 import { APP_EDITION } from './edition'
 
@@ -524,6 +527,24 @@ interface ApiPetAction {
   message: string
   points: number
   idempotent: boolean
+}
+
+interface ApiGameProfile {
+  game_id: LumiGameId
+  user_id: string
+  progress: Record<string, unknown>
+  best_score: number
+  best_score_at?: string | null
+  client_updated_at?: string | null
+  updated_at?: string | null
+}
+
+interface ApiGameLeaderboardEntry {
+  rank: number
+  user_id: string
+  display_name: string
+  score: number
+  achieved_at: string
 }
 
 export interface BootstrapPayload {
@@ -1168,6 +1189,58 @@ export function mapPetAction(item: ApiPetAction): PetActionResult {
     points: item.points,
     idempotent: item.idempotent,
   }
+}
+
+function utcApiTimestamp(value: string): string {
+  const normalized = value.trim()
+  if (!normalized || /(?:z|[+-]\d{2}:?\d{2})$/i.test(normalized)) return normalized
+  return `${normalized}Z`
+}
+
+function mapGameProfile<TProgress>(item: ApiGameProfile): GameProfile<TProgress> {
+  return {
+    gameId: item.game_id,
+    userId: item.user_id,
+    progress: item.progress as TProgress,
+    bestScore: item.best_score,
+    bestScoreAt: item.best_score_at ? utcApiTimestamp(item.best_score_at) : undefined,
+    clientUpdatedAt: item.client_updated_at ? utcApiTimestamp(item.client_updated_at) : undefined,
+    updatedAt: item.updated_at ? utcApiTimestamp(item.updated_at) : undefined,
+  }
+}
+
+export async function gameProfileApi<TProgress = Record<string, unknown>>(gameId: LumiGameId): Promise<GameProfile<TProgress>> {
+  return mapGameProfile<TProgress>(await apiRequest<ApiGameProfile>(`/games/${encodeURIComponent(gameId)}/profile`))
+}
+
+export async function saveGameProfileApi<TProgress>(
+  gameId: LumiGameId,
+  progress: TProgress,
+  score: number,
+  clientUpdatedAt: string,
+): Promise<GameProfile<TProgress>> {
+  return mapGameProfile<TProgress>(await apiRequest<ApiGameProfile>(`/games/${encodeURIComponent(gameId)}/profile`, {
+    method: 'PUT',
+    body: JSON.stringify({ progress, score, client_updated_at: clientUpdatedAt }),
+  }))
+}
+
+export async function submitGameScoreApi(gameId: LumiGameId, score: number): Promise<GameProfile> {
+  return mapGameProfile(await apiRequest<ApiGameProfile>(`/games/${encodeURIComponent(gameId)}/scores`, {
+    method: 'POST',
+    body: JSON.stringify({ score: Math.max(0, Math.floor(score)) }),
+  }))
+}
+
+export async function gameLeaderboardApi(gameId: LumiGameId): Promise<GameLeaderboardEntry[]> {
+  const rows = await apiRequest<ApiGameLeaderboardEntry[]>(`/games/${encodeURIComponent(gameId)}/leaderboard`)
+  return rows.map((item) => ({
+    rank: item.rank,
+    userId: item.user_id,
+    displayName: item.display_name,
+    score: item.score,
+    achievedAt: utcApiTimestamp(item.achieved_at),
+  }))
 }
 
 export function mapPetBootstrap(item?: ApiPetBootstrap | null): {

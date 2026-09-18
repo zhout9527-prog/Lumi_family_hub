@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "1.4.11",
+  "version": "1.4.12",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
   "published_at": "2026-09-18T00:00:00Z",
-  "notes": "重做 Three.js 彩块防线，加入无解保底、三次新手刷新、换装充能与局外成长；深岩淘金改用累计积分经济，增加远景矿洞、慢速上拉、15 关炸药桶和 20 关垃圾干扰；新增小小画室，并在 Lumi 内打开画线人官方原版。",
+  "notes": "彩块防线升级为 60 个固定关卡，支持选关、本关重试、首通与重复奖励、按投影列遮挡和跨端存档；四款积分游戏新增家庭账户排行榜；深岩淘金的吊钩转速降低 32%，新增 480 积分瞄准镜，福袋开出瞄准镜的总概率固定为 5%。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

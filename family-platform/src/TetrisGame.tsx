@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronsDown,
+  ExternalLink,
   Gamepad2,
   Hand,
   Pause,
@@ -252,12 +253,25 @@ export function TetrisGame({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function GamesView({ onPlayTetris, onPlayBlockMower, onPlayGoldMiner }: { onPlayTetris: () => void; onPlayBlockMower: () => void; onPlayGoldMiner: () => void }) {
+export function GamesView({
+  onPlayTetris,
+  onPlayBlockMower,
+  onPlayGoldMiner,
+  onPlaySnake,
+  onOpenStickman,
+}: {
+  onPlayTetris: () => void
+  onPlayBlockMower: () => void
+  onPlayGoldMiner: () => void
+  onPlaySnake: () => void
+  onOpenStickman: () => void
+}) {
+  const showStickman = DEVICE_PROFILE !== 'tv'
   return (
     <div className="dashboard games-dashboard">
       <section className="page-intro games-intro">
         <div><span className="eyebrow">PLAYGROUND</span><h1>小游戏</h1><p>短短一局，动动脑筋。</p></div>
-        <span className="soft-badge"><Gamepad2 size={14} /> 3 个游戏</span>
+        <span className="soft-badge"><Gamepad2 size={14} /> {showStickman ? 5 : 4} 个游戏</span>
       </section>
       <div className="game-launch-grid-list">
         <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
@@ -297,6 +311,30 @@ export function GamesView({ onPlayTetris, onPlayBlockMower, onPlayGoldMiner }: {
             <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
           </span>
         </button>
+        <button type="button" className="game-launch-card snake-launch-card" onClick={onPlaySnake}>
+          <span className="snake-launch-art" aria-hidden="true">
+            <span className="snake-launch-grid" />
+            <i className="snake-part snake-one" /><i className="snake-part snake-two" /><i className="snake-part snake-three" /><i className="snake-part snake-head" />
+            <b className="snake-fruit" />
+          </span>
+          <span className="game-launch-copy">
+            <span className="eyebrow">SNAKE ARCADE</span>
+            <strong>贪吃蛇</strong>
+            <small>成长 · 走位 · 街机挑战</small>
+            <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
+          </span>
+        </button>
+        {showStickman && (
+          <button type="button" className="game-launch-card stickman-launch-card" onClick={onOpenStickman}>
+            <span className="stickman-launch-art" aria-hidden="true"><ExternalLink size={46} /><span>官方原版<br />浏览器打开</span></span>
+            <span className="game-launch-copy">
+              <span className="eyebrow">OFFICIAL GAME</span>
+              <strong>画线人冒险</strong>
+              <small>原版美术 · 官方关卡 · 需联网</small>
+              <span className="game-launch-action"><ExternalLink size={17} />打开官方游戏</span>
+            </span>
+          </button>
+        )}
       </div>
     </div>
   )

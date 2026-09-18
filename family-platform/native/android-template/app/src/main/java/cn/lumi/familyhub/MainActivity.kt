@@ -2,7 +2,9 @@ package cn.lumi.familyhub
 
 import android.graphics.Color
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -75,6 +77,20 @@ class MainActivity : TauriActivity() {
         attributes.screenBrightness = previous
         window.attributes = attributes
       }
+    }
+
+    @JavascriptInterface
+    fun openExternalUrl(url: String): Boolean {
+      val destination = try {
+        Uri.parse(url)
+      } catch (_: Exception) {
+        return false
+      }
+      if (destination.scheme != "https") return false
+      val intent = Intent(Intent.ACTION_VIEW, destination)
+      if (intent.resolveActivity(packageManager) == null) return false
+      runOnUiThread { startActivity(intent) }
+      return true
     }
   }
 

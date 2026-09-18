@@ -11,8 +11,8 @@ android {
         applicationId = "cn.lumi.familyhub"
         minSdk = 24
         targetSdk = 36
-        versionCode = (System.getenv("FAMILYHUB_ANDROID_VERSION_CODE") ?: "1400009").toInt()
-        versionName = System.getenv("FAMILYHUB_ANDROID_VERSION_NAME") ?: "1.4.9"
+        versionCode = (System.getenv("FAMILYHUB_ANDROID_VERSION_CODE") ?: "1400010").toInt()
+        versionName = System.getenv("FAMILYHUB_ANDROID_VERSION_NAME") ?: "1.4.10"
     }
 
     flavorDimensions += "abi"

@@ -139,6 +139,30 @@ fn open_bilibili_login(browser: String) -> Result<String, String> {
     open_bilibili_in_browser(&browser)
 }
 
+#[cfg(all(desktop, target_os = "windows"))]
+fn open_https_url(url: &str) -> Result<(), String> {
+    shell_execute(url, None)
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn open_https_url(url: &str) -> Result<(), String> {
+    let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    Command::new(program)
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") || url.contains('\r') || url.contains('\n') {
+        return Err("仅允许打开 HTTPS 官方页面".to_string());
+    }
+    open_https_url(&url)
+}
+
 #[cfg(desktop)]
 fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::{
@@ -288,7 +312,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![respond_to_close, open_bilibili_login])
+        .invoke_handler(tauri::generate_handler![respond_to_close, open_bilibili_login, open_external_url])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();

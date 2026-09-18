@@ -8444,3 +8444,108 @@ html.mobile-mode:fullscreen .player-community {
   .gold-miner-aim,
   .gold-miner-explosion { animation: none; }
 }
+
+/* 贪吃蛇保留原有完整玩法，Lumi 外层只负责跨端退出与电视按键。 */
+.snake-launch-card .game-launch-copy > strong { color: #315f42; }
+
+.snake-launch-art {
+  position: relative;
+  min-height: 300px;
+  overflow: hidden;
+  background: #182a22;
+}
+
+.snake-launch-grid {
+  position: absolute;
+  inset: 0;
+  opacity: .2;
+  background-image: linear-gradient(rgba(255,255,255,.25) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.25) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.snake-part,
+.snake-fruit {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  width: 52px;
+  height: 52px;
+  border-radius: 13px;
+  box-shadow: 0 10px 20px rgba(0,0,0,.25);
+}
+
+.snake-part { border: 3px solid rgba(255,255,255,.28); background: #67bd6c; }
+.snake-one { left: 35px; bottom: 64px; }
+.snake-two { left: 87px; bottom: 64px; }
+.snake-three { left: 139px; bottom: 64px; }
+.snake-head { left: 139px; bottom: 116px; background: #b9e650; }
+.snake-head::before,
+.snake-head::after { position: absolute; top: 9px; width: 7px; height: 7px; content: ''; border-radius: 50%; background: #17231c; }
+.snake-head::before { left: 9px; }
+.snake-head::after { right: 9px; }
+.snake-fruit { top: 49px; right: 40px; width: 34px; height: 34px; border-radius: 50%; background: #ff7050; box-shadow: 0 0 0 7px rgba(255,112,80,.16), 0 9px 16px rgba(0,0,0,.24); }
+.snake-fruit::before { position: absolute; top: -11px; left: 17px; width: 5px; height: 15px; content: ''; border-radius: 4px; background: #8ccc72; transform: rotate(28deg); }
+
+.stickman-launch-card .game-launch-copy > strong { color: #a44e36; }
+
+.stickman-launch-art {
+  position: relative;
+  display: grid;
+  min-height: 300px;
+  place-items: center;
+  overflow: hidden;
+  color: #242424;
+  background-color: #fffdf4;
+  background-image: linear-gradient(#d7e4ef 1px, transparent 1px);
+  background-size: 100% 30px;
+  border-right: 1px solid #e1dccb;
+}
+
+.stickman-launch-art::before { position: absolute; inset: 0 auto 0 35px; width: 2px; content: ''; background: #efaaa0; }
+.stickman-launch-art > svg { position: relative; z-index: 2; margin-bottom: 76px; color: #b3563d; }
+.stickman-launch-art > span { position: absolute; z-index: 2; bottom: 58px; font-size: 18px; font-weight: 800; line-height: 1.4; text-align: center; }
+
+.snake-game-backdrop {
+  position: fixed;
+  z-index: 285;
+  inset: 0;
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: #dfe8e1;
+  overscroll-behavior: none;
+}
+
+.snake-game-toolbar {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 14px 7px 18px;
+  border-bottom: 1px solid #bdcbc1;
+  color: #203128;
+  background: #f8faf7;
+}
+
+.snake-game-toolbar > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.snake-game-toolbar strong { font-size: 16px; }
+.snake-game-toolbar span { overflow: hidden; color: #67756b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.snake-game-toolbar button { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid #c5d0c8; border-radius: 7px; color: #293a31; background: #fff; }
+.snake-game-toolbar button:hover,
+.snake-game-toolbar button:focus-visible { border-color: #67a775; outline: 3px solid rgba(103,167,117,.28); outline-offset: 2px; }
+.snake-game-frame { display: block; width: 100%; height: 100%; min-height: 0; border: 0; background: #e8eee9; }
+
+.tv-mode .snake-game-toolbar { min-height: 72px; padding-inline: 28px; }
+.tv-mode .snake-game-toolbar strong { font-size: 21px; }
+.tv-mode .snake-game-toolbar span { font-size: 13px; }
+.tv-mode .snake-game-toolbar button:focus { outline: 4px solid #b9e650; outline-offset: 4px; }
+
+@media (max-width: 760px) {
+  .snake-launch-art,
+  .stickman-launch-art { min-height: 220px; }
+  .snake-game-toolbar { min-height: 50px; padding: 5px 9px 5px 13px; }
+  .snake-game-toolbar span { display: none; }
+  .snake-game-toolbar button { width: 38px; height: 38px; }
+}

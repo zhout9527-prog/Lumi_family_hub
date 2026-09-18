@@ -34,8 +34,8 @@ async function boardState(page) {
   )
 }
 
-async function aimAtTutorialDiamond(page) {
-  const targetAngle = await page.locator('.gold-treasure[data-kind="diamond"][data-treasure-id*="guide"]').evaluateAll((items) => {
+async function aimAtTutorialTreasure(page, kind = 'diamond') {
+  const targetAngle = await page.locator(`.gold-treasure[data-kind="${kind}"][data-treasure-id*="guide"]`).evaluateAll((items) => {
     const target = items
       .map((item) => {
         const x = Number.parseFloat(item.style.left) * 10
@@ -87,6 +87,8 @@ try {
   check(await child.getByRole('button', { name: '家庭海报墙' }).count() === 0, '儿童端不应出现家长海报墙')
   await child.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
   await child.getByRole('heading', { name: '小游戏' }).waitFor()
+  check(await child.locator('.game-launch-card').count() === 5, '电脑端没有展示完整的五个游戏入口')
+  await child.screenshot({ path: `${artifactsPath}games-desktop-${runId}.png`, fullPage: true })
   await child.getByRole('button', { name: /俄罗斯方块/ }).click()
   await child.getByRole('dialog', { name: '俄罗斯方块' }).waitFor()
   check(await child.locator('.game-board .game-block').count() === 200, '俄罗斯方块棋盘不是 10 × 20')
@@ -121,7 +123,7 @@ try {
   await child.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(await child.locator('.gold-treasure[data-kind]').count() === 20, '深岩淘金第一关没有生成完整的新手宝藏')
   await child.getByText('300', { exact: true }).first().waitFor()
-  await aimAtTutorialDiamond(child)
+  await aimAtTutorialTreasure(child)
   await child.keyboard.press('ArrowDown')
   await child.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
   await child.keyboard.press('p')
@@ -141,6 +143,47 @@ try {
   await child.screenshot({ path: `${artifactsPath}gold-miner-desktop-${runId}.png` })
   await child.keyboard.press('Escape')
   check(await child.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电脑端没有退出深岩淘金')
+  await child.evaluate(() => {
+    const key = 'lumi:deep-mine-progress:v2'
+    const progress = JSON.parse(localStorage.getItem(key) ?? '{}')
+    progress.inventory = { ...(progress.inventory ?? {}), dynamite: 2 }
+    localStorage.setItem(key, JSON.stringify(progress))
+  })
+  await child.getByRole('button', { name: /深岩淘金/ }).click()
+  await child.getByText('炸药 × 2', { exact: true }).waitFor()
+  await aimAtTutorialTreasure(child, 'gold-large')
+  const treasureCountBeforeExplosion = await child.locator('.gold-treasure[data-kind]').count()
+  await child.keyboard.press('ArrowDown')
+  await child.locator('.gold-treasure.is-caught').waitFor({ timeout: 8_000 })
+  await child.waitForTimeout(450)
+  check(await child.locator('.gold-treasure.is-caught').count() === 1, '大金块上拉速度仍然过快，没有呈现重量感')
+  await child.keyboard.press('ArrowUp')
+  await child.waitForFunction((count) => document.querySelectorAll('.gold-treasure[data-kind]').length === count - 1, treasureCountBeforeExplosion)
+  await child.getByText('炸药 × 1', { exact: true }).waitFor()
+  await child.keyboard.press('Escape')
+  await child.getByRole('button', { name: /深岩淘金/ }).click()
+  await child.getByText('炸药 × 1', { exact: true }).waitFor()
+  await child.keyboard.press('Escape')
+
+  await child.getByRole('button', { name: /贪吃蛇/ }).click()
+  await child.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
+  await child.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
+  const desktopSnakeFrame = child.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
+  check(Boolean(desktopSnakeFrame), '贪吃蛇内置页面没有加载')
+  const guideButton = desktopSnakeFrame.getByRole('button', { name: '明白了，开始游戏' })
+  if (await guideButton.isVisible()) await guideButton.click()
+  else await desktopSnakeFrame.getByRole('button', { name: '开始游戏' }).click()
+  await desktopSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')
+  await desktopSnakeFrame.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+  await child.screenshot({ path: `${artifactsPath}snake-desktop-${runId}.png` })
+  await child.getByRole('button', { name: '退出贪吃蛇' }).click()
+
+  await child.evaluate(() => {
+    window.__lumiOpenedUrl = ''
+    window.open = (url) => { window.__lumiOpenedUrl = String(url); return window }
+  })
+  await child.getByRole('button', { name: /画线人冒险/ }).click()
+  check((await child.evaluate(() => window.__lumiOpenedUrl)).startsWith('https://drawastickman.com/'), '画线人入口没有打开官方网站')
   await childContext.close()
 
   const mobileContext = await browser.newContext({
@@ -173,7 +216,7 @@ try {
   await mobile.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机深岩淘金横向溢出')
   await mobile.screenshot({ path: `${artifactsPath}gold-miner-mobile-${runId}.png` })
-  await aimAtTutorialDiamond(mobile)
+  await aimAtTutorialTreasure(mobile)
   await mobile.locator('.gold-miner-stage').click()
   await mobile.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
   await mobile.getByRole('button', { name: /目标达成，提前收工/ }).click()
@@ -184,6 +227,18 @@ try {
   await mobile.getByRole('button', { name: '进入第 2 关' }).scrollIntoViewIfNeeded()
   check(await mobile.getByRole('button', { name: '进入第 2 关' }).isVisible(), '手机补给站无法滚动到下一关按钮')
   await mobile.getByRole('button', { name: '退出深岩淘金' }).click()
+  await mobile.getByRole('button', { name: /贪吃蛇/ }).click()
+  await mobile.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
+  await mobile.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
+  check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机贪吃蛇横向溢出')
+  const mobileSnakeFrame = mobile.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
+  check(Boolean(mobileSnakeFrame), '手机贪吃蛇内置页面没有加载')
+  await mobileSnakeFrame.getByRole('button', { name: '明白了，开始游戏' }).click()
+  await mobileSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')
+  await mobileSnakeFrame.getByRole('button', { name: '向下' }).click()
+  await mobile.screenshot({ path: `${artifactsPath}snake-mobile-${runId}.png` })
+  await mobile.getByRole('button', { name: '退出贪吃蛇' }).click()
+  check(await mobile.getByRole('button', { name: /画线人冒险/ }).count() === 1, '手机端没有官方画线人入口')
   await mobileContext.close()
 
   const landscapeContext = await browser.newContext({
@@ -215,6 +270,7 @@ try {
   collectFailures(tv, failures, 'tv')
   await login(tv, 'child-demo', 'ChildDemo2026', 'child')
   await tv.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
+  check(await tv.locator('.game-launch-card').count() === 4, '电视端游戏入口数量不正确')
   const launch = tv.getByRole('button', { name: /俄罗斯方块/ })
   await launch.focus()
   await tv.keyboard.press('Enter')
@@ -242,7 +298,7 @@ try {
   await tv.keyboard.press('Enter')
   await tv.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(await tv.evaluate(() => document.activeElement?.classList.contains('gold-miner-stage')) === true, '电视深岩淘金没有把焦点放到矿洞')
-  await aimAtTutorialDiamond(tv)
+  await aimAtTutorialTreasure(tv)
   await tv.keyboard.press('ArrowDown')
   await tv.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
   await tv.getByRole('button', { name: /目标达成，提前收工/ }).focus()
@@ -253,6 +309,29 @@ try {
   await tv.screenshot({ path: `${artifactsPath}gold-miner-shop-tv-${runId}.png` })
   await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
   check(await tv.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电视返回键没有退出深岩淘金')
+  check(await tv.getByRole('button', { name: /画线人冒险/ }).count() === 0, '电视端不应显示难以用遥控器操作的画线人')
+  await tv.getByRole('button', { name: /贪吃蛇/ }).focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
+  await tv.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
+  const tvSnakeFrame = tv.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
+  check(Boolean(tvSnakeFrame), '电视贪吃蛇内置页面没有加载')
+  await tvSnakeFrame.locator('#overlayButton').focus()
+  await tv.keyboard.press('Enter')
+  await tvSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')
+  const snakeHeadBefore = await tvSnakeFrame.evaluate(() => window.__snakeGame.getState().snake[0])
+  await tv.keyboard.press('ArrowDown')
+  await tvSnakeFrame.waitForFunction((head) => {
+    const current = window.__snakeGame?.getState().snake[0]
+    return current && (current.x !== head.x || current.y !== head.y)
+  }, snakeHeadBefore)
+  await tv.keyboard.press('Enter')
+  await tvSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'paused')
+  await tv.keyboard.press('Enter')
+  await tvSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')
+  await tv.screenshot({ path: `${artifactsPath}snake-tv-${runId}.png` })
+  await tvSnakeFrame.evaluate(() => window.setTimeout(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })), 0))
+  check(await tv.getByRole('dialog', { name: '贪吃蛇' }).count() === 0, '电视返回键没有退出贪吃蛇')
   await tvContext.close()
 
   check(failures.length === 0, failures.join('\n'))

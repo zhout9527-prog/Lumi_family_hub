@@ -1,0 +1,2888 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17231c">
+  <title>贪吃蛇</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18211b;
+      --muted: #657269;
+      --surface: #ffffff;
+      --page: #e8eee9;
+      --line: #ced8d0;
+      --board: #17231c;
+      --lime: #b9e650;
+      --green: #67bd6c;
+      --coral: #ff6b4a;
+      --yellow: #ffd166;
+    }
+
+    * {
+      box-sizing: border-box;
+      letter-spacing: 0;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      min-height: 100dvh;
+      padding: 20px;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .game {
+      width: min(100%, 560px);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid #c5d0c8;
+      border-radius: 8px;
+      box-shadow: 0 18px 50px rgb(30 52 37 / 14%);
+    }
+
+    .game-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 72px;
+      padding: 14px 16px 12px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      position: relative;
+      flex: 0 0 auto;
+      width: 34px;
+      height: 34px;
+      background: var(--lime);
+      border: 2px solid var(--ink);
+      border-radius: 7px;
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      position: absolute;
+      top: 9px;
+      width: 5px;
+      height: 5px;
+      content: "";
+      background: var(--ink);
+      border-radius: 50%;
+    }
+
+    .brand-mark::before {
+      left: 7px;
+    }
+
+    .brand-mark::after {
+      right: 7px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 加大的暂停按钮，带文字，更好点击 */
+    .pause-button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 92px;
+      height: 46px;
+      padding: 0 16px;
+      cursor: pointer;
+      color: var(--ink);
+      background: var(--yellow);
+      border: 2px solid var(--ink);
+      border-radius: 6px;
+      box-shadow: 3px 3px 0 var(--ink);
+      font-size: 15px;
+      font-weight: 800;
+      transition: background-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .pause-button:hover:not(:disabled) {
+      background: #ffe08a;
+      box-shadow: 2px 2px 0 var(--ink);
+      transform: translate(-1px, -1px);
+    }
+
+    .pause-button:active:not(:disabled) {
+      box-shadow: none;
+      transform: translate(1px, 1px);
+    }
+
+    .pause-button:disabled {
+      cursor: default;
+      opacity: 0.4;
+      box-shadow: none;
+    }
+
+    .pause-button:focus-visible {
+      outline: 3px solid var(--coral);
+      outline-offset: 2px;
+    }
+
+    .pause-icon {
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .icon-button {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      padding: 0;
+      cursor: pointer;
+      background: #f5f8f5;
+      border: 1px solid #bdc9c0;
+      border-radius: 6px;
+      transition: background-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .icon-button:hover:not(:disabled) {
+      background: var(--yellow);
+      box-shadow: 2px 2px 0 var(--ink);
+      transform: translate(-1px, -1px);
+    }
+
+    .icon-button:active:not(:disabled) {
+      box-shadow: none;
+      transform: translate(0, 0);
+    }
+
+    .icon-button:disabled {
+      cursor: default;
+      opacity: 0.38;
+    }
+
+    .icon-button:focus-visible,
+    .primary-button:focus-visible,
+    .direction-button:focus-visible,
+    .speed-button:focus-visible,
+    .music-button:focus-visible {
+      outline: 3px solid var(--coral);
+      outline-offset: 2px;
+    }
+
+    .restart-icon {
+      font-size: 25px;
+      font-weight: 700;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+
+    /* 工具栏：速度 + 音乐 */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #f7f9f7;
+    }
+
+    .toolbar-note {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .speed-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .speed-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .speed-button {
+      min-width: 42px;
+      height: 32px;
+      padding: 0 10px;
+      cursor: pointer;
+      color: var(--muted);
+      background: #ffffff;
+      border: 1px solid #b7c4ba;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 120ms ease;
+    }
+
+    .speed-button:hover {
+      color: var(--ink);
+      border-color: var(--ink);
+    }
+
+    .speed-button.active {
+      color: var(--ink);
+      background: var(--lime);
+      border-color: var(--ink);
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+
+    .music-button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      cursor: pointer;
+      color: var(--ink);
+      background: #ffffff;
+      border: 1px solid #b7c4ba;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 120ms ease;
+    }
+
+    .music-button:hover {
+      border-color: var(--ink);
+      box-shadow: 2px 2px 0 var(--ink);
+      transform: translate(-1px, -1px);
+    }
+
+    .music-button:active {
+      box-shadow: none;
+      transform: translate(0, 0);
+    }
+
+    .music-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .score-strip {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      min-height: 70px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .feature-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      padding: 8px 16px;
+      background: var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .feature-chip {
+      min-width: 0;
+      padding: 6px 8px;
+      background: #f8faf8;
+    }
+
+    .feature-chip span,
+    .feature-chip strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .feature-chip span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .feature-chip strong {
+      margin-top: 2px;
+      color: var(--ink);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .power-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #f7f9f7;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .power-strip[hidden] {
+      display: none;
+    }
+
+    .boost-button {
+      --energy-angle: 0deg;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 94px;
+      height: 38px;
+      padding: 0 12px;
+      cursor: pointer;
+      color: var(--ink);
+      background: conic-gradient(var(--coral) var(--energy-angle), #d9e0da 0deg);
+      border: 0;
+      border-radius: 7px;
+      box-shadow: 2px 2px 0 var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .boost-button::after {
+      position: absolute;
+      inset: 3px;
+      z-index: 0;
+      content: "";
+      background: #fff8f2;
+      border-radius: 5px;
+    }
+
+    .boost-button > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .boost-button:active,
+    .boost-button[data-boosting="true"] {
+      color: #ffffff;
+      background: conic-gradient(var(--coral) var(--energy-angle), #8f9d94 0deg);
+      transform: translate(1px, 1px);
+      box-shadow: none;
+    }
+
+    .boost-button[data-boosting="true"]::after {
+      background: #7f3b2e;
+    }
+
+    .boost-button[data-disabled="true"] {
+      cursor: default;
+      opacity: 0.5;
+    }
+
+    .boost-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .energy-track {
+      flex: 1;
+      height: 8px;
+      overflow: hidden;
+      background: #dfe7e0;
+      border-radius: 999px;
+    }
+
+    .energy-bar {
+      display: block;
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff9c62, var(--coral));
+      border-radius: inherit;
+      transition: width 80ms linear;
+    }
+
+    .empowerment-value {
+      min-width: 62px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .score-item {
+      min-width: 0;
+    }
+
+    .score-item:last-child {
+      text-align: right;
+    }
+
+    .score-label {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .score-value {
+      display: block;
+      min-width: 3ch;
+      font-variant-numeric: tabular-nums;
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .game-status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      max-width: 108px;
+      padding: 7px 10px;
+      overflow: hidden;
+      color: #4a574d;
+      background: #edf2ee;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      flex: 0 0 auto;
+      width: 8px;
+      height: 8px;
+      background: #98a49b;
+      border-radius: 50%;
+    }
+
+    .game[data-state="running"] .status-dot {
+      background: #41a95d;
+      box-shadow: 0 0 0 3px rgb(65 169 93 / 16%);
+    }
+
+    .game[data-state="paused"] .status-dot {
+      background: var(--yellow);
+    }
+
+    .game[data-state="over"] .status-dot {
+      background: var(--coral);
+    }
+
+    .board-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      overflow: hidden;
+      background: var(--board);
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      padding: 24px;
+      text-align: center;
+      background: rgb(16 29 21 / 76%);
+      backdrop-filter: blur(3px);
+      transition: opacity 150ms ease, visibility 150ms ease;
+    }
+
+    .overlay-panel {
+      width: min(100%, 390px);
+      max-height: 100%;
+      overflow: auto;
+      padding: 10px 12px 16px;
+    }
+
+    .overlay[hidden] {
+      display: none;
+    }
+
+    .overlay-badge {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      margin-bottom: 16px;
+      color: var(--ink);
+      background: var(--yellow);
+      border: 2px solid #f7f2d1;
+      border-radius: 50%;
+      box-shadow: 0 0 0 6px rgb(255 209 102 / 18%);
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .overlay h2 {
+      margin: 0 0 18px;
+      color: #ffffff;
+      font-size: 25px;
+      line-height: 1.2;
+    }
+
+    .pause-settings {
+      margin: 0 auto 18px;
+      padding: 12px;
+      color: var(--ink);
+      background: #f8faf8;
+      border: 2px solid var(--ink);
+      border-radius: 7px;
+      text-align: left;
+      box-shadow: 4px 4px 0 rgb(255 255 255 / 80%);
+    }
+
+    .pause-settings[hidden] {
+      display: none;
+    }
+
+    .settings-heading {
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .overlay-badge[hidden] {
+      display: none;
+    }
+
+    .guide-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgb(16 29 21 / 72%);
+      backdrop-filter: blur(6px);
+    }
+
+    .guide-overlay[hidden] {
+      display: none;
+    }
+
+    .guide-card {
+      width: min(100%, 560px);
+      max-height: min(760px, calc(100dvh - 40px));
+      overflow: auto;
+      padding: 24px;
+      color: var(--ink);
+      background: var(--surface);
+      border: 2px solid var(--ink);
+      border-radius: 8px;
+      box-shadow: 7px 7px 0 rgb(255 255 255 / 78%);
+    }
+
+    .guide-kicker {
+      margin: 0 0 5px;
+      color: var(--coral);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .guide-card h2 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      line-height: 1.15;
+    }
+
+    .guide-intro {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .guide-section {
+      min-width: 0;
+      padding: 11px 12px;
+      background: #f7f9f7;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .guide-section h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .guide-section p,
+    .guide-section ul {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .guide-section ul {
+      padding-left: 16px;
+    }
+
+    .guide-section li + li {
+      margin-top: 3px;
+    }
+
+    .guide-shortcuts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .guide-key {
+      display: inline-grid;
+      min-width: 31px;
+      min-height: 25px;
+      place-items: center;
+      padding: 3px 7px;
+      color: var(--ink);
+      background: #ffffff;
+      border: 1px solid #b7c4ba;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .guide-action {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .guide-action .primary-button {
+      min-width: 172px;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .setting-field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .setting-field span:first-child {
+      min-width: 0;
+    }
+
+    .setting-field input {
+      width: 62px;
+      height: 30px;
+      padding: 0 6px;
+      color: var(--ink);
+      background: #ffffff;
+      border: 1px solid #b7c4ba;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .setting-field input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--green);
+    }
+
+    .setting-field > strong {
+      color: var(--ink);
+      font-size: 12px;
+    }
+
+    .cheat-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      grid-column: 1 / -1;
+      gap: 10px;
+      padding-top: 4px;
+      border-top: 1px solid var(--line);
+    }
+
+    .cheat-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--coral);
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .cheat-toggle input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--coral);
+    }
+
+    .cheat-options {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px;
+      background: #fff8f2;
+      border-left: 3px solid var(--coral);
+    }
+
+    .cheat-options[hidden] {
+      display: none;
+    }
+
+    .cheat-note {
+      grid-column: 1 / -1;
+      margin: -2px 0 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.4;
+    }
+
+    .pause-settings .speed-group {
+      grid-column: 1 / -1;
+      justify-content: space-between;
+      padding-bottom: 2px;
+    }
+
+    .pause-settings .speed-label {
+      display: inline;
+      margin-right: auto;
+    }
+
+    .primary-button {
+      min-width: 132px;
+      min-height: 44px;
+      padding: 10px 20px;
+      cursor: pointer;
+      color: var(--ink);
+      background: var(--lime);
+      border: 2px solid var(--ink);
+      border-radius: 6px;
+      box-shadow: 4px 4px 0 #ffffff;
+      font-weight: 800;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .primary-button:hover {
+      box-shadow: 2px 2px 0 #ffffff;
+      transform: translate(2px, 2px);
+    }
+
+    .primary-button:active {
+      box-shadow: none;
+      transform: translate(4px, 4px);
+    }
+
+    .touch-controls {
+      display: none;
+      grid-template-columns: repeat(3, 48px);
+      grid-template-rows: repeat(2, 48px);
+      justify-content: center;
+      gap: 7px;
+      padding: 14px 16px 17px;
+      background: #f7f9f7;
+      border-top: 1px solid var(--line);
+    }
+
+    .direction-button {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      padding: 0;
+      cursor: pointer;
+      background: #ffffff;
+      border: 1px solid #b7c4ba;
+      border-radius: 6px;
+      box-shadow: 0 2px 0 #a8b5ab;
+      font-size: 22px;
+      font-weight: 900;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .direction-button:active {
+      background: var(--lime);
+      box-shadow: none;
+      transform: translateY(2px);
+    }
+
+    .direction-button[data-direction="up"] {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .direction-button[data-direction="left"] {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .direction-button[data-direction="down"] {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    .direction-button[data-direction="right"] {
+      grid-column: 3;
+      grid-row: 2;
+    }
+
+    @media (hover: none), (pointer: coarse) {
+      .touch-controls {
+        display: grid;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        align-items: start;
+        padding: 0;
+        background: var(--surface);
+      }
+
+      .game {
+        width: 100%;
+        min-height: 100dvh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .game-header {
+        min-height: 66px;
+        padding: 11px 12px 10px 16px;
+      }
+
+      .toolbar {
+        padding: 8px 16px;
+      }
+
+      .feature-strip {
+        padding: 7px 12px;
+      }
+
+      .power-strip {
+        padding: 8px 12px;
+      }
+
+      .toolbar .speed-label {
+        display: none;
+      }
+
+      .score-strip {
+        min-height: 64px;
+        padding: 9px 16px;
+      }
+
+      .brand small {
+        display: none;
+      }
+
+      .pause-button {
+        min-width: 76px;
+        height: 42px;
+        padding: 0 12px;
+        font-size: 14px;
+      }
+
+      .icon-button {
+        width: 42px;
+        height: 42px;
+      }
+
+      .guide-overlay {
+        padding: 12px;
+      }
+
+      .guide-card {
+        max-height: calc(100dvh - 24px);
+        padding: 18px;
+      }
+
+      .guide-card h2 {
+        font-size: 23px;
+      }
+
+      .guide-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .settings-grid {
+        grid-template-columns: 1fr;
+        gap: 3px;
+      }
+
+      .cheat-options {
+        grid-template-columns: 1fr;
+        gap: 3px;
+      }
+
+      .overlay-panel {
+        padding: 6px 8px 10px;
+      }
+
+      .pause-settings {
+        margin-bottom: 8px;
+        padding: 8px;
+      }
+
+      .settings-heading {
+        margin-bottom: 4px;
+      }
+
+      .setting-field {
+        min-height: 27px;
+      }
+
+      .setting-field input {
+        height: 26px;
+      }
+
+      .pause-settings .speed-button {
+        min-width: 36px;
+        height: 28px;
+        padding: 0 6px;
+      }
+
+      .overlay {
+        padding: 12px;
+      }
+
+      .overlay-badge {
+        width: 48px;
+        height: 48px;
+        margin-bottom: 10px;
+      }
+
+      .overlay h2 {
+        margin-bottom: 8px;
+        font-size: 21px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game" id="game" data-state="idle">
+    <header class="game-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>贪吃蛇</h1>
+          <small>Snake Arcade</small>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="pause-button" id="pauseButton" type="button" title="暂停" aria-label="暂停" disabled>
+          <span class="pause-icon" id="pauseIcon" aria-hidden="true">Ⅱ</span>
+          <span id="pauseText">暂停</span>
+        </button>
+        <button class="icon-button" id="restartButton" type="button" title="重新开始" aria-label="重新开始">
+          <span class="restart-icon" aria-hidden="true">↻</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="toolbar" aria-label="游戏状态">
+      <span class="toolbar-note" id="boardSizeLabel">地图 15×15</span>
+      <button class="music-button" id="musicButton" type="button" aria-label="背景音乐开关">
+        <span class="music-icon" id="musicIcon" aria-hidden="true">🔇</span>
+        <span id="musicText">音乐关</span>
+      </button>
+    </section>
+
+    <section class="score-strip" aria-label="游戏计分">
+      <div class="score-item">
+        <span class="score-label">得分</span>
+        <strong class="score-value" id="score">00</strong>
+      </div>
+      <div class="game-status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="statusText">待机</span>
+      </div>
+      <div class="score-item">
+        <span class="score-label">最佳</span>
+        <strong class="score-value" id="bestScore">00</strong>
+      </div>
+    </section>
+
+    <section class="feature-strip" aria-label="特殊玩法状态">
+      <div class="feature-chip"><span>超级果实</span><strong id="superStatus">准备中</strong></div>
+      <div class="feature-chip"><span>毒果实</span><strong id="poisonStatus">未出现</strong></div>
+      <div class="feature-chip"><span>人机小蛇</span><strong id="botStatus">锁定</strong></div>
+      <div class="feature-chip"><span>石块 / 赋能</span><strong id="stoneStatus">0 / 0</strong></div>
+    </section>
+
+    <section class="power-strip" id="powerStrip" hidden aria-label="加速能量">
+      <button class="boost-button" id="boostButton" type="button" aria-label="按住加速" data-boosting="false">
+        <span class="boost-icon" aria-hidden="true">⚡</span>
+        <span>加速</span>
+      </button>
+      <div class="energy-track" aria-hidden="true"><span class="energy-bar" id="energyBar"></span></div>
+      <span class="empowerment-value" id="empowermentValue">赋能 0/3</span>
+    </section>
+
+    <div class="board-wrap" id="boardWrap">
+      <canvas id="board" aria-label="贪吃蛇游戏棋盘"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="overlay-panel">
+          <div class="overlay-badge" id="overlayBadge" aria-hidden="true">S</div>
+          <h2 id="overlayTitle">准备开吃</h2>
+          <div class="pause-settings" id="pauseSettings" hidden>
+            <div class="settings-heading">暂停设置</div>
+            <div class="settings-grid">
+              <div class="speed-group" role="group" aria-label="速度选择">
+                <span class="speed-label">基础速度</span>
+                <button class="speed-button" data-speed="slow" type="button">慢</button>
+                <button class="speed-button active" data-speed="normal" type="button">中</button>
+                <button class="speed-button" data-speed="fast" type="button">快</button>
+              </div>
+              <label class="setting-field"><span>超级果实最低秒数</span><input id="superLifetimeInput" type="number" min="5" max="60" step="1" value="10"></label>
+              <label class="setting-field"><span>毒果实秒数</span><input id="poisonLifetimeInput" type="number" min="3" max="30" step="1" value="10"></label>
+              <label class="setting-field"><span>人机刷新秒数</span><input id="botIntervalInput" type="number" min="5" max="60" step="1" value="18"></label>
+              <div class="setting-field"><span>场上人机数量</span><strong>无上限</strong></div>
+              <label class="setting-field"><span>毒果加速秒数</span><input id="boostDurationInput" type="number" min="2" max="30" step="1" value="7"></label>
+              <div class="cheat-heading">
+                <span>测试模式</span>
+                <label class="cheat-toggle"><input id="cheatModeInput" type="checkbox"><span>启用作弊模式</span></label>
+              </div>
+              <div class="cheat-options" id="cheatOptions" hidden>
+                <label class="setting-field"><span>边界边长</span><input id="cheatGridSizeInput" type="number" min="5" max="120" step="1" value="25"></label>
+                <label class="setting-field"><span>初始蛇长</span><input id="cheatSnakeLengthInput" type="number" min="1" max="14399" step="1" value="4"></label>
+                <label class="setting-field"><span>关闭墙壁碰撞</span><input id="disableWallCollisionInput" type="checkbox"></label>
+                <p class="cheat-note">边界和初始蛇长在下一局生效；穿墙开关可立即使用。测试模式下加速无限，玩家与人机不会被自己的身体撞死。</p>
+              </div>
+            </div>
+          </div>
+          <button class="primary-button" id="overlayButton" type="button">开始游戏</button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="touch-controls" aria-label="方向控制">
+      <button class="direction-button" data-direction="up" type="button" aria-label="向上">↑</button>
+      <button class="direction-button" data-direction="left" type="button" aria-label="向左">←</button>
+      <button class="direction-button" data-direction="down" type="button" aria-label="向下">↓</button>
+      <button class="direction-button" data-direction="right" type="button" aria-label="向右">→</button>
+    </nav>
+  </main>
+
+  <section class="guide-overlay" id="guideOverlay" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
+    <div class="guide-card">
+      <p class="guide-kicker">玩法说明</p>
+      <h2 id="guideTitle">先认识这张地图</h2>
+      <p class="guide-intro">本局从 15×15 地图开始。吃果实、扩地图、积攒加速，并在大地图中与人机小蛇周旋。暂停后可以调整全部玩法参数。</p>
+      <div class="guide-grid">
+        <section class="guide-section">
+          <h3>电脑操作</h3>
+          <p>使用方向键或 WASD 转向，按 P 暂停，地图达到 25×25 后可按住空格消耗能量加速。</p>
+          <div class="guide-shortcuts" aria-label="键盘快捷键">
+            <span class="guide-key">W</span><span class="guide-key">A</span><span class="guide-key">S</span><span class="guide-key">D</span>
+            <span class="guide-key">P 暂停</span><span class="guide-key">空格 加速</span>
+          </div>
+        </section>
+        <section class="guide-section">
+          <h3>手机操作</h3>
+          <p>在棋盘上滑动或使用方向按钮转向。解锁加速后，长按棋盘或按住能量条旁的加速按钮即可冲刺。</p>
+        </section>
+        <section class="guide-section">
+          <h3>果实与地图</h3>
+          <ul>
+            <li>普通果实让蛇成长；毒果外观相同但会立即出现，吃下后短时提速。</li>
+            <li>金色超级果实会刷新在玩家附近，地图越大存在越久；吃下可让地图边长增加 1 格。</li>
+            <li>地图变大后视角会跟随蛇头，暂时看不到的区域仍会继续运行。</li>
+            <li>视野外的果实会在屏幕边缘显示箭头：橙色为普通果实、金色为超级果实、紫色为毒果；进入视野后箭头消失。</li>
+          </ul>
+        </section>
+        <section class="guide-section">
+          <h3>进阶机制</h3>
+          <ul>
+            <li>25×25 解锁人机小蛇与加速能量；普通果实补充 10%，超级果实补充 20%。</li>
+            <li>用身体拦截对方蛇头可以击杀；人机尸体不会自动消失，每吃一节恢复 1% 加速能量。</li>
+            <li>玩家和人机可穿过自己的身体，蛇头撞墙或碰到对方身体才会因蛇身碰撞死亡。</li>
+            <li>人机被玩家身体完全围住后会逐渐缩短，脱落的每一节都会留下尸体；围圈持续闭合时最终自毁。</li>
+            <li>100×100 后普通果实会生成石块。击杀人机可积累最多 3 层赋能，用于撞碎石块并获得 2 秒无敌。</li>
+          </ul>
+        </section>
+      </div>
+      <div class="guide-action">
+        <button class="primary-button" id="guideDoneButton" type="button">明白了，开始游戏</button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const INITIAL_GRID_SIZE = 15;
+      const MAX_GRID_SIZE = 120;
+      const VIEWPORT_CELLS = 24;
+      const BOT_UNLOCK_SIZE = 25;
+      const STONE_UNLOCK_SIZE = 100;
+      const BOOST_DRAIN_PER_SECOND = 10;
+      const SUPER_REFRESH_BASE_MS = 10000;
+      const SUPER_NEAR_RADIUS = 10;
+      const BOT_MAX_SPAWN_LENGTH = 18;
+      const BOT_AI_SEARCH_LIMIT = 160;
+      const BOT_ENCLOSURE_CHECK_INTERVAL_MS = 750;
+      const BOT_ENCLOSURE_SHRINK_INTERVAL_MS = 3000;
+      const BOT_ENCLOSURE_GIVE_UP_MS = 15000;
+      const BOT_ENCLOSURE_SEARCH_LIMIT = MAX_GRID_SIZE * MAX_GRID_SIZE;
+      const STATUS_UPDATE_INTERVAL_MS = 100;
+      const SETTINGS_VERSION = 4;
+      const MIN_CHEAT_GRID_SIZE = 5;
+      const MAX_CHEAT_SNAKE_LENGTH = MAX_GRID_SIZE * MAX_GRID_SIZE - 1;
+      const SPEED_PRESETS = {
+        slow: { base: 370 },
+        normal: { base: 270 },
+        fast: { base: 176 }
+      };
+      const DEFAULT_SETTINGS = {
+        superLifetime: 10,
+        poisonLifetime: 10,
+        botInterval: 18,
+        poisonBoostDuration: 7,
+        cheatMode: false,
+        cheatGridSize: 25,
+        cheatSnakeLength: 4,
+        disableWallCollision: false
+      };
+      const DIRECTIONS = {
+        up: { x: 0, y: -1 },
+        down: { x: 0, y: 1 },
+        left: { x: -1, y: 0 },
+        right: { x: 1, y: 0 }
+      };
+      const DIRECTION_NAMES = Object.keys(DIRECTIONS);
+      const KEY_DIRECTIONS = {
+        ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+        w: "up", W: "up", s: "down", S: "down", a: "left", A: "left", d: "right", D: "right"
+      };
+
+      const gameElement = document.getElementById("game");
+      const boardWrap = document.getElementById("boardWrap");
+      const canvas = document.getElementById("board");
+      const context = canvas.getContext("2d");
+      const scoreElement = document.getElementById("score");
+      const bestScoreElement = document.getElementById("bestScore");
+      const statusText = document.getElementById("statusText");
+      const boardSizeLabel = document.getElementById("boardSizeLabel");
+      const superStatus = document.getElementById("superStatus");
+      const poisonStatus = document.getElementById("poisonStatus");
+      const botStatus = document.getElementById("botStatus");
+      const stoneStatus = document.getElementById("stoneStatus");
+      const pauseButton = document.getElementById("pauseButton");
+      const pauseIcon = document.getElementById("pauseIcon");
+      const pauseText = document.getElementById("pauseText");
+      const restartButton = document.getElementById("restartButton");
+      const overlay = document.getElementById("overlay");
+      const overlayBadge = document.getElementById("overlayBadge");
+      const overlayTitle = document.getElementById("overlayTitle");
+      const overlayButton = document.getElementById("overlayButton");
+      const pauseSettings = document.getElementById("pauseSettings");
+      const powerStrip = document.getElementById("powerStrip");
+      const boostButton = document.getElementById("boostButton");
+      const energyBar = document.getElementById("energyBar");
+      const empowermentValue = document.getElementById("empowermentValue");
+      const musicButton = document.getElementById("musicButton");
+      const musicIcon = document.getElementById("musicIcon");
+      const musicText = document.getElementById("musicText");
+      const guideOverlay = document.getElementById("guideOverlay");
+      const guideDoneButton = document.getElementById("guideDoneButton");
+      const settingInputs = {
+        superLifetime: document.getElementById("superLifetimeInput"),
+        poisonLifetime: document.getElementById("poisonLifetimeInput"),
+        botInterval: document.getElementById("botIntervalInput"),
+        poisonBoostDuration: document.getElementById("boostDurationInput"),
+        cheatMode: document.getElementById("cheatModeInput"),
+        cheatGridSize: document.getElementById("cheatGridSizeInput"),
+        cheatSnakeLength: document.getElementById("cheatSnakeLengthInput"),
+        disableWallCollision: document.getElementById("disableWallCollisionInput")
+      };
+      const cheatOptions = document.getElementById("cheatOptions");
+
+      let settings = loadSettings();
+      let snake = [];
+      let food = null;
+      let superFruit = null;
+      let poisonFruit = null;
+      let bots = [];
+      let corpses = [];
+      let stones = [];
+      let direction = DIRECTIONS.right;
+      let queuedDirection = DIRECTIONS.right;
+      let score = 0;
+      let bestScore = loadBestScore();
+      let state = "idle";
+      let gridSize = INITIAL_GRID_SIZE;
+      let boardSize = 500;
+      let previousTime = 0;
+      let accumulator = 0;
+      let gameClock = 0;
+      let normalRespawnAt = 0;
+      let nextSuperAt = 0;
+      let botNextSpawnAt = Infinity;
+      let botSequence = 1;
+      let energy = 0;
+      let boosting = false;
+      let boostDrainAccumulator = 0;
+      let empowerment = 0;
+      let invincibleUntil = 0;
+      let poisonUntil = 0;
+      let overlayAction = "start";
+      let swipeStart = null;
+      let boardLongPressTimer = null;
+      let boardLongPressActive = false;
+      let currentSpeed = "normal";
+      let camera = { x: 0, y: 0, viewCells: INITIAL_GRID_SIZE };
+      let lastStatusUpdateAt = -Infinity;
+      let spatialIndex = null;
+      let playerTopologyVersion = 0;
+      let enclosureCache = { version: -1, reachable: null };
+
+      let audioContext = null;
+      let musicGain = null;
+      let musicEnabled = false;
+      let musicTimer = null;
+      const MELODY = [659.25, 783.99, 880, 783.99, 698.46, 880, 783.99, 659.25, 587.33, 698.46, 659.25, 587.33, 523.25, 659.25, 587.33, 523.25];
+      const BASS = [130.81, 174.61, 196, 130.81];
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function sameCell(a, b) {
+        return Boolean(a && b && a.x === b.x && a.y === b.y);
+      }
+
+      function cellKey(cell) {
+        return `${cell.x},${cell.y}`;
+      }
+
+      function invalidateSpatialIndex() {
+        spatialIndex = null;
+      }
+
+      function markPlayerTopologyChanged() {
+        playerTopologyVersion += 1;
+        enclosureCache = { version: -1, reachable: null };
+      }
+
+      function formatScore(value) {
+        return String(Math.max(0, Math.floor(value))).padStart(2, "0");
+      }
+
+      function randomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      function loadSettings() {
+        try {
+          const saved = JSON.parse(localStorage.getItem("snake-settings") || "{}");
+          if ((Number(saved.version) || 1) < SETTINGS_VERSION && Number(saved.superLifetime) === 15) {
+            saved.superLifetime = 10;
+          }
+          return {
+            ...DEFAULT_SETTINGS,
+            ...Object.fromEntries(Object.keys(DEFAULT_SETTINGS).map((key) => {
+              const defaultValue = DEFAULT_SETTINGS[key];
+              const savedValue = saved[key];
+              if (typeof defaultValue === "boolean") {
+                if (savedValue === undefined) return [key, defaultValue];
+                return [key, savedValue === true || savedValue === 1 || savedValue === "1" || savedValue === "true"];
+              }
+              return [key, Number.isFinite(Number(savedValue)) ? Number(savedValue) : defaultValue];
+            }))
+          };
+        } catch {
+          return { ...DEFAULT_SETTINGS };
+        }
+      }
+
+      function saveSettings() {
+        try {
+          localStorage.setItem("snake-settings", JSON.stringify({ ...settings, version: SETTINGS_VERSION }));
+        } catch {
+          // Settings are optional; the round remains playable without storage.
+        }
+      }
+
+      function loadBestScore() {
+        try {
+          return Math.max(0, Number.parseInt(localStorage.getItem("snake-best-score") || "0", 10) || 0);
+        } catch {
+          return 0;
+        }
+      }
+
+      function showFirstRunGuide() {
+        guideOverlay.hidden = false;
+        guideDoneButton.focus({ preventScroll: true });
+      }
+
+      function dismissFirstRunGuide() {
+        guideOverlay.hidden = true;
+        startRound();
+      }
+
+      function saveBestScore() {
+        try {
+          localStorage.setItem("snake-best-score", String(bestScore));
+        } catch {
+          // The game still works when storage is unavailable.
+        }
+      }
+
+      function readSettingsFromInputs() {
+        settings.superLifetime = clamp(Number(settingInputs.superLifetime.value) || DEFAULT_SETTINGS.superLifetime, 5, 60);
+        settings.poisonLifetime = clamp(Number(settingInputs.poisonLifetime.value) || DEFAULT_SETTINGS.poisonLifetime, 3, 30);
+        settings.botInterval = clamp(Number(settingInputs.botInterval.value) || DEFAULT_SETTINGS.botInterval, 5, 60);
+        settings.poisonBoostDuration = clamp(Number(settingInputs.poisonBoostDuration.value) || DEFAULT_SETTINGS.poisonBoostDuration, 2, 30);
+        settings.cheatMode = settingInputs.cheatMode.checked;
+        settings.cheatGridSize = clamp(Math.round(Number(settingInputs.cheatGridSize.value) || DEFAULT_SETTINGS.cheatGridSize), MIN_CHEAT_GRID_SIZE, MAX_GRID_SIZE);
+        const maxSnakeLength = Math.max(1, settings.cheatGridSize * settings.cheatGridSize - 1);
+        settings.cheatSnakeLength = clamp(Math.round(Number(settingInputs.cheatSnakeLength.value) || DEFAULT_SETTINGS.cheatSnakeLength), 1, Math.min(MAX_CHEAT_SNAKE_LENGTH, maxSnakeLength));
+        settings.disableWallCollision = settingInputs.disableWallCollision.checked;
+        if (settings.cheatMode) boostDrainAccumulator = 0;
+        syncSettingsInputs();
+        cheatOptions.hidden = !settings.cheatMode;
+        if (state === "paused" && gridSize >= BOT_UNLOCK_SIZE) botNextSpawnAt = gameClock + settings.botInterval * 1000;
+        saveSettings();
+      }
+
+      function syncSettingsInputs() {
+        Object.entries(settingInputs).forEach(([key, input]) => {
+          if (input.type === "checkbox") input.checked = Boolean(settings[key]);
+          else input.value = settings[key];
+        });
+        settingInputs.cheatSnakeLength.max = Math.max(1, settings.cheatGridSize * settings.cheatGridSize - 1);
+        cheatOptions.hidden = !settings.cheatMode;
+      }
+
+      function initAudio() {
+        if (audioContext) return;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        audioContext = new Ctx();
+        musicGain = audioContext.createGain();
+        musicGain.gain.value = 0.1;
+        musicGain.connect(audioContext.destination);
+      }
+
+      function playTone(freq, startTime, duration, type) {
+        if (!audioContext || !musicGain) return;
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = type || "square";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.35, startTime + 0.008);
+        gain.gain.linearRampToValueAtTime(0, startTime + duration);
+        osc.connect(gain);
+        gain.connect(musicGain);
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.02);
+      }
+
+      function scheduleMusicLoop() {
+        if (!musicEnabled || !audioContext) return;
+        const now = audioContext.currentTime;
+        const eighth = (60 / 132) * 0.5;
+        let time = now + 0.05;
+        MELODY.forEach((note, index) => {
+          playTone(note, time, eighth * 0.85, "square");
+          if (index % 4 === 0) playTone(BASS[Math.floor(index / 4) % BASS.length], time, eighth * 3.6, "triangle");
+          time += eighth;
+        });
+        musicTimer = window.setTimeout(scheduleMusicLoop, Math.max(50, (time - now) * 1000 - 80));
+      }
+
+      function startMusic() {
+        initAudio();
+        if (!audioContext) return;
+        if (audioContext.state === "suspended") audioContext.resume();
+        musicEnabled = true;
+        musicIcon.textContent = "🔊";
+        musicText.textContent = "音乐开";
+        scheduleMusicLoop();
+      }
+
+      function stopMusic() {
+        musicEnabled = false;
+        if (musicTimer) window.clearTimeout(musicTimer);
+        musicTimer = null;
+        musicIcon.textContent = "🔇";
+        musicText.textContent = "音乐关";
+      }
+
+      function toggleMusic() {
+        if (musicEnabled) stopMusic(); else startMusic();
+      }
+
+      function setState(nextState) {
+        state = nextState;
+        gameElement.dataset.state = nextState;
+        statusText.textContent = ({ idle: "待机", running: "进行中", paused: "已暂停", over: "结束" })[nextState];
+        pauseButton.disabled = nextState === "idle" || nextState === "over";
+        const isPaused = nextState === "paused";
+        pauseButton.setAttribute("aria-label", isPaused ? "继续" : "暂停");
+        pauseButton.title = isPaused ? "继续" : "暂停";
+        pauseIcon.textContent = isPaused ? "▶" : "Ⅱ";
+        pauseText.textContent = isPaused ? "继续" : "暂停";
+      }
+
+      function updateScore() {
+        scoreElement.textContent = formatScore(score);
+        bestScoreElement.textContent = formatScore(bestScore);
+      }
+
+      function isInside(cell) {
+        return cell.x >= 0 && cell.x < gridSize && cell.y >= 0 && cell.y < gridSize;
+      }
+
+      function isReservedCell(cell, spatial = getSpatialIndex()) {
+        const key = cellKey(cell);
+        return spatial.playerCells.has(key)
+          || spatial.botCells.has(key)
+          || spatial.stoneCells.has(key)
+          || spatial.corpseCells.has(key)
+          || [food, superFruit, poisonFruit].some((fruit) => sameCell(fruit, cell));
+      }
+
+      function freeCell(options = {}) {
+        const spatial = options.spatial || getSpatialIndex();
+        const center = options.center || null;
+        const minDistance = Math.max(0, Number(options.minDistance) || 0);
+        const maxDistance = Number.isFinite(options.maxDistance) ? Math.max(minDistance, options.maxDistance) : Infinity;
+        const minX = center && Number.isFinite(maxDistance) ? Math.max(0, center.x - maxDistance) : 0;
+        const maxX = center && Number.isFinite(maxDistance) ? Math.min(gridSize - 1, center.x + maxDistance) : gridSize - 1;
+        const minY = center && Number.isFinite(maxDistance) ? Math.max(0, center.y - maxDistance) : 0;
+        const maxY = center && Number.isFinite(maxDistance) ? Math.min(gridSize - 1, center.y + maxDistance) : gridSize - 1;
+        const validCandidate = (cell) => {
+          const distance = center ? Math.abs(cell.x - center.x) + Math.abs(cell.y - center.y) : 0;
+          return distance >= minDistance && distance <= maxDistance && !isReservedCell(cell, spatial);
+        };
+        const regionSize = (maxX - minX + 1) * (maxY - minY + 1);
+        for (let attempt = 0; attempt < Math.min(80, regionSize); attempt += 1) {
+          const candidate = { x: randomInt(minX, maxX), y: randomInt(minY, maxY) };
+          if (validCandidate(candidate)) return candidate;
+        }
+        let selected = null;
+        let available = 0;
+        for (let y = minY; y <= maxY; y += 1) {
+          for (let x = minX; x <= maxX; x += 1) {
+            const cell = { x, y };
+            if (!validCandidate(cell)) continue;
+            available += 1;
+            if (randomInt(1, available) === 1) selected = cell;
+          }
+        }
+        return selected;
+      }
+
+      function addBotCell(spatial, cell, bot) {
+        const key = cellKey(cell);
+        let owners = spatial.botCells.get(key);
+        if (!owners) {
+          owners = new Map();
+          spatial.botCells.set(key, owners);
+        }
+        owners.set(bot, (owners.get(bot) || 0) + 1);
+      }
+
+      function addPlayerCell(spatial, cell) {
+        const key = cellKey(cell);
+        spatial.playerCells.set(key, (spatial.playerCells.get(key) || 0) + 1);
+      }
+
+      function removePlayerCell(spatial, cell) {
+        const key = cellKey(cell);
+        const count = spatial.playerCells.get(key) || 0;
+        if (count <= 1) spatial.playerCells.delete(key); else spatial.playerCells.set(key, count - 1);
+      }
+
+      function removeBotCell(spatial, cell, bot) {
+        const key = cellKey(cell);
+        const owners = spatial.botCells.get(key);
+        if (!owners) return;
+        const count = owners.get(bot) || 0;
+        if (count <= 1) owners.delete(bot); else owners.set(bot, count - 1);
+        if (!owners.size) spatial.botCells.delete(key);
+      }
+
+      function botAtCell(spatial, cell, excludedBot = null) {
+        const owners = spatial.botCells.get(cellKey(cell));
+        if (!owners) return null;
+        for (const bot of owners.keys()) {
+          if (bot !== excludedBot && bot.alive !== false) return bot;
+        }
+        return null;
+      }
+
+      function addCorpseCell(spatial, cell, corpse) {
+        const key = cellKey(cell);
+        const entries = spatial.corpseCells.get(key) || [];
+        entries.push(corpse);
+        spatial.corpseCells.set(key, entries);
+      }
+
+      function removeCorpseCell(spatial, cell, corpse) {
+        const key = cellKey(cell);
+        const entries = spatial.corpseCells.get(key);
+        if (!entries) return;
+        const index = entries.indexOf(corpse);
+        if (index >= 0) entries.splice(index, 1);
+        if (!entries.length) spatial.corpseCells.delete(key);
+      }
+
+      function corpseAtCell(spatial, cell) {
+        return spatial.corpseCells.get(cellKey(cell))?.[0] || null;
+      }
+
+      function bodyBounds(body) {
+        if (!body.length) return null;
+        let minX = body[0].x;
+        let maxX = body[0].x;
+        let minY = body[0].y;
+        let maxY = body[0].y;
+        for (let index = 1; index < body.length; index += 1) {
+          const cell = body[index];
+          minX = Math.min(minX, cell.x);
+          maxX = Math.max(maxX, cell.x);
+          minY = Math.min(minY, cell.y);
+          maxY = Math.max(maxY, cell.y);
+        }
+        return { minX, maxX, minY, maxY };
+      }
+
+      function updateCorpseBoundsAfterRemoval(corpse, removedCell) {
+        const bounds = corpse.bounds;
+        if (!bounds || !corpse.cells.length) {
+          corpse.bounds = bodyBounds(corpse.cells);
+          return;
+        }
+        if (removedCell.x === bounds.minX || removedCell.x === bounds.maxX || removedCell.y === bounds.minY || removedCell.y === bounds.maxY) {
+          corpse.bounds = bodyBounds(corpse.cells);
+        }
+      }
+
+      function buildSpatialIndex() {
+        const spatial = {
+          playerCells: new Map(),
+          botCells: new Map(),
+          stoneCells: new Map(stones.map((stone) => [cellKey(stone), stone])),
+          corpseCells: new Map()
+        };
+        snake.forEach((cell) => addPlayerCell(spatial, cell));
+        bots.forEach((bot) => bot.body.forEach((cell) => addBotCell(spatial, cell, bot)));
+        corpses.forEach((corpse) => corpse.cells.forEach((cell) => addCorpseCell(spatial, cell, corpse)));
+        return spatial;
+      }
+
+      function getSpatialIndex() {
+        if (!spatialIndex) spatialIndex = buildSpatialIndex();
+        return spatialIndex;
+      }
+
+      function centeredSnake() {
+        const y = Math.floor(gridSize / 2);
+        const headX = Math.floor(gridSize / 2) - 1;
+        return Array.from({ length: 4 }, (_, index) => ({ x: headX - index, y }));
+      }
+
+      function configuredSnake(length) {
+        const path = [];
+        for (let y = 0; y < gridSize; y += 1) {
+          if (y % 2 === 0) {
+            for (let x = 0; x < gridSize; x += 1) path.push({ x, y });
+          } else {
+            for (let x = gridSize - 1; x >= 0; x -= 1) path.push({ x, y });
+          }
+        }
+        return path.slice(1, length + 1);
+      }
+
+      function superInterval() {
+        const refreshFactor = gridSize >= STONE_UNLOCK_SIZE ? 1.2 : 1;
+        return Math.max(2500, SUPER_REFRESH_BASE_MS - snake.length * 120) / refreshFactor;
+      }
+
+      function poisonChance() {
+        return 0.14 * (gridSize >= STONE_UNLOCK_SIZE ? 1.2 : 1);
+      }
+
+      function reachableFreeCell(center, minDistance, maxDistance) {
+        const spatial = getSpatialIndex();
+        const visited = new Set([cellKey(center)]);
+        const queue = [{ cell: center, distance: 0 }];
+        let cursor = 0;
+        let selected = null;
+        let available = 0;
+        while (cursor < queue.length) {
+          const current = queue[cursor++];
+          if (current.distance >= maxDistance) continue;
+          DIRECTION_NAMES.forEach((name) => {
+            const step = DIRECTIONS[name];
+            const next = { x: current.cell.x + step.x, y: current.cell.y + step.y };
+            const key = cellKey(next);
+            if (!isInside(next) || visited.has(key)) return;
+            if (spatial.botCells.has(key) || spatial.stoneCells.has(key)) return;
+            visited.add(key);
+            const distance = current.distance + 1;
+            queue.push({ cell: next, distance });
+            if (distance < minDistance || isReservedCell(next, spatial)) return;
+            available += 1;
+            if (randomInt(1, available) === 1) selected = { cell: next, distance };
+          });
+        }
+        return selected;
+      }
+
+      function superLifetimeMs(cell, routeDistance = null) {
+        const head = snake[0] || cell;
+        const distance = routeDistance ?? Math.abs(cell.x - head.x) + Math.abs(cell.y - head.y);
+        const travelSeconds = 5 + distance * SPEED_PRESETS[currentSpeed].base / 1000 * 2.4;
+        const mapBonus = Math.max(0, gridSize - VIEWPORT_CELLS) / 8;
+        return Math.ceil(clamp(Math.max(settings.superLifetime + mapBonus, travelSeconds), settings.superLifetime, 90) * 1000);
+      }
+
+      function spawnSuperFruit() {
+        const head = snake[0];
+        const nearRadius = Math.min(SUPER_NEAR_RADIUS, Math.max(2, gridSize - 1));
+        let reachable = head ? reachableFreeCell(head, Math.min(3, nearRadius), nearRadius) : null;
+        if (!reachable && head) reachable = reachableFreeCell(head, 1, Math.min(VIEWPORT_CELLS - 2, gridSize - 1));
+        const cell = reachable?.cell || freeCell();
+        if (!cell) {
+          nextSuperAt = gameClock + 1000;
+          return;
+        }
+        const lifetimeMs = superLifetimeMs(cell, reachable?.distance);
+        superFruit = { ...cell, spawnedAt: gameClock, lifetimeMs, expiresAt: gameClock + lifetimeMs };
+      }
+
+      function spawnPoisonFruit() {
+        if (poisonFruit) return false;
+        const cell = freeCell();
+        if (!cell) return false;
+        poisonFruit = { ...cell, expiresAt: gameClock + settings.poisonLifetime * 1000 };
+        return true;
+      }
+
+      function createRound() {
+        gridSize = settings.cheatMode ? settings.cheatGridSize : INITIAL_GRID_SIZE;
+        snake = settings.cheatMode ? configuredSnake(settings.cheatSnakeLength) : centeredSnake();
+        food = null;
+        superFruit = null;
+        poisonFruit = null;
+        bots = [];
+        corpses = [];
+        stones = [];
+        invalidateSpatialIndex();
+        markPlayerTopologyChanged();
+        direction = settings.cheatMode ? DIRECTIONS.left : DIRECTIONS.right;
+        queuedDirection = direction;
+        score = 0;
+        energy = 0;
+        boosting = false;
+        boostDrainAccumulator = 0;
+        empowerment = 0;
+        invincibleUntil = 0;
+        poisonUntil = 0;
+        gameClock = 0;
+        accumulator = 0;
+        normalRespawnAt = 0;
+        nextSuperAt = 0;
+        botNextSpawnAt = Infinity;
+        botSequence = 1;
+        food = freeCell();
+        spawnSuperFruit();
+        syncSettingsInputs();
+        updateScore();
+        updateStatusUI(true);
+      }
+
+      function startRound() {
+        readSettingsFromInputs();
+        createRound();
+        overlay.hidden = true;
+        pauseSettings.hidden = true;
+        setState("running");
+      }
+
+      function showOverlay(title, buttonLabel, badge, action) {
+        overlayTitle.textContent = title;
+        overlayButton.textContent = buttonLabel;
+        overlayBadge.textContent = badge;
+        overlayBadge.hidden = action === "resume";
+        overlayAction = action;
+        pauseSettings.hidden = action !== "resume";
+        overlay.hidden = false;
+      }
+
+      function togglePause() {
+        if (state === "running") {
+          boosting = false;
+          setState("paused");
+          syncSettingsInputs();
+          showOverlay("歇一小会儿", "继续游戏", "Ⅱ", "resume");
+        } else if (state === "paused") {
+          readSettingsFromInputs();
+          overlay.hidden = true;
+          pauseSettings.hidden = true;
+          accumulator = 0;
+          setState("running");
+        }
+      }
+
+      function endRound(reason) {
+        boosting = false;
+        setState("over");
+        if (score > bestScore) {
+          bestScore = score;
+          saveBestScore();
+          updateScore();
+        }
+        showOverlay(reason || `本局得分 ${score}`, "再来一局", "×", "restart");
+      }
+
+      function addEnergy(amount) {
+        if (gridSize < BOT_UNLOCK_SIZE && !settings.cheatMode) return;
+        energy = clamp(energy + amount, 0, 100);
+      }
+
+      function hasUnlimitedBoost() {
+        return settings.cheatMode;
+      }
+
+      function canBoost() {
+        return hasUnlimitedBoost() || (gridSize >= BOT_UNLOCK_SIZE && energy > 0);
+      }
+
+      function isPlayerInvincible() {
+        return gameClock < invincibleUntil;
+      }
+
+      function addStone() {
+        if (gridSize < STONE_UNLOCK_SIZE) return;
+        const cell = freeCell();
+        if (cell) {
+          stones.push(cell);
+          if (spatialIndex) spatialIndex.stoneCells.set(cellKey(cell), cell);
+        }
+      }
+
+      function awardKill() {
+        score += 5;
+        if (gridSize >= STONE_UNLOCK_SIZE) empowerment = Math.min(3, empowerment + 1);
+        if (score > bestScore) bestScore = score;
+        updateScore();
+      }
+
+      function addCorpse(cells, spatial = null) {
+        if (!cells.length) return null;
+        const body = cells.map((cell) => ({ ...cell }));
+        const corpse = { cells: body, bounds: bodyBounds(body) };
+        corpses.push(corpse);
+        if (spatial) body.forEach((cell) => addCorpseCell(spatial, cell, corpse));
+        return corpse;
+      }
+
+      function killBot(bot, playerKilled = false, spatial = null) {
+        if (!bot || bot.alive === false) return null;
+        const index = bots.indexOf(bot);
+        if (index < 0) return null;
+        if (spatial) bot.body.forEach((cell) => removeBotCell(spatial, cell, bot));
+        bots.splice(index, 1);
+        bot.alive = false;
+        const corpse = addCorpse(bot.body, spatial);
+        if (playerKilled) awardKill();
+        return corpse;
+      }
+
+      function consumeCorpseAt(cell, eater, spatial = null) {
+        const corpse = spatial
+          ? corpseAtCell(spatial, cell)
+          : corpses.find((item) => item.cells.some((part) => sameCell(part, cell)));
+        if (!corpse) return false;
+        const partIndex = corpse.cells.findIndex((part) => sameCell(part, cell));
+        if (partIndex < 0) return false;
+        corpse.cells.splice(partIndex, 1);
+        updateCorpseBoundsAfterRemoval(corpse, cell);
+        if (spatial) removeCorpseCell(spatial, cell, corpse);
+        if (!corpse.cells.length) corpses = corpses.filter((item) => item !== corpse);
+        if (eater === "player") {
+          score += 2;
+          addEnergy(1);
+          if (score > bestScore) bestScore = score;
+          updateScore();
+        }
+        return true;
+      }
+
+      function consumeFruit(kind, eater) {
+        if (kind === "normal") {
+          food = null;
+          const poisonSpawned = !poisonFruit && Math.random() <= poisonChance() && spawnPoisonFruit();
+          normalRespawnAt = gameClock + (poisonSpawned || poisonFruit ? 5000 : 1000);
+          if (eater === "player") {
+            score += 1;
+            if (gridSize >= BOT_UNLOCK_SIZE) addEnergy(10);
+            if (score > bestScore) bestScore = score;
+            updateScore();
+          }
+          if (gridSize >= STONE_UNLOCK_SIZE) addStone();
+          return;
+        }
+        if (kind === "super") {
+          superFruit = null;
+          gridSize = Math.min(MAX_GRID_SIZE, gridSize + 1);
+          markPlayerTopologyChanged();
+          nextSuperAt = gameClock + superInterval();
+          if (gridSize >= BOT_UNLOCK_SIZE && botNextSpawnAt === Infinity) botNextSpawnAt = gameClock + settings.botInterval * 1000;
+          if (eater === "player") {
+            score += 3;
+            if (gridSize >= BOT_UNLOCK_SIZE) addEnergy(20);
+            if (score > bestScore) bestScore = score;
+            updateScore();
+          }
+          return;
+        }
+        if (kind === "poison") {
+          poisonFruit = null;
+          const until = gameClock + settings.poisonBoostDuration * 1000;
+          if (eater === "player") {
+            poisonUntil = until;
+            score += 1;
+            if (score > bestScore) bestScore = score;
+            updateScore();
+          } else if (eater && typeof eater === "object") {
+            eater.poisonUntil = until;
+          }
+        }
+      }
+
+      function nextFor(body, dir) {
+        const head = body[0];
+        return { x: head.x + dir.x, y: head.y + dir.y };
+      }
+
+      function wrappedCell(cell) {
+        return {
+          x: (cell.x + gridSize) % gridSize,
+          y: (cell.y + gridSize) % gridSize
+        };
+      }
+
+      function playerMove() {
+        direction = queuedDirection;
+        let nextHead = nextFor(snake, direction);
+        if (!isInside(nextHead) && settings.cheatMode && settings.disableWallCollision) {
+          nextHead = wrappedCell(nextHead);
+        }
+        const targetFood = sameCell(food, nextHead);
+        const targetSuper = sameCell(superFruit, nextHead);
+        const targetPoison = sameCell(poisonFruit, nextHead);
+        const spatial = getSpatialIndex();
+        const targetCorpse = Boolean(corpseAtCell(spatial, nextHead));
+        const grows = targetFood || targetSuper || targetPoison || targetCorpse;
+        if (!isInside(nextHead)) {
+          endRound("撞到边界，游戏结束");
+          return false;
+        }
+        const stone = spatial.stoneCells.get(cellKey(nextHead));
+        if (stone) {
+          if (isPlayerInvincible()) {
+            stones = stones.filter((item) => item !== stone);
+            spatial.stoneCells.delete(cellKey(stone));
+          } else if (empowerment > 0) {
+            stones = stones.filter((item) => item !== stone);
+            spatial.stoneCells.delete(cellKey(stone));
+            empowerment -= 1;
+            invincibleUntil = gameClock + 2000;
+          } else {
+            endRound("撞到石块，游戏结束");
+            return false;
+          }
+        }
+        const botHit = botAtCell(spatial, nextHead);
+        if (botHit) {
+          if (isPlayerInvincible()) killBot(botHit, true, spatial);
+          else {
+            endRound("撞上人机小蛇，游戏结束");
+            return false;
+          }
+        }
+        snake.unshift(nextHead);
+        addPlayerCell(spatial, nextHead);
+        if (targetFood) consumeFruit("normal", "player");
+        if (targetSuper) consumeFruit("super", "player");
+        if (targetPoison) consumeFruit("poison", "player");
+        if (targetCorpse) consumeCorpseAt(nextHead, "player", spatial);
+        if (!grows) {
+          const tail = snake.pop();
+          removePlayerCell(spatial, tail);
+        }
+        markPlayerTopologyChanged();
+        return true;
+      }
+
+      function isBotBlocked(bot, cell, spatial) {
+        if (!isInside(cell)) return true;
+        if (spatial.stoneCells.has(cellKey(cell))) return true;
+        if (spatial.playerCells.has(cellKey(cell))) return true;
+        return Boolean(botAtCell(spatial, cell, bot));
+      }
+
+      function validBotDirection(bot, candidate, spatial) {
+        return !isBotBlocked(bot, nextFor(bot.body, candidate), spatial);
+      }
+
+      function botRouteMetrics(bot, firstDirection, spatial) {
+        const start = nextFor(bot.body, firstDirection);
+        const visited = new Set([cellKey(start)]);
+        const queue = [{ cell: start, depth: 0 }];
+        let cursor = 0;
+        let bestEscape = 0;
+        let immediateExits = 0;
+        while (cursor < queue.length && visited.size < BOT_AI_SEARCH_LIMIT) {
+          const { cell, depth } = queue[cursor++];
+          let exits = 0;
+          DIRECTION_NAMES.forEach((name) => {
+            const directionOption = DIRECTIONS[name];
+            const next = { x: cell.x + directionOption.x, y: cell.y + directionOption.y };
+            if (isBotBlocked(bot, next, spatial)) return;
+            exits += 1;
+            const key = cellKey(next);
+            if (!visited.has(key) && visited.size < BOT_AI_SEARCH_LIMIT) {
+              visited.add(key);
+              queue.push({ cell: next, depth: depth + 1 });
+            }
+          });
+          if (depth === 0) immediateExits = exits;
+          const wallClearance = Math.min(cell.x, cell.y, gridSize - 1 - cell.x, gridSize - 1 - cell.y);
+          bestEscape = Math.max(bestEscape, exits * 18 + Math.min(8, wallClearance) * 2 - depth * 0.45);
+        }
+        return { area: visited.size, bestEscape, immediateExits };
+      }
+
+      function boundaryReachableWithoutCrossingPlayer() {
+        if (enclosureCache.version === playerTopologyVersion && enclosureCache.reachable) return enclosureCache.reachable;
+        const cellCount = gridSize * gridSize;
+        const blocked = new Uint8Array(cellCount);
+        snake.forEach((cell) => {
+          if (isInside(cell)) blocked[cell.y * gridSize + cell.x] = 1;
+        });
+        const reachable = new Uint8Array(cellCount);
+        const queue = new Int32Array(Math.min(cellCount, BOT_ENCLOSURE_SEARCH_LIMIT));
+        let start = 0;
+        let end = 0;
+        const enqueue = (x, y) => {
+          const index = y * gridSize + x;
+          if (blocked[index] || reachable[index] || end >= queue.length) return;
+          reachable[index] = 1;
+          queue[end++] = index;
+        };
+        for (let x = 0; x < gridSize; x += 1) {
+          enqueue(x, 0);
+          enqueue(x, gridSize - 1);
+        }
+        for (let y = 1; y < gridSize - 1; y += 1) {
+          enqueue(0, y);
+          enqueue(gridSize - 1, y);
+        }
+        while (start < end) {
+          const index = queue[start++];
+          const x = index % gridSize;
+          const y = Math.floor(index / gridSize);
+          if (x > 0) enqueue(x - 1, y);
+          if (x < gridSize - 1) enqueue(x + 1, y);
+          if (y > 0) enqueue(x, y - 1);
+          if (y < gridSize - 1) enqueue(x, y + 1);
+        }
+        enclosureCache = { version: playerTopologyVersion, reachable };
+        return reachable;
+      }
+
+      function isBotEnclosedByPlayer(bot) {
+        const head = bot.body[0];
+        if (!head || !isInside(head)) return false;
+        const reachable = boundaryReachableWithoutCrossingPlayer();
+        return reachable[head.y * gridSize + head.x] === 0;
+      }
+
+      function updateBotEnclosure(bot, spatial) {
+        const penaltyDue = bot.enclosedSince !== null && gameClock >= bot.nextShrinkAt;
+        if (!penaltyDue && gameClock < (bot.nextEnclosureCheckAt || 0)) return;
+        bot.nextEnclosureCheckAt = gameClock + BOT_ENCLOSURE_CHECK_INTERVAL_MS;
+        const enclosed = isBotEnclosedByPlayer(bot);
+        if (!enclosed) {
+          bot.enclosedSince = null;
+          bot.nextShrinkAt = null;
+          return;
+        }
+        if (bot.enclosedSince === null) {
+          bot.enclosedSince = gameClock;
+          bot.nextShrinkAt = gameClock + BOT_ENCLOSURE_SHRINK_INTERVAL_MS;
+        }
+        bot.aiMode = "cornered";
+      }
+
+      function weakenEnclosedBot(bot, spatial) {
+        if (bot.enclosedSince === null || gameClock < bot.nextShrinkAt) return false;
+        if (gameClock - bot.enclosedSince >= BOT_ENCLOSURE_GIVE_UP_MS) {
+          killBot(bot, true, spatial);
+          return true;
+        }
+        bot.nextShrinkAt += BOT_ENCLOSURE_SHRINK_INTERVAL_MS;
+        if (bot.body.length <= 1) {
+          killBot(bot, true, spatial);
+          return true;
+        }
+        const lostSegments = Math.max(1, Math.ceil(bot.body.length * 0.25));
+        const shedCells = [];
+        for (let index = 0; index < lostSegments && bot.body.length > 1; index += 1) {
+          const tail = bot.body.pop();
+          removeBotCell(spatial, tail, bot);
+          shedCells.push(tail);
+        }
+        addCorpse(shedCells, spatial);
+        return false;
+      }
+
+      function chooseBotDirection(bot, spatial) {
+        const target = [food, superFruit, poisonFruit].filter(Boolean).sort((a, b) => {
+          const da = Math.abs(a.x - bot.body[0].x) + Math.abs(a.y - bot.body[0].y);
+          const db = Math.abs(b.x - bot.body[0].x) + Math.abs(b.y - bot.body[0].y);
+          return da - db;
+        })[0];
+        const candidates = DIRECTION_NAMES.map((name) => DIRECTIONS[name]).filter((candidate) => validBotDirection(bot, candidate, spatial));
+        if (!candidates.length) return bot.direction;
+        const localExitCount = (cell) => DIRECTION_NAMES.reduce((count, name) => {
+          const option = DIRECTIONS[name];
+          const next = { x: cell.x + option.x, y: cell.y + option.y };
+          return count + (isBotBlocked(bot, next, spatial) ? 0 : 1);
+        }, 0);
+        const quickCandidates = candidates.map((candidate) => {
+          const next = nextFor(bot.body, candidate);
+          return { candidate, next, exits: localExitCount(next) };
+        });
+        const needsRouteSearch = quickCandidates.some((item) => item.exits <= 3)
+          || quickCandidates.length <= 3
+          || bot.aiMode === "escape";
+        const safeArea = Math.min(BOT_AI_SEARCH_LIMIT, Math.max(28, bot.body.length * 3));
+        const scored = quickCandidates.map(({ candidate, next, exits }) => {
+          const metrics = needsRouteSearch
+            ? botRouteMetrics(bot, candidate, spatial)
+            : { area: safeArea, bestEscape: exits * 18, immediateExits: exits };
+          const trapped = metrics.area < safeArea || metrics.immediateExits <= 1;
+          const targetDistance = target ? Math.abs(target.x - next.x) + Math.abs(target.y - next.y) : 0;
+          let value = metrics.area * 2.6 + metrics.bestEscape * 1.4 + metrics.immediateExits * 12;
+          if (target) value -= targetDistance * (trapped ? 0.12 : 0.7);
+          if (sameCell(food, next)) value += 24;
+          if (sameCell(superFruit, next)) value += 30;
+          if (sameCell(poisonFruit, next)) value += 14;
+          if (candidate.x === bot.direction.x && candidate.y === bot.direction.y) value += 6;
+          if (bot.recentHeads?.includes(cellKey(next))) value -= 18;
+          value += Math.random() * 5;
+          return { candidate, value, trapped };
+        });
+        scored.sort((a, b) => b.value - a.value);
+        bot.aiMode = bot.enclosedSince !== null ? "cornered" : scored[0].trapped ? "escape" : "forage";
+        return scored[0].candidate;
+      }
+
+      function moveOneBot(bot, spatial) {
+        if (!bot || bot.alive === false) return false;
+        updateBotEnclosure(bot, spatial);
+        if (weakenEnclosedBot(bot, spatial)) return true;
+        bot.direction = chooseBotDirection(bot, spatial);
+        const nextHead = nextFor(bot.body, bot.direction);
+        if (!isInside(nextHead)) {
+          killBot(bot, false, spatial);
+          return true;
+        }
+        const stone = spatial.stoneCells.get(cellKey(nextHead));
+        if (stone) {
+          killBot(bot, false, spatial);
+          return true;
+        }
+        if (spatial.playerCells.has(cellKey(nextHead))) {
+          killBot(bot, true, spatial);
+          return true;
+        }
+        const other = botAtCell(spatial, nextHead, bot);
+        if (other) {
+          killBot(bot, false, spatial);
+          return true;
+        }
+        const targetFood = sameCell(food, nextHead);
+        const targetSuper = sameCell(superFruit, nextHead);
+        const targetPoison = sameCell(poisonFruit, nextHead);
+        const grows = targetFood || targetSuper || targetPoison;
+        bot.body.unshift(nextHead);
+        addBotCell(spatial, nextHead, bot);
+        if (targetFood) consumeFruit("normal", bot);
+        if (targetSuper) consumeFruit("super", bot);
+        if (targetPoison) consumeFruit("poison", bot);
+        if (!grows) {
+          const tail = bot.body.pop();
+          removeBotCell(spatial, tail, bot);
+        }
+        bot.recentHeads = [...(bot.recentHeads || []), cellKey(nextHead)].slice(-10);
+        return true;
+      }
+
+      function spawnBot() {
+        if (gridSize < BOT_UNLOCK_SIZE) return false;
+        const spatial = getSpatialIndex();
+        const maxLength = Math.min(BOT_MAX_SPAWN_LENGTH, Math.max(4, Math.floor(snake.length * 0.35)));
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const head = { x: randomInt(0, gridSize - 1), y: randomInt(0, gridSize - 1) };
+          if (isReservedCell(head, spatial)) continue;
+          const length = randomInt(4, maxLength);
+          const dirName = DIRECTION_NAMES[randomInt(0, DIRECTION_NAMES.length - 1)];
+          const dir = DIRECTIONS[dirName];
+          const body = [head];
+          const bodyKeys = new Set([cellKey(head)]);
+          let valid = true;
+          for (let index = 1; index < length; index += 1) {
+            const part = { x: head.x - dir.x * index, y: head.y - dir.y * index };
+            const key = cellKey(part);
+            if (!isInside(part) || isReservedCell(part, spatial) || bodyKeys.has(key)) {
+              valid = false;
+              break;
+            }
+            body.push(part);
+            bodyKeys.add(key);
+          }
+          if (valid) {
+            const bot = {
+              id: botSequence++, body, direction: dir, poisonUntil: 0,
+              accumulator: randomInt(0, SPEED_PRESETS[currentSpeed].base - 1),
+              hue: randomInt(185, 330), alive: true, aiMode: "forage", recentHeads: [cellKey(head)],
+              enclosedSince: null, nextEnclosureCheckAt: 0, nextShrinkAt: null
+            };
+            bots.push(bot);
+            body.forEach((cell) => addBotCell(spatial, cell, bot));
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function tick() {
+        playerMove();
+      }
+
+      function updateBots(delta, baseStepDuration) {
+        const scheduled = [];
+        for (const bot of bots) {
+          bot.accumulator += delta;
+          const botStepDuration = baseStepDuration / (gameClock < bot.poisonUntil ? 1.55 : 1);
+          if (bot.accumulator >= botStepDuration) scheduled.push(bot);
+        }
+        if (!scheduled.length) return;
+        const spatial = getSpatialIndex();
+        for (const bot of scheduled) {
+          while (bot.alive !== false && state === "running") {
+            const botStepDuration = baseStepDuration / (gameClock < bot.poisonUntil ? 1.55 : 1);
+            if (bot.accumulator < botStepDuration) break;
+            moveOneBot(bot, spatial);
+            bot.accumulator -= botStepDuration;
+          }
+        }
+      }
+
+      function updateTimers(delta) {
+        gameClock += delta;
+        if (superFruit && gameClock >= superFruit.expiresAt) {
+          superFruit = null;
+          nextSuperAt = gameClock + superInterval();
+        }
+        if (!superFruit && gameClock >= nextSuperAt) spawnSuperFruit();
+        if (poisonFruit && gameClock >= poisonFruit.expiresAt) poisonFruit = null;
+        if (!food && gameClock >= normalRespawnAt) food = freeCell();
+        if (gridSize >= BOT_UNLOCK_SIZE) {
+          if (botNextSpawnAt === Infinity) botNextSpawnAt = gameClock + settings.botInterval * 1000;
+          while (gameClock >= botNextSpawnAt) {
+            spawnBot();
+            botNextSpawnAt += settings.botInterval * 1000;
+          }
+        }
+        if (gridSize < BOT_UNLOCK_SIZE) botNextSpawnAt = Infinity;
+      }
+
+      function getCamera() {
+        const viewCells = Math.min(gridSize, VIEWPORT_CELLS);
+        const head = snake[0] || { x: 0, y: 0 };
+        const x = clamp(Math.floor(head.x - viewCells / 2), 0, Math.max(0, gridSize - viewCells));
+        const y = clamp(Math.floor(head.y - viewCells / 2), 0, Math.max(0, gridSize - viewCells));
+        camera = { x, y, viewCells };
+        return camera;
+      }
+
+      function updateStatusUI(force = false, timestamp = performance.now()) {
+        if (!force && timestamp - lastStatusUpdateAt < STATUS_UPDATE_INTERVAL_MS) return;
+        lastStatusUpdateAt = timestamp;
+        const setText = (element, value) => {
+          if (element.textContent !== value) element.textContent = value;
+        };
+        setText(boardSizeLabel, `地图 ${gridSize}×${gridSize}${settings.cheatMode ? " · 测试" : ""}`);
+        setText(superStatus, superFruit ? `${Math.max(0, Math.ceil((superFruit.expiresAt - gameClock) / 1000))}s` : "刷新中");
+        setText(poisonStatus, poisonFruit ? `${Math.max(0, Math.ceil((poisonFruit.expiresAt - gameClock) / 1000))}s` : poisonUntil > gameClock ? "加速中" : "未出现");
+        setText(botStatus, gridSize >= BOT_UNLOCK_SIZE ? `${bots.length} 条` : `锁定 ${gridSize}/${BOT_UNLOCK_SIZE}`);
+        setText(stoneStatus, `${stones.length} / ${empowerment}`);
+        const unlimited = hasUnlimitedBoost();
+        const unlocked = unlimited || gridSize >= BOT_UNLOCK_SIZE;
+        if (powerStrip.hidden === unlocked) powerStrip.hidden = !unlocked;
+        const displayedEnergy = unlimited ? 100 : energy;
+        const energyWidth = `${displayedEnergy}%`;
+        if (energyBar.style.width !== energyWidth) energyBar.style.width = energyWidth;
+        const energyAngle = `${displayedEnergy * 3.6}deg`;
+        if (boostButton.style.getPropertyValue("--energy-angle") !== energyAngle) boostButton.style.setProperty("--energy-angle", energyAngle);
+        const boostingValue = String(boosting);
+        const disabledValue = String(!canBoost());
+        if (boostButton.dataset.boosting !== boostingValue) boostButton.dataset.boosting = boostingValue;
+        if (boostButton.dataset.disabled !== disabledValue) boostButton.dataset.disabled = disabledValue;
+        if (boostButton.getAttribute("aria-pressed") !== boostingValue) boostButton.setAttribute("aria-pressed", boostingValue);
+        setText(empowermentValue, unlimited ? "加速 无限" : `赋能 ${empowerment}/3`);
+      }
+
+      function queueMove(nextDirection) {
+        if (state !== "running") return;
+        queuedDirection = nextDirection;
+      }
+
+      function roundedRect(x, y, width, height, radius) {
+        const safeRadius = Math.min(radius, width / 2, height / 2);
+        context.beginPath();
+        if (typeof context.roundRect === "function") context.roundRect(x, y, width, height, safeRadius);
+        else context.rect(x, y, width, height);
+      }
+
+      function toScreen(cell, view) {
+        return { x: cell.x - view.x, y: cell.y - view.y };
+      }
+
+      function visible(cell, view) {
+        return cell.x >= view.x - 1 && cell.x <= view.x + view.viewCells && cell.y >= view.y - 1 && cell.y <= view.y + view.viewCells;
+      }
+
+      function inView(cell, view) {
+        return Boolean(cell) && cell.x >= view.x && cell.x < view.x + view.viewCells && cell.y >= view.y && cell.y < view.y + view.viewCells;
+      }
+
+      function drawFruitIndicators(view, time) {
+        const head = snake[0];
+        if (!head) return;
+        const fruits = [
+          { fruit: food, color: "#ff6b4a" },
+          { fruit: superFruit, color: "#ffd34d" },
+          { fruit: poisonFruit, color: "#a247bc" }
+        ].filter((item) => item.fruit && !inView(item.fruit, view));
+        if (!fruits.length) return;
+
+        const inset = clamp(view.cellSize * 0.75, 14, 28);
+        const headPoint = {
+          x: (head.x - view.x + 0.5) * view.cellSize,
+          y: (head.y - view.y + 0.5) * view.cellSize
+        };
+        const origin = {
+          x: clamp(headPoint.x, inset, boardSize - inset),
+          y: clamp(headPoint.y, inset, boardSize - inset)
+        };
+
+        fruits.forEach((item, index) => {
+          const dx = item.fruit.x - head.x;
+          const dy = item.fruit.y - head.y;
+          if (dx === 0 && dy === 0) return;
+          const angle = Math.atan2(dy, dx);
+          const candidates = [];
+          if (dx > 0) candidates.push((boardSize - inset - origin.x) / dx);
+          if (dx < 0) candidates.push((inset - origin.x) / dx);
+          if (dy > 0) candidates.push((boardSize - inset - origin.y) / dy);
+          if (dy < 0) candidates.push((inset - origin.y) / dy);
+          const distance = Math.min(...candidates.filter((value) => Number.isFinite(value) && value >= 0));
+          if (!Number.isFinite(distance)) return;
+
+          const spread = (index - (fruits.length - 1) / 2) * Math.min(18, view.cellSize * 0.9);
+          const perpendicularX = -Math.sin(angle);
+          const perpendicularY = Math.cos(angle);
+          const centerX = clamp(origin.x + dx * distance + perpendicularX * spread, inset, boardSize - inset);
+          const centerY = clamp(origin.y + dy * distance + perpendicularY * spread, inset, boardSize - inset);
+          const size = clamp(view.cellSize * 0.34, 7, 13);
+          const pulse = 0.86 + Math.sin(time / 180 + index) * 0.1;
+
+          context.save();
+          context.translate(centerX, centerY);
+          context.rotate(angle);
+          context.globalAlpha = pulse;
+          context.shadowColor = item.color;
+          context.shadowBlur = size * 1.2;
+          context.fillStyle = item.color;
+          context.beginPath();
+          context.moveTo(size * 1.05, 0);
+          context.lineTo(-size * 0.62, -size * 0.62);
+          context.lineTo(-size * 0.3, 0);
+          context.lineTo(-size * 0.62, size * 0.62);
+          context.closePath();
+          context.fill();
+          context.shadowBlur = 0;
+          context.strokeStyle = "rgba(255,255,255,0.9)";
+          context.lineWidth = Math.max(1, size * 0.12);
+          context.beginPath();
+          context.arc(0, 0, size * 1.25, 0, Math.PI * 2);
+          context.stroke();
+          context.restore();
+        });
+      }
+
+      function drawGrid(view) {
+        context.strokeStyle = "rgba(185, 230, 80, 0.075)";
+        context.lineWidth = 1;
+        context.beginPath();
+        for (let x = view.x; x <= view.x + view.viewCells; x += 1) {
+          const offset = Math.round((x - view.x) * view.cellSize) + 0.5;
+          context.moveTo(offset, 0);
+          context.lineTo(offset, boardSize);
+        }
+        for (let y = view.y; y <= view.y + view.viewCells; y += 1) {
+          const offset = Math.round((y - view.y) * view.cellSize) + 0.5;
+          context.moveTo(0, offset);
+          context.lineTo(boardSize, offset);
+        }
+        context.stroke();
+        context.strokeStyle = "rgba(255, 255, 255, 0.32)";
+        context.lineWidth = Math.max(1, view.cellSize * 0.025);
+        context.strokeRect(-view.x * view.cellSize, -view.y * view.cellSize, gridSize * view.cellSize, gridSize * view.cellSize);
+      }
+
+      function drawOrdinaryFruit(view, time, fruit = food) {
+        if (!fruit || !inView(fruit, view)) return;
+        const point = toScreen(fruit, view);
+        const centerX = (point.x + 0.5) * view.cellSize;
+        const centerY = (point.y + 0.53) * view.cellSize;
+        const pulse = Math.sin(time / 180) * view.cellSize * 0.025;
+        const radius = view.cellSize * 0.28 + pulse;
+        context.save();
+        context.shadowColor = "rgba(255, 107, 74, 0.42)";
+        context.shadowBlur = view.cellSize * 0.32;
+        context.fillStyle = "#ff6b4a";
+        context.beginPath();
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        context.fill();
+        context.shadowBlur = 0;
+        context.strokeStyle = "#e7c176";
+        context.lineWidth = Math.max(2, view.cellSize * 0.07);
+        context.lineCap = "round";
+        context.beginPath();
+        context.moveTo(centerX, centerY - radius * 0.75);
+        context.quadraticCurveTo(centerX, centerY - radius * 1.25, centerX + radius * 0.26, centerY - radius * 1.45);
+        context.stroke();
+        context.fillStyle = "#77cf78";
+        context.beginPath();
+        context.ellipse(centerX + radius * 0.48, centerY - radius * 1.05, radius * 0.43, radius * 0.22, -0.45, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+      }
+
+      function drawSpecialFruit(fruit, view, time, kind) {
+        if (!fruit || !inView(fruit, view)) return;
+        const point = toScreen(fruit, view);
+        const cx = (point.x + 0.5) * view.cellSize;
+        const cy = (point.y + 0.5) * view.cellSize;
+        const pulse = 1 + Math.sin(time / 160) * 0.06;
+        const radius = view.cellSize * 0.32 * pulse;
+        context.save();
+        context.shadowColor = kind === "super" ? "rgba(255, 209, 74, 0.88)" : "rgba(170, 78, 196, 0.72)";
+        context.shadowBlur = view.cellSize * 0.65;
+        context.fillStyle = kind === "super" ? "#ffd34d" : "#a247bc";
+        if (kind === "super") {
+          context.beginPath();
+          for (let index = 0; index < 16; index += 1) {
+            const angle = -Math.PI / 2 + index * Math.PI / 8;
+            const distance = index % 2 ? radius * 0.62 : radius * 1.18;
+            const x = cx + Math.cos(angle) * distance;
+            const y = cy + Math.sin(angle) * distance;
+            if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+          }
+          context.closePath();
+          context.fill();
+          context.fillStyle = "#fff2a3";
+          context.beginPath();
+          context.arc(cx - radius * 0.18, cy - radius * 0.2, radius * 0.22, 0, Math.PI * 2);
+          context.fill();
+        } else {
+          context.beginPath();
+          context.arc(cx, cy, radius, 0, Math.PI * 2);
+          context.fill();
+          context.fillStyle = "#3d1d4e";
+          context.beginPath();
+          context.arc(cx - radius * 0.28, cy - radius * 0.1, radius * 0.13, 0, Math.PI * 2);
+          context.arc(cx + radius * 0.22, cy + radius * 0.2, radius * 0.11, 0, Math.PI * 2);
+          context.fill();
+        }
+        context.shadowBlur = 0;
+        context.strokeStyle = "rgba(255,255,255,0.75)";
+        context.lineWidth = Math.max(1.5, view.cellSize * 0.035);
+        context.beginPath();
+        const lifetimeMs = fruit.lifetimeMs || (kind === "super" ? settings.superLifetime : settings.poisonLifetime) * 1000;
+        context.arc(cx, cy, radius * 1.4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp((fruit.expiresAt - gameClock) / lifetimeMs, 0, 1));
+        context.stroke();
+        context.restore();
+      }
+
+      function drawStones(view) {
+        const spatial = getSpatialIndex();
+        const minX = Math.max(0, Math.floor(view.x - 1));
+        const maxX = Math.min(gridSize - 1, Math.ceil(view.x + view.viewCells));
+        const minY = Math.max(0, Math.floor(view.y - 1));
+        const maxY = Math.min(gridSize - 1, Math.ceil(view.y + view.viewCells));
+        for (let cellY = minY; cellY <= maxY; cellY += 1) {
+          for (let cellX = minX; cellX <= maxX; cellX += 1) {
+            const stone = spatial.stoneCells.get(`${cellX},${cellY}`);
+            if (!stone) continue;
+            const point = toScreen(stone, view);
+            const pad = view.cellSize * 0.08;
+            const screenX = point.x * view.cellSize + pad;
+            const screenY = point.y * view.cellSize + pad;
+            const size = view.cellSize - pad * 2;
+            context.save();
+            context.fillStyle = (cellX + cellY) % 2 ? "#5b6870" : "#718089";
+            context.shadowColor = "rgba(0,0,0,0.55)";
+            context.shadowBlur = view.cellSize * 0.18;
+            roundedRect(screenX, screenY, size, size, view.cellSize * 0.16);
+            context.fill();
+            context.shadowBlur = 0;
+            context.strokeStyle = "rgba(255,255,255,0.28)";
+            context.lineWidth = Math.max(1, view.cellSize * 0.035);
+            context.beginPath();
+            context.moveTo(screenX + size * 0.22, screenY + size * 0.3);
+            context.lineTo(screenX + size * 0.56, screenY + size * 0.18);
+            context.lineTo(screenX + size * 0.8, screenY + size * 0.42);
+            context.stroke();
+            context.restore();
+          }
+        }
+      }
+
+      function drawBody(body, view, options = {}) {
+        for (let index = body.length - 1; index >= 0; index -= 1) {
+          const segment = body[index];
+          if (!visible(segment, view)) continue;
+          const isHead = index === 0;
+          const padding = isHead ? view.cellSize * 0.09 : view.cellSize * 0.12;
+          const point = toScreen(segment, view);
+          const x = point.x * view.cellSize + padding;
+          const y = point.y * view.cellSize + padding;
+          const size = view.cellSize - padding * 2;
+          context.save();
+          if (isHead || options.glow || options.cornered) {
+            context.shadowColor = options.invincible
+              ? "rgba(255, 221, 92, 0.95)"
+              : options.cornered
+                ? "rgba(255, 107, 74, 0.92)"
+                : options.bot ? `hsla(${options.hue || 210}, 85%, 65%, 0.65)` : "rgba(185, 230, 80, 0.35)";
+            context.shadowBlur = view.cellSize * (options.invincible ? 0.8 : 0.34);
+          }
+          if (options.corpse) context.fillStyle = index % 2 ? "#64736f" : "#87938b";
+          else if (options.bot && options.cornered) context.fillStyle = isHead ? "#ff9b78" : index % 2 ? "#b9574d" : "#d16b58";
+          else if (options.bot) context.fillStyle = isHead ? `hsl(${options.hue}, 88%, 72%)` : `hsl(${options.hue}, 48%, ${index % 2 ? 53 : 61}%)`;
+          else if (options.invincible) context.fillStyle = isHead ? "#fff1a1" : index % 2 ? "#e2a82e" : "#ffd45c";
+          else context.fillStyle = isHead ? "#b9e650" : index % 2 ? "#67bd6c" : "#75ca70";
+          roundedRect(x, y, size, size, view.cellSize * 0.22);
+          context.fill();
+          context.restore();
+          if (isHead && !options.corpse) drawEyes(x, y, size, options.direction || direction, options.bot ? "#18211b" : "#17231c");
+        }
+      }
+
+      function drawEyes(x, y, size, dir, color) {
+        const eyeRadius = Math.max(1.5, size * 0.075);
+        const eyes = dir.x !== 0
+          ? [{ x: x + size * (dir.x > 0 ? 0.72 : 0.28), y: y + size * 0.3 }, { x: x + size * (dir.x > 0 ? 0.72 : 0.28), y: y + size * 0.7 }]
+          : [{ x: x + size * 0.3, y: y + size * (dir.y > 0 ? 0.72 : 0.28) }, { x: x + size * 0.7, y: y + size * (dir.y > 0 ? 0.72 : 0.28) }];
+        context.fillStyle = color;
+        eyes.forEach((eye) => {
+          context.beginPath();
+          context.arc(eye.x, eye.y, eyeRadius, 0, Math.PI * 2);
+          context.fill();
+        });
+      }
+
+      function drawCorpses(view) {
+        const spatial = getSpatialIndex();
+        const minX = Math.max(0, Math.floor(view.x - 1));
+        const maxX = Math.min(gridSize - 1, Math.ceil(view.x + view.viewCells));
+        const minY = Math.max(0, Math.floor(view.y - 1));
+        const maxY = Math.min(gridSize - 1, Math.ceil(view.y + view.viewCells));
+        const padding = view.cellSize * 0.12;
+        const size = view.cellSize - padding * 2;
+        for (let y = minY; y <= maxY; y += 1) {
+          for (let x = minX; x <= maxX; x += 1) {
+            if (!spatial.corpseCells.has(`${x},${y}`)) continue;
+            const point = toScreen({ x, y }, view);
+            context.fillStyle = (x + y) % 2 ? "#64736f" : "#87938b";
+            roundedRect(point.x * view.cellSize + padding, point.y * view.cellSize + padding, size, size, view.cellSize * 0.22);
+            context.fill();
+          }
+        }
+      }
+
+      function botsInView(view) {
+        const visibleBots = new Set();
+        const spatial = getSpatialIndex();
+        const minX = Math.max(0, Math.floor(view.x - 1));
+        const maxX = Math.min(gridSize - 1, Math.ceil(view.x + view.viewCells));
+        const minY = Math.max(0, Math.floor(view.y - 1));
+        const maxY = Math.min(gridSize - 1, Math.ceil(view.y + view.viewCells));
+        for (let y = minY; y <= maxY; y += 1) {
+          for (let x = minX; x <= maxX; x += 1) {
+            const owners = spatial.botCells.get(`${x},${y}`);
+            if (owners) owners.forEach((count, bot) => visibleBots.add(bot));
+          }
+        }
+        return visibleBots;
+      }
+
+      function draw(time = 0) {
+        const currentCamera = getCamera();
+        const view = { ...currentCamera, cellSize: boardSize / currentCamera.viewCells };
+        context.clearRect(0, 0, boardSize, boardSize);
+        context.fillStyle = "#17231c";
+        context.fillRect(0, 0, boardSize, boardSize);
+        drawGrid(view);
+        drawStones(view);
+        drawCorpses(view);
+        drawOrdinaryFruit(view, time, food);
+        drawOrdinaryFruit(view, time, poisonFruit);
+        drawSpecialFruit(superFruit, view, time, "super");
+        botsInView(view).forEach((bot) => {
+          drawBody(bot.body, view, {
+            bot: true, hue: bot.hue, direction: bot.direction, glow: gameClock < bot.poisonUntil,
+            cornered: bot.aiMode === "cornered"
+          });
+        });
+        drawBody(snake, view, { invincible: isPlayerInvincible(), direction });
+        drawFruitIndicators(view, time);
+        updateStatusUI(false, time);
+      }
+
+      function resizeCanvas() {
+        const size = Math.max(1, Math.floor(boardWrap.getBoundingClientRect().width));
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        boardSize = size;
+        canvas.width = Math.round(size * pixelRatio);
+        canvas.height = Math.round(size * pixelRatio);
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        draw(performance.now());
+      }
+
+      function frame(time) {
+        const delta = previousTime ? Math.min(time - previousTime, 100) : 0;
+        previousTime = time;
+        if (state === "running") {
+          updateTimers(delta);
+          if (boosting && !hasUnlimitedBoost()) {
+            boostDrainAccumulator += delta;
+            const drainUnits = Math.floor(boostDrainAccumulator / (1000 / BOOST_DRAIN_PER_SECOND));
+            if (drainUnits > 0) {
+              energy = clamp(energy - drainUnits, 0, 100);
+              boostDrainAccumulator -= drainUnits * (1000 / BOOST_DRAIN_PER_SECOND);
+            }
+            if (energy <= 0) boosting = false;
+          }
+          accumulator += delta;
+          const preset = SPEED_PRESETS[currentSpeed];
+          const baseStepDuration = preset.base;
+          let stepDuration = baseStepDuration;
+          let multiplier = 1;
+          if (gameClock < poisonUntil) multiplier *= 1.55;
+          if (boosting && canBoost()) multiplier *= 1.65;
+          stepDuration /= multiplier;
+          while (accumulator >= stepDuration && state === "running") {
+            tick();
+            accumulator -= stepDuration;
+          }
+          if (state === "running") updateBots(delta, baseStepDuration);
+        }
+        draw(time);
+        window.requestAnimationFrame(frame);
+      }
+
+      function setBoosting(nextValue) {
+        boosting = Boolean(nextValue) && state === "running" && canBoost();
+        updateStatusUI(true);
+      }
+
+      function clearBoardLongPress(stopBoost = false) {
+        if (boardLongPressTimer) window.clearTimeout(boardLongPressTimer);
+        boardLongPressTimer = null;
+        if (stopBoost && boardLongPressActive) setBoosting(false);
+        boardLongPressActive = false;
+      }
+
+      overlayButton.addEventListener("click", () => {
+        if (overlayAction === "resume") togglePause(); else startRound();
+      });
+      overlay.addEventListener("pointerdown", (event) => event.stopPropagation());
+      guideDoneButton.addEventListener("click", dismissFirstRunGuide);
+      pauseButton.addEventListener("click", togglePause);
+      restartButton.addEventListener("click", startRound);
+      musicButton.addEventListener("click", toggleMusic);
+      document.querySelectorAll(".speed-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          currentSpeed = button.dataset.speed;
+          document.querySelectorAll(".speed-button").forEach((item) => item.classList.toggle("active", item.dataset.speed === currentSpeed));
+        });
+      });
+      Object.values(settingInputs).forEach((input) => input.addEventListener("change", readSettingsFromInputs));
+      boostButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        if (boostButton.dataset.disabled !== "true") {
+          boostButton.setPointerCapture?.(event.pointerId);
+          setBoosting(true);
+        }
+      });
+      ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => boostButton.addEventListener(eventName, () => setBoosting(false)));
+      document.querySelectorAll("[data-direction]").forEach((button) => {
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          queueMove(DIRECTIONS[button.dataset.direction]);
+        });
+      });
+      function isEditableTarget(target) {
+        return target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (isEditableTarget(event.target)) return;
+        const directionName = KEY_DIRECTIONS[event.key];
+        if (directionName) {
+          event.preventDefault();
+          queueMove(DIRECTIONS[directionName]);
+          return;
+        }
+        if ((event.key && event.key.toLowerCase() === "p") || event.code === "KeyP") {
+          if (state === "running" || state === "paused") {
+            event.preventDefault();
+            togglePause();
+          }
+          return;
+        }
+        if (event.code === "Space") {
+          if (state === "running" || state === "paused") event.preventDefault();
+          if (state === "running" && !event.repeat) setBoosting(true);
+          return;
+        }
+      });
+      document.addEventListener("keyup", (event) => {
+        if (event.code === "Space") setBoosting(false);
+      });
+      boardWrap.addEventListener("pointerdown", (event) => {
+        swipeStart = { x: event.clientX, y: event.clientY };
+        clearBoardLongPress(true);
+        try {
+          boardWrap.setPointerCapture?.(event.pointerId);
+        } catch {
+          // Synthetic and interrupted pointers may not be capturable.
+        }
+        if (event.pointerType !== "mouse" && state === "running" && canBoost()) {
+          boardLongPressTimer = window.setTimeout(() => {
+            if (!swipeStart || state !== "running") return;
+            boardLongPressActive = true;
+            setBoosting(true);
+            navigator.vibrate?.(20);
+          }, 350);
+        }
+      });
+      boardWrap.addEventListener("pointermove", (event) => {
+        if (!swipeStart || boardLongPressActive || !boardLongPressTimer) return;
+        const distance = Math.hypot(event.clientX - swipeStart.x, event.clientY - swipeStart.y);
+        if (distance > 12) clearBoardLongPress(false);
+      });
+      boardWrap.addEventListener("pointerup", (event) => {
+        if (!swipeStart) return;
+        const wasLongPress = boardLongPressActive;
+        clearBoardLongPress(true);
+        if (wasLongPress) {
+          swipeStart = null;
+          return;
+        }
+        const deltaX = event.clientX - swipeStart.x;
+        const deltaY = event.clientY - swipeStart.y;
+        swipeStart = null;
+        if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 24) return;
+        queueMove(Math.abs(deltaX) > Math.abs(deltaY) ? (deltaX > 0 ? DIRECTIONS.right : DIRECTIONS.left) : (deltaY > 0 ? DIRECTIONS.down : DIRECTIONS.up));
+      });
+      boardWrap.addEventListener("pointercancel", () => {
+        clearBoardLongPress(true);
+        swipeStart = null;
+      });
+      boardWrap.addEventListener("contextmenu", (event) => event.preventDefault());
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && state === "running") togglePause();
+      });
+      window.addEventListener("resize", resizeCanvas);
+      if ("ResizeObserver" in window) new ResizeObserver(resizeCanvas).observe(boardWrap);
+
+      window.__snakeGame = {
+        getState: () => ({
+          state, score, bestScore, speed: currentSpeed, speedStepMs: SPEED_PRESETS[currentSpeed].base, music: musicEnabled, gridSize,
+          snake: snake.map((segment) => ({ ...segment })),
+          food: food ? { ...food } : null,
+          superFruit: superFruit ? { ...superFruit } : null,
+          poisonFruit: poisonFruit ? { ...poisonFruit } : null,
+          bots: bots.map((bot) => ({
+            id: bot.id, length: bot.body.length, head: { ...bot.body[0] }, poison: gameClock < bot.poisonUntil,
+            aiMode: bot.aiMode, enclosedMs: bot.enclosedSince !== null ? Math.max(0, Math.round(gameClock - bot.enclosedSince)) : 0
+          })),
+          corpseCount: corpses.reduce((count, corpse) => count + corpse.cells.length, 0),
+          corpseGroups: corpses.length,
+          stones: stones.map((stone) => ({ ...stone })),
+          energy: Math.round(energy), empowerment, invincible: isPlayerInvincible(), poisonActive: gameClock < poisonUntil,
+          settings: { ...settings }, camera: { ...camera }, clock: Math.round(gameClock), boosting
+        }),
+        start: startRound,
+        pause: togglePause,
+        setSpeed: (speed) => {
+          if (SPEED_PRESETS[speed]) {
+            currentSpeed = speed;
+            document.querySelectorAll(".speed-button").forEach((button) => button.classList.toggle("active", button.dataset.speed === speed));
+          }
+        },
+        setSettings: (next) => {
+          settings = { ...settings, ...next };
+          syncSettingsInputs();
+          readSettingsFromInputs();
+        },
+        setGridSize: (size) => {
+          gridSize = clamp(Math.round(Number(size) || INITIAL_GRID_SIZE), INITIAL_GRID_SIZE, MAX_GRID_SIZE);
+          invalidateSpatialIndex();
+          markPlayerTopologyChanged();
+          if (gridSize >= BOT_UNLOCK_SIZE && botNextSpawnAt === Infinity) botNextSpawnAt = gameClock + 1;
+          updateStatusUI(true);
+        },
+        spawnSuper: () => { if (!superFruit) spawnSuperFruit(); updateStatusUI(true); },
+        spawnPoison: () => { spawnPoisonFruit(); updateStatusUI(true); },
+        spawnBot: () => { if (gridSize < BOT_UNLOCK_SIZE) gridSize = BOT_UNLOCK_SIZE; return spawnBot(); },
+        setScenario: (next = {}) => {
+          if (Array.isArray(next.snake) && next.snake.length) snake = next.snake.map((cell) => ({ x: Number(cell.x), y: Number(cell.y) }));
+          if (Array.isArray(next.bots)) {
+            bots = next.bots.map((item) => ({
+              id: item.id || botSequence++, body: item.body.map((cell) => ({ x: Number(cell.x), y: Number(cell.y) })),
+              direction: DIRECTIONS[item.direction] || item.direction || DIRECTIONS.right,
+              poisonUntil: 0, accumulator: 0, hue: item.hue || randomInt(185, 330), alive: true,
+              aiMode: "forage", recentHeads: [], enclosedSince: null, nextEnclosureCheckAt: 0, nextShrinkAt: null
+            }));
+          }
+          if (Array.isArray(next.corpses)) corpses = next.corpses.map((cells) => {
+            const body = cells.map((cell) => ({ x: Number(cell.x), y: Number(cell.y) }));
+            return { cells: body, bounds: bodyBounds(body) };
+          });
+          if (Array.isArray(next.stones)) stones = next.stones.map((cell) => ({ x: Number(cell.x), y: Number(cell.y) }));
+          if (Object.hasOwn(next, "food")) food = next.food ? { ...next.food } : null;
+          if (Object.hasOwn(next, "superFruit")) superFruit = next.superFruit ? { ...next.superFruit } : null;
+          if (Object.hasOwn(next, "poisonFruit")) poisonFruit = next.poisonFruit ? { ...next.poisonFruit } : null;
+          if (next.direction && DIRECTIONS[next.direction]) direction = DIRECTIONS[next.direction];
+          queuedDirection = direction;
+          invalidateSpatialIndex();
+          markPlayerTopologyChanged();
+          updateStatusUI(true);
+        },
+        stepPlayer: () => playerMove(),
+        stepBots: (delta = SPEED_PRESETS[currentSpeed].base) => updateBots(Number(delta) || SPEED_PRESETS[currentSpeed].base, SPEED_PRESETS[currentSpeed].base),
+        advanceTimers: (delta) => updateTimers(Math.max(0, Number(delta) || 0)),
+        setEnergy: (value) => { energy = clamp(Number(value) || 0, 0, 100); updateStatusUI(true); },
+        setEmpowerment: (value) => { empowerment = clamp(Math.round(Number(value) || 0), 0, 3); updateStatusUI(true); },
+        setBoosting,
+        toggleMusic
+      };
+
+      syncSettingsInputs();
+      readSettingsFromInputs();
+      bestScoreElement.textContent = formatScore(bestScore);
+      createRound();
+      setState("idle");
+      resizeCanvas();
+      showFirstRunGuide();
+      window.requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

@@ -60,6 +60,7 @@ export interface LumiAndroidBridge {
   getScreenBrightnessPercent?: () => number
   setScreenBrightnessPercent?: (percent: number) => void
   resetScreenBrightness?: () => void
+  openExternalUrl?: (url: string) => boolean
 }
 
 export function isAndroidNative(): boolean {
@@ -81,6 +82,23 @@ export async function openBilibiliLogin(browser: 'edge' | 'chrome' | 'firefox'):
   }
   const { invoke } = await import('@tauri-apps/api/core')
   return invoke<string>('open_bilibili_login', { browser })
+}
+
+export async function openExternalPage(url: string): Promise<void> {
+  const destination = new URL(url)
+  if (destination.protocol !== 'https:') throw new Error('仅允许打开 HTTPS 官方页面')
+  if (isAndroidNative()) {
+    const opened = getAndroidBridge()?.openExternalUrl?.(destination.href)
+    if (!opened) throw new Error('手机系统没有找到可用的浏览器')
+    return
+  }
+  if (isNativeShell()) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_external_url', { url: destination.href })
+    return
+  }
+  const opened = window.open(destination.href, '_blank', 'noopener,noreferrer')
+  if (!opened) throw new Error('浏览器阻止了新窗口，请允许 Lumi 打开官方游戏')
 }
 
 function defaultApiBase(): string {

@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
-  "published_at": "2026-09-17T00:00:00Z",
-  "notes": "将深岩淘金升级为十关儿童成长模式，增加补给商店、福袋奖励、可积攒道具、教学瞄准和友好补时。",
+  "published_at": "2026-09-18T00:00:00Z",
+  "notes": "新增跨电脑、手机和电视的完整贪吃蛇，接入画线人官方游戏，并优化深岩淘金回收质感与炸药按键。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

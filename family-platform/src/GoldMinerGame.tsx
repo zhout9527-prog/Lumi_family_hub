@@ -72,6 +72,7 @@ interface SavedProgress {
   highestLevel: number
   coins: number
   inventory: Inventory
+  activeEffects: RoundEffects
 }
 
 const BOARD_WIDTH = 1000
@@ -87,12 +88,12 @@ const EMPTY_QUEUED: QueuedBoosts = { 'lucky-charm': false, strength: false, 'gol
 const EMPTY_EFFECTS: RoundEffects = { luckyCharm: false, strength: false, goldBook: false, diamondBook: false }
 
 const TREASURE_META: Record<TreasureKind, { label: string; value: number; pullSpeed: number; radius: number; pullHint: string }> = {
-  'gold-large': { label: '大金块', value: 500, pullSpeed: 145, radius: 42, pullHint: '沉甸甸的，慢慢把它拉回来！' },
-  'gold-medium': { label: '金块', value: 250, pullSpeed: 255, radius: 31, pullHint: '抓稳了，正在回收金块！' },
-  'gold-small': { label: '小金块', value: 100, pullSpeed: 430, radius: 22, pullHint: '小金块很轻，很快就回来啦！' },
-  diamond: { label: '钻石', value: 600, pullSpeed: 650, radius: 19, pullHint: '钻石又轻又珍贵，飞快回收！' },
-  rock: { label: '石块', value: 25, pullSpeed: 88, radius: 35, pullHint: '石头最重，可以用炸药放弃它。' },
-  mystery: { label: '福袋', value: 180, pullSpeed: 330, radius: 27, pullHint: '福袋里一定有奖励，还可能藏着道具！' },
+  'gold-large': { label: '大金块', value: 500, pullSpeed: 87, radius: 42, pullHint: '沉甸甸的，慢慢把它拉回来！' },
+  'gold-medium': { label: '金块', value: 250, pullSpeed: 153, radius: 31, pullHint: '抓稳了，正在回收金块！' },
+  'gold-small': { label: '小金块', value: 100, pullSpeed: 258, radius: 22, pullHint: '小金块很轻，很快就回来啦！' },
+  diamond: { label: '钻石', value: 600, pullSpeed: 390, radius: 19, pullHint: '钻石又轻又珍贵，回收速度最快！' },
+  rock: { label: '石块', value: 25, pullSpeed: 53, radius: 35, pullHint: '石头最重，可以用炸药放弃它。' },
+  mystery: { label: '福袋', value: 180, pullSpeed: 198, radius: 27, pullHint: '福袋里一定有奖励，还可能藏着道具！' },
 }
 
 const LEVELS: LevelConfig[] = [
@@ -150,7 +151,7 @@ const LEVELS: LevelConfig[] = [
 
 const TOOL_META: Record<ToolKind, { name: string; price: number; description: string; highValue?: boolean }> = {
   'lucky-charm': { name: '福袋徽章', price: 90, description: '下一关福袋更容易开出书籍和稀有道具。' },
-  strength: { name: '大力手套', price: 120, description: '持续下一关，所有目标的回收速度提高 75%。' },
+  strength: { name: '大力药水', price: 120, description: '持续下一关，所有目标的回收速度提高 75%。' },
   dynamite: { name: '安全炸药', price: 80, description: '抓到石头或不想要的目标时炸掉，本次立即空钩返回。' },
   'gold-book': { name: '幸运金块书', price: 160, description: '下一关额外刷新 4 块金块。', highValue: true },
   'diamond-book': { name: '幸运钻石书', price: 220, description: '下一关额外刷新 3 颗钻石。', highValue: true },
@@ -288,9 +289,10 @@ function readProgress(): SavedProgress {
       highestLevel: Math.max(1, Math.min(99, Math.floor(Number(parsed.highestLevel) || 1))),
       coins: Math.max(0, Math.min(999_999, Math.floor(Number(parsed.coins) || 0))),
       inventory: Object.fromEntries(Object.entries(inventory).map(([key, value]) => [key, Math.max(0, Math.min(99, Math.floor(Number(value) || 0))) ])) as Inventory,
+      activeEffects: { ...EMPTY_EFFECTS, ...(parsed.activeEffects ?? {}) },
     }
   } catch {
-    return { level: 1, highestLevel: 1, coins: 0, inventory: { ...EMPTY_INVENTORY } }
+    return { level: 1, highestLevel: 1, coins: 0, inventory: { ...EMPTY_INVENTORY }, activeEffects: { ...EMPTY_EFFECTS } }
   }
 }
 
@@ -332,11 +334,11 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
   const [level, setLevel] = useState(initialProgress.level)
   const [highestLevel, setHighestLevel] = useState(initialProgress.highestLevel)
   const [roundSeed, setRoundSeed] = useState(1)
-  const [activeEffects, setActiveEffects] = useState<RoundEffects>(EMPTY_EFFECTS)
+  const [activeEffects, setActiveEffects] = useState<RoundEffects>(initialProgress.activeEffects)
   const [queuedBoosts, setQueuedBoosts] = useState<QueuedBoosts>(EMPTY_QUEUED)
   const [inventory, setInventory] = useState<Inventory>(initialProgress.inventory)
   const [coins, setCoins] = useState(initialProgress.coins)
-  const [treasures, setTreasures] = useState(() => createTreasures(initialProgress.level, 1, EMPTY_EFFECTS))
+  const [treasures, setTreasures] = useState(() => createTreasures(initialProgress.level, 1, initialProgress.activeEffects))
   const [hook, setHook] = useState<HookState>(hookRef.current)
   const [score, setScore] = useState(0)
   const [bestScore, setBestScore] = useState(readBestScore)
@@ -483,9 +485,9 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ level, highestLevel, coins, inventory } satisfies SavedProgress))
+      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ level, highestLevel, coins, inventory, activeEffects } satisfies SavedProgress))
     } catch { /* 无法使用本地存储时仅保留当前游戏会话。 */ }
-  }, [coins, highestLevel, inventory, level])
+  }, [activeEffects, coins, highestLevel, inventory, level])
 
   useEffect(() => {
     if (paused || status !== 'playing' || timeExpired) return
@@ -600,8 +602,10 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
       if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(event.key)) {
         event.preventDefault(); event.stopImmediatePropagation(); onClose(); return
       }
-      if ((event.key === 'x' || event.key === 'X') && !event.repeat) {
-        event.preventDefault(); useDynamite(); return
+      if ((event.key === 'ArrowUp' || event.key === 'x' || event.key === 'X') && status === 'playing') {
+        event.preventDefault()
+        if (!event.repeat) useDynamite()
+        return
       }
       if ((event.key === 'r' || event.key === 'R') && !event.repeat && status !== 'shop') {
         event.preventDefault(); retryLevel(); return
@@ -707,7 +711,7 @@ export function GoldMinerGame({ onClose }: { onClose: () => void }) {
                 <ul><li><i className="legend-gold" />金块 <strong>100-500</strong></li><li><i className="legend-diamond" />钻石 <strong>600 · 最快</strong></li><li><i className="legend-bag">?</i>福袋 <strong>钱 + 道具</strong></li><li><i className="legend-rock" />石块 <strong>25 · 最慢</strong></li></ul>
                 {activeEffectNames.length > 0 && <div className="gold-active-effects"><small>本关增益</small><div>{activeEffectNames.map((name) => <span key={name}><Sparkles size={11} />{name}</span>)}</div></div>}
                 <div className="gold-backpack"><div><ShoppingBag size={15} /><strong>背包</strong><span>炸药 × {inventory.dynamite}</span></div><button type="button" className="gold-dynamite-button" disabled={!caught || inventory.dynamite <= 0} onClick={useDynamite}><Bomb size={16} />炸掉当前目标</button></div>
-                <div className="gold-miner-control-note"><Gamepad2 size={17} /><span>{DEVICE_PROFILE === 'tv' ? '确认键或向下键放钩；聚焦炸药按钮即可使用。' : DEVICE_PROFILE === 'mobile' ? '轻点矿洞放钩；抓错时可点炸药。' : '空格、回车或向下键放钩；X 使用炸药。'}</span></div>
+                <div className="gold-miner-control-note"><Gamepad2 size={17} /><span>{DEVICE_PROFILE === 'tv' ? '确认键或向下键放钩；向上键直接使用炸药。' : DEVICE_PROFILE === 'mobile' ? '轻点矿洞放钩；抓错时可点炸药。' : '空格、回车或向下键放钩；向上键或 X 使用炸药。'}</span></div>
                 {reachedGoal ? <button type="button" className="button button-primary gold-miner-finish" onClick={finishEarly}><Check size={17} />目标达成，提前收工</button> : <button type="button" className="button button-primary gold-miner-drop" onClick={dropHook} disabled={hook.phase !== 'swinging' || paused || timeExpired || status !== 'playing'}><Pickaxe size={17} />放下吊钩</button>}
               </aside>
             </>

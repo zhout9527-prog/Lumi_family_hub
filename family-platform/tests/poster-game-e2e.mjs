@@ -34,6 +34,21 @@ async function boardState(page) {
   )
 }
 
+async function aimAtTutorialDiamond(page) {
+  const targetAngle = await page.locator('.gold-treasure[data-kind="diamond"][data-treasure-id*="guide"]').evaluateAll((items) => {
+    const target = items
+      .map((item) => {
+        const x = Number.parseFloat(item.style.left) * 10
+        const y = Number.parseFloat(item.style.top) * 6.5
+        return { angle: Math.atan2(x - 500, y - 104) * 180 / Math.PI, distance: Math.hypot(x - 500, y - 104) }
+      })
+      .filter(({ angle }) => Math.abs(angle) < 64)
+      .sort((left, right) => left.distance - right.distance)[0]
+    return target.angle
+  })
+  await page.waitForFunction((angle) => Math.abs(Number(document.querySelector('.gold-miner-stage')?.getAttribute('data-angle')) - angle) < 1.2, targetAngle)
+}
+
 await mkdir(artifactsPath, { recursive: true })
 const browser = await chromium.launch({ executablePath: edgePath, headless: true })
 const failures = []
@@ -104,25 +119,25 @@ try {
   await child.getByRole('button', { name: '退出方块割草' }).click()
   await child.getByRole('button', { name: /深岩淘金/ }).click()
   await child.getByRole('dialog', { name: '深岩淘金' }).waitFor()
-  check(await child.locator('.gold-treasure[data-kind]').count() === 14, '深岩淘金没有生成完整宝藏')
-  const targetAngle = await child.locator('.gold-treasure[data-kind]').evaluateAll((items) => {
-    const target = items
-      .map((item) => {
-        const x = Number.parseFloat(item.style.left) * 10
-        const y = Number.parseFloat(item.style.top) * 6.5
-        return { angle: Math.atan2(x - 500, y - 104) * 180 / Math.PI, distance: Math.hypot(x - 500, y - 104) }
-      })
-      .filter(({ angle }) => Math.abs(angle) < 64)
-      .sort((left, right) => left.distance - right.distance)[0]
-    return target.angle
-  })
-  await child.waitForFunction((angle) => Math.abs(Number(document.querySelector('.gold-miner-stage')?.getAttribute('data-angle')) - angle) < 1.2, targetAngle)
+  check(await child.locator('.gold-treasure[data-kind]').count() === 20, '深岩淘金第一关没有生成完整的新手宝藏')
+  await child.getByText('300', { exact: true }).first().waitFor()
+  await aimAtTutorialDiamond(child)
   await child.keyboard.press('ArrowDown')
-  await child.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) > 0, undefined, { timeout: 12_000 })
+  await child.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
   await child.keyboard.press('p')
   await child.getByText('已暂停', { exact: true }).waitFor()
   await child.keyboard.press('p')
   check(await child.getByText('已暂停', { exact: true }).count() === 0, '电脑键盘没有恢复淘金游戏')
+  await child.getByRole('button', { name: /目标达成，提前收工/ }).click()
+  await child.getByRole('heading', { name: '矿镇补给站' }).waitFor()
+  await child.screenshot({ path: `${artifactsPath}gold-miner-shop-desktop-${runId}.png` })
+  const goldBook = child.locator('.gold-shop-card.tool-gold-book')
+  await goldBook.getByRole('button', { name: '购买 160' }).click()
+  await goldBook.getByRole('button', { name: '下关使用一个' }).click()
+  await goldBook.getByText('下关已准备').waitFor()
+  await child.getByRole('button', { name: '进入第 2 关' }).click()
+  await child.locator('.gold-miner-stage').waitFor()
+  check(await child.locator('.gold-treasure[data-kind]').count() === 26, '幸运金块书没有为下一关增加四块金块')
   await child.screenshot({ path: `${artifactsPath}gold-miner-desktop-${runId}.png` })
   await child.keyboard.press('Escape')
   check(await child.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电脑端没有退出深岩淘金')
@@ -157,9 +172,17 @@ try {
   await mobile.getByRole('button', { name: /深岩淘金/ }).click()
   await mobile.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机深岩淘金横向溢出')
-  await mobile.locator('.gold-miner-stage').click()
-  await mobile.waitForFunction(() => document.querySelector('.gold-miner-stage')?.getAttribute('data-phase') !== 'swinging')
   await mobile.screenshot({ path: `${artifactsPath}gold-miner-mobile-${runId}.png` })
+  await aimAtTutorialDiamond(mobile)
+  await mobile.locator('.gold-miner-stage').click()
+  await mobile.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
+  await mobile.getByRole('button', { name: /目标达成，提前收工/ }).click()
+  await mobile.getByRole('heading', { name: '矿镇补给站' }).waitFor()
+  check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机补给站横向溢出')
+  check(await mobile.locator('.gold-shop-card').count() === 5, '手机补给站没有展示完整五类道具')
+  await mobile.screenshot({ path: `${artifactsPath}gold-miner-shop-mobile-${runId}.png` })
+  await mobile.getByRole('button', { name: '进入第 2 关' }).scrollIntoViewIfNeeded()
+  check(await mobile.getByRole('button', { name: '进入第 2 关' }).isVisible(), '手机补给站无法滚动到下一关按钮')
   await mobile.getByRole('button', { name: '退出深岩淘金' }).click()
   await mobileContext.close()
 
@@ -219,9 +242,15 @@ try {
   await tv.keyboard.press('Enter')
   await tv.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(await tv.evaluate(() => document.activeElement?.classList.contains('gold-miner-stage')) === true, '电视深岩淘金没有把焦点放到矿洞')
+  await aimAtTutorialDiamond(tv)
   await tv.keyboard.press('ArrowDown')
-  await tv.waitForFunction(() => document.querySelector('.gold-miner-stage')?.getAttribute('data-phase') !== 'swinging')
-  await tv.screenshot({ path: `${artifactsPath}gold-miner-tv-${runId}.png` })
+  await tv.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
+  await tv.getByRole('button', { name: /目标达成，提前收工/ }).focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByRole('heading', { name: '矿镇补给站' }).waitFor()
+  await tv.keyboard.press('ArrowDown')
+  check(await tv.evaluate(() => document.activeElement?.classList.contains('gold-buy-button')) === true, '电视补给站没有聚焦第一个购买按钮')
+  await tv.screenshot({ path: `${artifactsPath}gold-miner-shop-tv-${runId}.png` })
   await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
   check(await tv.getByRole('dialog', { name: '深岩淘金' }).count() === 0, '电视返回键没有退出深岩淘金')
   await tvContext.close()

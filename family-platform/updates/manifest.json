@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
   "published_at": "2026-09-17T00:00:00Z",
-  "notes": "新增跨 Windows、Android 手机与 Android TV 的深岩淘金游戏，支持触控、键盘和电视遥控器操作。",
+  "notes": "将深岩淘金升级为十关儿童成长模式，增加补给商店、福袋奖励、可积攒道具、教学瞄准和友好补时。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Gamepad2,
   Hand,
+  Palette,
   Pause,
   Play,
   RefreshCw,
@@ -258,12 +259,14 @@ export function GamesView({
   onPlayBlockMower,
   onPlayGoldMiner,
   onPlaySnake,
+  onOpenArtStudio,
   onOpenStickman,
 }: {
   onPlayTetris: () => void
   onPlayBlockMower: () => void
   onPlayGoldMiner: () => void
   onPlaySnake: () => void
+  onOpenArtStudio: () => void
   onOpenStickman: () => void
 }) {
   const showStickman = DEVICE_PROFILE !== 'tv'
@@ -271,7 +274,7 @@ export function GamesView({
     <div className="dashboard games-dashboard">
       <section className="page-intro games-intro">
         <div><span className="eyebrow">PLAYGROUND</span><h1>小游戏</h1><p>短短一局，动动脑筋。</p></div>
-        <span className="soft-badge"><Gamepad2 size={14} /> {showStickman ? 5 : 4} 个游戏</span>
+        <span className="soft-badge"><Gamepad2 size={14} /> {showStickman ? 6 : 5} 个游戏</span>
       </section>
       <div className="game-launch-grid-list">
         <button type="button" className="game-launch-card" data-tv-initial onClick={onPlayTetris}>
@@ -292,9 +295,9 @@ export function GamesView({
             <span className="mower-launch-spark">✦</span>
           </span>
           <span className="game-launch-copy">
-            <span className="eyebrow">COLOR GROVE</span>
-            <strong>方块割草</strong>
-            <small>连锁 · 观察 · 放松</small>
+            <span className="eyebrow">BLOCK DEFENSE</span>
+            <strong>彩块防线</strong>
+            <small>预判 · 换装 · 自动防守</small>
             <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
           </span>
         </button>
@@ -324,14 +327,27 @@ export function GamesView({
             <span className="game-launch-action"><Play size={17} fill="currentColor" />开始游戏</span>
           </span>
         </button>
+        <button type="button" className="game-launch-card art-studio-launch-card" onClick={onOpenArtStudio}>
+          <span className="art-studio-launch-art" aria-hidden="true">
+            <span className="art-launch-paper"><i /><b /><em /></span>
+            <span className="art-launch-brush" />
+            <span className="art-launch-palette"><i /><i /><i /><i /></span>
+          </span>
+          <span className="game-launch-copy">
+            <span className="eyebrow">CREATIVE STUDIO</span>
+            <strong>小小画室</strong>
+            <small>自由画 · 临摹 · 练习建议</small>
+            <span className="game-launch-action"><Palette size={17} />开始创作</span>
+          </span>
+        </button>
         {showStickman && (
           <button type="button" className="game-launch-card stickman-launch-card" onClick={onOpenStickman}>
-            <span className="stickman-launch-art" aria-hidden="true"><ExternalLink size={46} /><span>官方原版<br />浏览器打开</span></span>
+            <span className="stickman-launch-art" aria-hidden="true"><ExternalLink size={46} /><span>官方原版<br />Lumi 内打开</span></span>
             <span className="game-launch-copy">
               <span className="eyebrow">OFFICIAL GAME</span>
               <strong>画线人冒险</strong>
-              <small>原版美术 · 官方关卡 · 需联网</small>
-              <span className="game-launch-action"><ExternalLink size={17} />打开官方游戏</span>
+              <small>原版美术 · 官方关卡 · Lumi 内置视图</small>
+              <span className="game-launch-action"><ExternalLink size={17} />在 Lumi 中打开</span>
             </span>
           </button>
         )}

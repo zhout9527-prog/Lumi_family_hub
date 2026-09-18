@@ -7531,6 +7531,13 @@ html.mobile-mode:fullscreen .player-community {
 }
 
 .gold-miner-icon:hover { color: #fff0ac; border-color: rgba(244,185,66,.55); background: #333d3f; }
+.gold-miner-new-game {
+  width: auto;
+  gap: 5px;
+  padding-inline: 10px;
+  color: #ffe39a;
+}
+.gold-miner-new-game span { font-size: 11px; font-weight: 900; }
 .gold-miner-icon:focus-visible,
 .gold-miner-stage:focus-visible,
 .gold-miner-drop:focus-visible { outline: 3px solid #f4c957; outline-offset: 3px; }
@@ -7960,6 +7967,7 @@ html.mobile-mode:fullscreen .player-community {
   .gold-miner-stats > span:last-child { display: none; }
   .gold-miner-stats strong { font-size: 13px; }
   .gold-miner-icon { width: 36px; height: 36px; }
+  .gold-miner-new-game { width: auto; padding-inline: 8px; }
   .gold-miner-header-actions .gold-miner-icon:nth-child(2) { display: none; }
   .gold-miner-main {
     grid-template-columns: minmax(0,1fr);
@@ -8015,6 +8023,170 @@ html.mobile-mode:fullscreen .player-community {
 @media (prefers-reduced-motion: reduce) {
   .miner-character,
   .gold-miner-stats .is-urgent { animation: none; }
+}
+
+/* 小小画室 */
+.art-studio-launch-card .game-launch-copy > strong { color: #a74d69; }
+.art-studio-launch-art { position: relative; min-height: 300px; overflow: hidden; border-right: 1px solid #ead6dc; background: #f7dce5; }
+.art-studio-launch-art::before { position: absolute; inset: 0; content: ''; opacity: .62; background: linear-gradient(22deg, transparent 45%, rgba(255,255,255,.64) 46% 53%, transparent 54%), linear-gradient(155deg, transparent 54%, rgba(255,255,255,.46) 55% 60%, transparent 61%); }
+.art-launch-paper { position: absolute; top: 36px; left: 50%; width: 170px; height: 205px; overflow: hidden; border: 1px solid #d8c7c6; border-radius: 5px; background: #fffdf8; box-shadow: 0 17px 28px rgba(103,54,69,.18); transform: translateX(-50%) rotate(-4deg); }
+.art-launch-paper::before { position: absolute; top: 28px; left: 32px; width: 105px; height: 96px; content: ''; border: 8px solid #5cb1bd; border-radius: 50% 45% 52% 45%; transform: rotate(-9deg); }
+.art-launch-paper::after { position: absolute; right: 22px; bottom: 20px; left: 22px; height: 46px; content: ''; border-radius: 50% 45% 0 0; background: #8bc66d; }
+.art-launch-paper i { position: absolute; z-index: 2; top: 64px; left: 62px; width: 11px; height: 11px; border-radius: 50%; background: #263238; box-shadow: 42px 3px #263238; }
+.art-launch-paper b { position: absolute; z-index: 2; top: 85px; left: 75px; width: 45px; height: 22px; border-bottom: 5px solid #ef6d75; border-radius: 50%; transform: rotate(7deg); }
+.art-launch-paper em { position: absolute; z-index: 3; top: 21px; right: 18px; width: 28px; height: 28px; border-radius: 50%; background: #f3c951; box-shadow: 0 0 0 6px rgba(243,201,81,.22); }
+.art-launch-brush { position: absolute; z-index: 5; right: 34px; bottom: 28px; width: 20px; height: 145px; border: 2px solid #734c31; border-radius: 9px; background: #d99b5f; box-shadow: 0 9px 16px rgba(80,43,23,.2); transform: rotate(29deg); }
+.art-launch-brush::before { position: absolute; top: -46px; left: -6px; width: 28px; height: 58px; content: ''; border-radius: 50% 50% 35% 35%; background: #427bd1; clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
+.art-launch-palette { position: absolute; z-index: 4; bottom: 25px; left: 27px; width: 92px; height: 70px; border: 2px solid #c28d57; border-radius: 54% 46% 50% 45%; background: #e9b77b; box-shadow: 0 8px 16px rgba(91,54,23,.18); transform: rotate(9deg); }
+.art-launch-palette::after { position: absolute; top: 22px; right: 15px; width: 23px; height: 23px; content: ''; border-radius: 50%; background: #f7dce5; }
+.art-launch-palette i { position: absolute; width: 14px; height: 14px; border-radius: 50%; }
+.art-launch-palette i:nth-child(1) { top: 10px; left: 17px; background: #ef6464; }
+.art-launch-palette i:nth-child(2) { top: 31px; left: 12px; background: #4e86dd; }
+.art-launch-palette i:nth-child(3) { right: 37px; bottom: 7px; background: #78b95d; }
+.art-launch-palette i:nth-child(4) { top: 8px; right: 35px; background: #f2c54d; }
+
+.art-studio-backdrop { position: fixed; z-index: 293; inset: 0; display: grid; min-height: 0; grid-template-rows: 62px minmax(0, 1fr); padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); color: #26352d; background: #e8ece7; overscroll-behavior: none; }
+.art-studio-header { position: relative; z-index: 10; display: grid; grid-template-columns: minmax(210px, 1fr) auto minmax(210px, 1fr); align-items: center; gap: 14px; padding: 8px 14px 8px 18px; border-bottom: 1px solid #d0d8d2; background: #fffdfb; box-shadow: 0 5px 18px rgba(54,64,58,.08); }
+.art-studio-header > div:first-child { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.art-studio-header > div:first-child > div { display: grid; min-width: 0; gap: 2px; }
+.art-studio-header strong { font-size: 16px; }
+.art-studio-header > div:first-child span:last-child { overflow: hidden; color: #7a827c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.art-studio-logo { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: #fff; background: #b65777; box-shadow: inset 0 -4px 0 rgba(0,0,0,.12); }
+.art-mode-switch { display: flex; padding: 3px; border: 1px solid #d8dcda; border-radius: 7px; background: #f1f3f0; }
+.art-mode-switch button { display: flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 13px; border: 0; border-radius: 5px; color: #68736c; background: transparent; font-size: 10px; font-weight: 900; }
+.art-mode-switch button.is-active { color: #73354b; background: #fff; box-shadow: 0 2px 7px rgba(57,38,44,.1); }
+.art-close { display: grid; width: 40px; height: 40px; justify-self: end; place-items: center; padding: 0; border: 1px solid #d3dad5; border-radius: 7px; color: #394940; background: #fff; }
+.art-close:hover,
+.art-close:focus-visible { border-color: #a9506e; outline: 3px solid rgba(169,80,110,.2); outline-offset: 2px; }
+
+.art-studio-main { display: grid; min-height: 0; grid-template-columns: 104px minmax(0, 1fr) 278px; overflow: hidden; }
+.art-toolbox { display: flex; min-height: 0; flex-direction: column; gap: 15px; padding: 14px 10px; overflow: auto; border-right: 1px solid #d1d9d3; background: #f9faf8; }
+.art-tool-group { display: grid; gap: 7px; }
+.art-tool-group > span,
+.art-size-control > span { color: #68766e; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.art-tool-segment { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.art-tool-segment button,
+.art-history-actions button { display: grid; width: 100%; height: 39px; place-items: center; padding: 0; border: 1px solid #d3dbd5; border-radius: 6px; color: #56645c; background: #fff; }
+.art-tool-segment button.is-active { border-color: #b45473; color: #a34565; background: #fcecf2; box-shadow: inset 3px 0 #b45473; }
+.art-color-group > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.art-color-group button { width: 22px; height: 22px; padding: 0; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #cbd3cd; }
+.art-color-group button.is-active { outline: 2px solid #2e4137; outline-offset: 2px; }
+.art-size-control { display: grid; gap: 7px; }
+.art-size-control > span { display: flex; justify-content: space-between; }
+.art-size-control b { color: #34443b; }
+.art-size-control input { width: 100%; accent-color: #ae4e6e; }
+.art-history-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: auto; }
+.art-history-actions button { height: 34px; }
+.art-history-actions button:disabled { opacity: .38; }
+.art-toolbox button:not(:disabled):focus-visible { outline: 3px solid rgba(169,80,110,.22); outline-offset: 2px; }
+
+.art-canvas-section { position: relative; display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; gap: 9px; padding: 16px; overflow: auto; background: #dde4df; }
+.art-canvas-frame { position: relative; width: min(100%, 1080px); max-height: 100%; aspect-ratio: 3 / 2; align-self: center; justify-self: center; overflow: hidden; border: 1px solid #c7c3bb; border-radius: 6px; background: #fffdf8; box-shadow: 0 17px 35px rgba(60,66,62,.17); }
+.art-canvas-frame::after { position: absolute; z-index: 5; inset: 0; content: ''; pointer-events: none; box-shadow: inset 0 0 28px rgba(99,83,63,.04); }
+.art-guide-canvas,
+.art-drawing-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.art-guide-canvas { z-index: 1; opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
+.art-guide-canvas.is-visible { opacity: .25; }
+.art-drawing-canvas { z-index: 2; cursor: crosshair; touch-action: none; }
+.art-drawing-canvas:focus-visible { outline: 4px solid #c85f82; outline-offset: -5px; }
+.art-empty-hint { position: absolute; z-index: 1; top: 50%; left: 50%; display: grid; place-items: center; gap: 4px; color: #a29f97; pointer-events: none; transform: translate(-50%, -50%); }
+.art-empty-hint strong { font-size: 13px; }
+.art-empty-hint span { font-size: 9px; }
+.art-tv-cursor { position: absolute; z-index: 8; width: 17px; height: 17px; border: 3px solid #fff; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 2px #2d3e35, 0 3px 8px rgba(0,0,0,.3); transform: translate(-50%, -50%); }
+.art-tv-cursor.is-drawing { width: 23px; height: 23px; box-shadow: 0 0 0 3px #f1c84c, 0 3px 8px rgba(0,0,0,.3); }
+.art-canvas-actions { display: flex; min-height: 39px; align-items: center; justify-content: center; gap: 7px; }
+.art-save-message { position: absolute; z-index: 10; right: 18px; bottom: 66px; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 6px; color: #fff; background: #397657; box-shadow: 0 9px 20px rgba(30,70,48,.25); font-size: 9px; font-weight: 800; }
+
+.art-reference-panel { display: flex; min-height: 0; flex-direction: column; gap: 11px; padding: 15px; overflow: auto; border-left: 1px solid #d0d8d2; background: #fbfaf7; }
+.art-reference-heading h2 { margin: 3px 0; font-size: 18px; }
+.art-reference-heading p { margin: 0; color: #758078; font-size: 9px; line-height: 1.45; }
+.art-reference-image { display: grid; aspect-ratio: 3 / 2; place-items: center; border: 1px solid #ddd8cf; border-radius: 6px; background: #fff; }
+.art-reference-image svg { width: 92%; height: 92%; }
+.art-template-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.art-template-picker button { display: grid; gap: 3px; padding: 4px; border: 1px solid #d8ded9; border-radius: 6px; color: #536158; background: #fff; }
+.art-template-picker button.is-active { border-color: #ad4e6e; outline: 2px solid rgba(173,78,110,.15); color: #8d3a57; }
+.art-template-picker svg { width: 100%; aspect-ratio: 3 / 2; }
+.art-template-picker span { padding-bottom: 3px; font-size: 8px; font-weight: 900; }
+.art-free-prompt { display: grid; place-items: center; padding: 25px 13px; border: 1px solid #dfd7c9; border-radius: 7px; color: #745564; background: #fff8e9; text-align: center; }
+.art-free-prompt > svg { margin-bottom: 8px; color: #d58a36; }
+.art-free-prompt h2 { margin: 5px 0; font-size: 19px; }
+.art-free-prompt p { margin: 0; color: #7a6d6c; font-size: 9px; line-height: 1.6; }
+.art-free-prompt > div { display: flex; gap: 5px; margin-top: 13px; }
+.art-free-prompt > div span { padding: 4px 8px; border-radius: 99px; color: #765364; background: #f4d8df; font-size: 8px; font-weight: 900; }
+.art-score-panel { display: grid; grid-template-columns: auto 1fr; gap: 8px 11px; padding: 12px; border: 1px solid #d8ded9; border-radius: 7px; background: #fff; box-shadow: 0 7px 16px rgba(62,72,66,.07); }
+.art-score-number { grid-row: 1; color: #ac486a; font-size: 30px; font-weight: 900; line-height: 1; }
+.art-score-number small { color: #8a938d; font-size: 9px; }
+.art-score-panel > div strong { font-size: 10px; }
+.art-score-panel > div p { margin: 3px 0 0; color: #68756e; font-size: 8px; line-height: 1.45; }
+.art-score-panel ul { display: grid; grid-column: 1 / -1; gap: 4px; margin: 2px 0; padding: 0; list-style: none; }
+.art-score-panel li { display: flex; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid #edf0ed; color: #67736c; font-size: 8px; }
+.art-score-panel li b { color: #34443b; }
+.art-score-panel > small { grid-column: 1 / -1; color: #919992; font-size: 7px; }
+
+.tv-mode .art-studio-backdrop { grid-template-rows: 78px minmax(0, 1fr); }
+.tv-mode .art-studio-header { padding-inline: 28px; }
+.tv-mode .art-studio-header strong { font-size: 20px; }
+.tv-mode .art-studio-main { grid-template-columns: 125px minmax(0, 1fr) 320px; }
+.tv-mode .art-studio-backdrop button:focus,
+.tv-mode .art-drawing-canvas:focus { outline: 4px solid #e5ed62; outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .art-studio-launch-art { min-height: 220px; }
+  .art-studio-backdrop { grid-template-rows: 56px minmax(0, 1fr); }
+  .art-studio-header { grid-template-columns: 1fr auto auto; gap: 7px; padding: 6px 8px 6px 10px; }
+  .art-studio-header > div:first-child span:last-child { display: none; }
+  .art-studio-header strong { font-size: 14px; }
+  .art-studio-logo { width: 34px; height: 34px; }
+  .art-mode-switch button { min-height: 32px; padding: 5px 8px; font-size: 9px; }
+  .art-studio-main { display: flex; flex-direction: column; overflow: auto; }
+  .art-toolbox { position: sticky; z-index: 12; top: 0; display: grid; min-height: auto; grid-template-columns: auto 1fr minmax(100px, .7fr) auto; align-items: center; gap: 9px; padding: 7px 9px; overflow: visible; border-right: 0; border-bottom: 1px solid #d1d9d3; }
+  .art-tool-group { gap: 3px; }
+  .art-tool-group > span,
+  .art-size-control > span { display: none; }
+  .art-tool-segment { grid-template-columns: repeat(3, 36px); }
+  .art-tool-segment button { width: 36px; height: 36px; }
+  .art-color-group > div { display: flex; max-width: 270px; gap: 5px; overflow-x: auto; padding: 3px; }
+  .art-color-group button { flex: 0 0 21px; width: 21px; height: 21px; }
+  .art-size-control { min-width: 85px; }
+  .art-history-actions { grid-template-columns: repeat(3, 34px); margin: 0; }
+  .art-history-actions button { width: 34px; }
+  .art-canvas-section { flex: 0 0 auto; padding: 9px; }
+  .art-canvas-frame { width: 100%; max-height: none; }
+  .art-reference-panel { min-height: 230px; border-top: 1px solid #d0d8d2; border-left: 0; }
+  .art-reference-panel:has(.art-reference-heading) { display: grid; grid-template-columns: 160px minmax(0, 1fr); grid-template-rows: auto auto; }
+  .art-reference-image { grid-row: 1 / 3; }
+  .art-template-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .art-score-panel { grid-column: 1 / -1; }
+}
+
+@media (max-width: 620px) {
+  .art-studio-header { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .art-mode-switch { position: static; box-shadow: none; }
+  .art-mode-switch button { padding-inline: 6px; }
+  .art-toolbox { grid-template-columns: auto 1fr auto; }
+  .art-size-control { display: none; }
+  .art-color-group > div { max-width: calc(100vw - 220px); }
+  .art-canvas-actions { flex-wrap: wrap; }
+  .art-canvas-actions .button { min-height: 34px; padding: 6px 8px; font-size: 9px; }
+  .art-reference-panel:has(.art-reference-heading) { display: flex; }
+  .art-reference-image { width: min(100%, 330px); align-self: center; }
+  .art-template-picker { grid-template-columns: repeat(4, minmax(62px, 1fr)); overflow-x: auto; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 1000px) {
+  .art-studio-backdrop { grid-template-rows: 50px minmax(0, 1fr); }
+  .art-studio-main { display: grid; grid-template-columns: 92px minmax(0, 1fr) 220px; overflow: hidden; }
+  .art-toolbox { position: static; display: flex; padding: 7px; overflow: auto; border-right: 1px solid #d1d9d3; }
+  .art-tool-segment { grid-template-columns: repeat(3, 1fr); }
+  .art-color-group > div { display: grid; grid-template-columns: repeat(3, 1fr); overflow: visible; }
+  .art-size-control { display: grid; }
+  .art-history-actions { margin-top: auto; }
+  .art-canvas-section { min-height: 0; }
+  .art-reference-panel { min-height: 0; padding: 9px; overflow: auto; border-top: 0; border-left: 1px solid #d0d8d2; }
+  .art-reference-panel:has(.art-reference-heading) { display: flex; }
+  .art-reference-heading p,
+  .art-reference-image { display: none; }
+  .art-template-picker { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* 深岩淘金关卡、背包与补给站。 */
@@ -8340,8 +8512,55 @@ html.mobile-mode:fullscreen .player-community {
 
 .gold-shop-footer > div { display: flex; align-items: center; gap: 8px; color: #9fb0ad; font-size: 10px; }
 .gold-shop-footer > div svg { color: #d9ad3c; }
+.gold-shop-actions { display: flex; align-items: center; gap: 8px; }
+.gold-restart-adventure { min-height: 40px; border-color: rgba(239, 188, 72, .34); color: #f4d685; background: #303839; }
+.gold-restart-adventure:hover { color: #fff0b8; border-color: rgba(239, 188, 72, .58); background: #3b4445; }
 .gold-next-level { min-width: 205px; justify-content: center; color: #1f302b; background: #7dd4ae; }
 .gold-next-level:hover { background: #9ae5c4; }
+
+.gold-restart-confirm-backdrop {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 13, 14, .78);
+  backdrop-filter: blur(5px);
+}
+
+.gold-restart-confirm {
+  width: min(440px, 100%);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px 14px;
+  padding: 24px;
+  border: 1px solid rgba(241, 190, 69, .4);
+  border-top: 4px solid #e5b442;
+  border-radius: 7px;
+  background: #222b2c;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .52);
+}
+
+.gold-restart-symbol {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  grid-row: 1;
+  border-radius: 50%;
+  color: #ffdf83;
+  background: #55451f;
+}
+
+.gold-restart-confirm .eyebrow { color: #77c9c3; }
+.gold-restart-confirm h2 { margin: 3px 0 0; color: #fff0b5; font-size: 23px; }
+.gold-restart-confirm p { grid-column: 1 / -1; margin: 0; color: #c0cdca; font-size: 13px; line-height: 1.65; }
+.gold-restart-confirm-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.gold-restart-confirm-actions .button { min-height: 43px; justify-content: center; }
+.gold-restart-danger { border: 1px solid #b95f4d; color: #fff0e8; background: #93493c; }
+.gold-restart-danger:hover { background: #aa5848; }
 
 @keyframes gold-aim-flow { to { stroke-dashoffset: -24; } }
 @keyframes gold-explosion {
@@ -8392,7 +8611,10 @@ html.mobile-mode:fullscreen .player-community {
   .gold-shop-card { min-height: 195px; padding: 11px; }
   .gold-shop-footer { align-items: stretch; flex-direction: column; }
   .gold-shop-footer > div { line-height: 1.45; }
+  .gold-shop-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .gold-restart-adventure { width: 100%; }
   .gold-next-level { width: 100%; min-height: 44px; }
+  .gold-restart-confirm { padding: 20px; }
 }
 
 @media (max-width: 420px) {
@@ -8427,6 +8649,8 @@ html.mobile-mode:fullscreen .player-community {
   .gold-buy-button,
   .gold-queue-button { min-height: 27px; padding: 3px; font-size: 8px; }
   .gold-shop-footer > div { display: none; }
+  .gold-shop-actions { grid-template-columns: auto minmax(190px, 1fr); }
+  .gold-restart-adventure { min-height: 34px; }
   .gold-next-level { min-height: 34px; }
 }
 
@@ -8434,6 +8658,8 @@ html.mobile-mode:fullscreen .player-community {
 .tv-mode .gold-queue-button:focus,
 .tv-mode .gold-next-level:focus,
 .tv-mode .gold-dynamite-button:focus,
+.tv-mode .gold-restart-adventure:focus,
+.tv-mode .gold-restart-confirm-actions .button:focus,
 .tv-mode .gold-miner-finish:focus {
   outline: 4px solid #f9d36c;
   outline-offset: 4px;
@@ -8548,4 +8774,818 @@ html.mobile-mode:fullscreen .player-community {
   .snake-game-toolbar { min-height: 50px; padding: 5px 9px 5px 13px; }
   .snake-game-toolbar span { display: none; }
   .snake-game-toolbar button { width: 38px; height: 38px; }
+}
+
+/* 彩块防线：非像素风的 2.5D 自动防线玩法 */
+.mower-v2-backdrop {
+  position: fixed;
+  z-index: 292;
+  inset: 0;
+  min-height: 0;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  color: #1d2923;
+  background: #d9e3dc;
+  overscroll-behavior: none;
+}
+
+.mower-v2-shell {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 62px minmax(0, 1fr);
+  overflow: hidden;
+  background: #f5f7f3;
+}
+
+.mower-v2-header {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 8px 14px 8px 18px;
+  border-bottom: 1px solid #c8d2ca;
+  background: rgba(251,252,249,.97);
+  box-shadow: 0 5px 20px rgba(33,52,42,.08);
+}
+
+.mower-v2-brand,
+.mower-v2-hud,
+.mower-v2-header-actions,
+.mower-v2-stage-status,
+.mower-v2-shields,
+.mower-v2-depth,
+.mower-v2-item-bar,
+.mower-wallet,
+.mower-result-actions,
+.mower-reward-row { display: flex; align-items: center; }
+.mower-v2-brand { gap: 10px; min-width: 0; }
+.mower-v2-logo { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: #fff; background: #285846; box-shadow: inset 0 -4px 0 rgba(0,0,0,.14); }
+.mower-v2-brand > div { display: grid; min-width: 0; gap: 2px; }
+.mower-v2-brand strong { font-size: 16px; }
+.mower-v2-brand span { overflow: hidden; color: #718078; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.mower-v2-hud { justify-content: center; gap: 7px; }
+.mower-v2-hud > span { display: flex; min-width: 58px; align-items: center; justify-content: center; gap: 5px; padding: 7px 9px; border: 1px solid #d4ddd6; border-radius: 7px; color: #435249; background: #fff; font-size: 11px; font-weight: 900; }
+.mower-v2-hud > span:nth-child(2) svg { color: #d99b25; }
+.mower-v2-hud > span:nth-child(3) svg { color: #6686a3; }
+.mower-v2-header-actions { justify-content: flex-end; gap: 6px; }
+.mower-v2-header-actions button,
+.mower-workshop header > button,
+.mower-help-card header > button,
+.mower-universal-card header > button { display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 1px solid #cad5cc; border-radius: 7px; color: #30433a; background: #fff; }
+.mower-v2-header-actions button:hover,
+.mower-v2-header-actions button:focus-visible,
+.mower-workshop header > button:focus-visible,
+.mower-help-card header > button:focus-visible,
+.mower-universal-card header > button:focus-visible { border-color: #3a8061; outline: 3px solid rgba(58,128,97,.22); outline-offset: 2px; }
+
+.mower-v2-main { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 300px; }
+.mower-v2-stage { display: grid; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; padding: 10px 12px 8px; overflow: hidden; background: #dfe7e1; }
+.mower-v2-stage-status { min-height: 38px; justify-content: space-between; gap: 14px; padding: 0 5px 8px; }
+.mower-v2-shields { gap: 3px; color: #bac7bf; }
+.mower-v2-shields .is-on { color: #ed6868; filter: drop-shadow(0 2px 2px rgba(153,57,57,.22)); }
+.mower-v2-goal { display: grid; width: min(420px, 48%); grid-template-columns: auto auto; align-items: center; gap: 2px 10px; color: #607067; font-size: 10px; }
+.mower-v2-goal strong { justify-self: end; color: #2f4037; font-size: 11px; }
+.mower-v2-goal i { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 999px; background: #c7d2ca; }
+.mower-v2-goal b { display: block; height: 100%; border-radius: inherit; background: #3d956b; transition: width 260ms ease; }
+.mower-v2-depth { gap: 5px; color: #526159; font-size: 10px; font-weight: 800; white-space: nowrap; }
+
+.mower-v2-field {
+  --mower-lanes: 8;
+  position: relative;
+  width: min(100%, 1020px);
+  height: 100%;
+  min-height: 400px;
+  justify-self: center;
+  overflow: hidden;
+  border: 1px solid #71817a;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 6%, rgba(255,255,255,.86), transparent 29%),
+    linear-gradient(180deg, #8fa39d 0%, #687c75 44%, #32443d 100%);
+  box-shadow: inset 0 0 60px rgba(17,31,25,.24), 0 12px 26px rgba(41,57,48,.18);
+  isolation: isolate;
+}
+
+.mower-v2-field::before { position: absolute; z-index: 1; inset: 0; content: ''; opacity: .24; background-image: linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.16) 1px, transparent 1px); background-size: 32px 32px; mask-image: linear-gradient(transparent, #000 22%, #000); transform: perspective(650px) rotateX(58deg) scale(1.28); transform-origin: 50% 100%; }
+.mower-v2-horizon { position: absolute; z-index: 2; top: 6px; left: 50%; width: 72%; border-top: 1px solid rgba(255,255,255,.48); text-align: center; transform: translateX(-50%); }
+.mower-v2-horizon span { position: relative; top: -7px; padding: 2px 8px; border-radius: 99px; color: rgba(255,255,255,.84); background: rgba(54,73,66,.64); font-size: 8px; font-weight: 800; }
+.mower-v2-grid-plane { position: absolute; z-index: 2; inset: 6% 3% 8%; border: 1px solid rgba(255,255,255,.22); background: repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 1px, transparent 1px 7%), repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px calc(100% / var(--mower-lanes))); transform: perspective(840px) rotateX(54deg); transform-origin: 50% 100%; }
+.mower-v2-block-plane { position: absolute; z-index: 4; inset: 2% 4% 13%; perspective: 900px; transform: perspective(980px) rotateX(10deg); transform-origin: 50% 100%; }
+
+.mower-v2-block {
+  position: absolute;
+  width: min(54px, calc(84% / var(--mower-lanes)));
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--mower-dark) 72%, #fff);
+  border-radius: 20%;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.62) 0 10%, transparent 11% 57%, rgba(0,0,0,.14) 58% 100%),
+    var(--mower-color);
+  box-shadow:
+    inset 2px 2px 4px rgba(255,255,255,.52),
+    inset -4px -5px 5px rgba(0,0,0,.18),
+    0 5px 0 var(--mower-dark),
+    0 8px 8px rgba(16,26,22,.28);
+  transition: top 100ms linear, opacity 180ms ease, filter 180ms ease;
+  will-change: top, transform;
+}
+.mower-v2-block.shape-round { border-radius: 45%; }
+.mower-v2-block.shape-diamond { border-radius: 17%; clip-path: polygon(50% 0, 100% 37%, 82% 100%, 18% 100%, 0 37%); }
+.mower-v2-block.pattern-stripe::after,
+.mower-launcher-core.pattern-stripe::after,
+.mower-mini-block.pattern-stripe::after { position: absolute; inset: 16%; content: ''; opacity: .56; border-radius: inherit; background: repeating-linear-gradient(135deg, rgba(255,255,255,.72) 0 3px, transparent 3px 7px); }
+.mower-v2-block.pattern-dot::after,
+.mower-launcher-core.pattern-dot::after,
+.mower-mini-block.pattern-dot::after { position: absolute; inset: 14%; content: ''; opacity: .62; border-radius: inherit; background: radial-gradient(circle, rgba(255,255,255,.9) 0 2px, transparent 2.5px) 0 0 / 8px 8px; }
+.mower-v2-block.is-covered { filter: saturate(.7) brightness(.8); }
+.mower-v2-block.is-targetable { filter: saturate(1.16) brightness(1.06); }
+.mower-v2-eyes { position: absolute; z-index: 2; top: 28%; left: 50%; display: flex; gap: 17%; width: 55%; justify-content: center; transform: translateX(-50%); }
+.mower-v2-eyes b { width: 16%; aspect-ratio: 1; border-radius: 50%; background: #fff; box-shadow: 0 1px 1px rgba(0,0,0,.3); }
+.mower-v2-eyes b::after { display: block; width: 48%; aspect-ratio: 1; margin: 29% auto 0; content: ''; border-radius: 50%; background: #24332c; }
+
+.mower-v2-shot { position: absolute; z-index: 400; width: 11px; height: 11px; pointer-events: none; transform: translate(-50%, -50%); }
+.mower-v2-shot::before { position: absolute; right: 50%; bottom: 50%; width: 4px; height: min(240px, 42vh); content: ''; border-radius: 9px; background: linear-gradient(transparent, var(--shot-color)); box-shadow: 0 0 9px var(--shot-color); transform: translateX(50%); transform-origin: bottom; animation: mower-beam 360ms ease-out both; }
+.mower-v2-shot i,
+.mower-v2-shot b { position: absolute; inset: 0; border: 3px solid var(--shot-color); border-radius: 50%; animation: mower-impact 360ms ease-out both; }
+.mower-v2-shot b { animation-delay: 70ms; }
+@keyframes mower-beam { 0% { opacity: 0; transform: translateX(50%) scaleY(0); } 25% { opacity: 1; transform: translateX(50%) scaleY(1); } 100% { opacity: 0; } }
+@keyframes mower-impact { to { opacity: 0; transform: scale(3.3); } }
+
+.mower-v2-defense-line { position: absolute; z-index: 410; right: 0; bottom: 9.7%; left: 0; display: flex; height: 20px; align-items: center; justify-content: center; gap: 6px; border-top: 2px solid #d7e596; color: #f1f6d5; background: rgba(31,53,43,.75); font-size: 9px; font-weight: 900; box-shadow: 0 -5px 16px rgba(211,232,142,.2); }
+.mower-v2-active-row { position: absolute; z-index: 420; right: 2%; bottom: 1.4%; left: 2%; display: grid; height: 11%; min-height: 68px; grid-template-columns: repeat(var(--active-count), minmax(0, 1fr)); gap: 8px; }
+.mower-active-slot { position: relative; display: grid; min-width: 0; grid-template-columns: auto 1fr; align-items: center; gap: 8px; padding: 6px 10px 6px 32px; overflow: hidden; border: 2px solid rgba(230,238,231,.5); border-radius: 7px; color: #fff; background: rgba(27,42,35,.88); box-shadow: 0 6px 14px rgba(0,0,0,.24); }
+.mower-active-slot.is-selected { border-color: #e7f07f; outline: 3px solid rgba(231,240,127,.23); }
+.mower-active-slot.is-empty { background: rgba(39,47,43,.92); }
+.mower-active-slot.is-idle { border-color: #e2b864; }
+.mower-slot-number { position: absolute; top: 5px; left: 6px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 5px; color: #1f3028; background: #dce7df; font-size: 9px; font-weight: 900; }
+.mower-launcher-core { position: relative; display: block; width: 40px; aspect-ratio: 1; flex: 0 0 auto; border: 1px solid var(--mower-dark); border-radius: 26% 26% 34% 34%; background: linear-gradient(145deg, rgba(255,255,255,.55), transparent 43%), var(--mower-color); box-shadow: inset -4px -5px 5px rgba(0,0,0,.16), 0 5px 0 var(--mower-dark), 0 6px 9px rgba(0,0,0,.28); }
+.mower-launcher-core::before { position: absolute; top: -7px; left: 50%; width: 34%; height: 13px; content: ''; border: 2px solid rgba(255,255,255,.36); border-radius: 5px 5px 2px 2px; background: var(--mower-dark); transform: translateX(-50%); }
+.mower-launcher-core.shape-round { border-radius: 48% 48% 35% 35%; }
+.mower-launcher-core.shape-diamond::before { transform: translateX(-50%) rotate(45deg); }
+.mower-launcher-eye { position: absolute; z-index: 3; top: 32%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: -8px 0 #fff, 0 1px 1px rgba(0,0,0,.3); transform: translateX(1px); }
+.mower-launcher-copy { display: grid; min-width: 0; gap: 1px; text-align: left; }
+.mower-launcher-copy strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.mower-launcher-copy small { color: inherit; opacity: .74; font-size: 9px; }
+.mower-charge-mask { position: absolute; z-index: 4; inset: 0; display: flex; align-items: center; justify-content: center; gap: 5px; color: #fff; background: rgba(24,36,30,.81); font-size: 10px; }
+.mower-charge-mask svg { color: #f3cf5a; animation: mower-charge 650ms ease-in-out infinite alternate; }
+.mower-charge-mask.is-empty-label { color: #ffb5a9; font-weight: 900; }
+.mower-idle-label { position: absolute; right: 4px; bottom: 3px; padding: 2px 5px; border-radius: 4px; color: #ffe2a3; background: rgba(80,57,17,.9); font-size: 7px; font-weight: 900; }
+.mower-empty-mark { grid-column: 1 / -1; color: #95a29b; font-size: 24px; }
+@keyframes mower-charge { to { transform: scale(1.2); } }
+
+.mower-v2-message { display: flex; min-height: 28px; align-items: center; justify-content: center; gap: 6px; margin: 0; padding-top: 6px; color: #405048; font-size: 10px; font-weight: 800; text-align: center; }
+.mower-v2-message svg { flex: 0 0 auto; color: #d6922c; }
+
+.mower-v2-arsenal { display: flex; min-height: 0; flex-direction: column; gap: 10px; padding: 14px; overflow: auto; border-left: 1px solid #c8d2ca; background: #f8faf7; }
+.mower-v2-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mower-v2-panel-title h2 { margin: 2px 0 0; font-size: 16px; }
+.mower-v2-guide { margin: 0; color: #6a7970; font-size: 9px; line-height: 1.55; }
+.mower-reserve-grid { display: grid; gap: 7px; }
+.mower-reserve-card { position: relative; display: grid; min-height: 61px; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 9px 30px 9px 11px; border: 1px solid #cbd7ce; border-radius: 7px; color: #2e4037; background: #fff; text-align: left; box-shadow: 0 4px 10px rgba(52,68,59,.06); }
+.mower-reserve-card:hover,
+.mower-reserve-card:focus-visible { border-color: #3a8061; outline: 3px solid rgba(58,128,97,.2); outline-offset: 1px; transform: translateY(-1px); }
+.mower-reserve-card.is-last-used { border-color: #95aa63; background: #fbfdf2; }
+.mower-reserve-card .mower-launcher-core { width: 37px; }
+.mower-reserve-index { position: absolute; top: 3px; right: 4px; color: #9aa79f; font-size: 8px; font-weight: 900; }
+.mower-install-arrow { color: #89978f; }
+.mower-item-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.mower-item-bar button { display: flex; min-width: 0; min-height: 50px; align-items: center; gap: 7px; padding: 7px; border: 1px solid #ccd6cf; border-radius: 7px; color: #384940; background: #eef3ee; text-align: left; }
+.mower-item-bar button:disabled { opacity: .46; }
+.mower-item-bar button:not(:disabled):hover,
+.mower-item-bar button:not(:disabled):focus-visible { border-color: #3a8061; outline: 3px solid rgba(58,128,97,.18); }
+.mower-item-bar button > span { display: grid; min-width: 0; gap: 2px; }
+.mower-item-bar strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.mower-item-bar small { color: #76837b; font-size: 8px; }
+.mower-guarantee-note { display: flex; align-items: flex-start; gap: 7px; padding: 8px; border-left: 3px solid #7aa98a; color: #617067; background: #edf4ef; font-size: 8px; line-height: 1.45; }
+.mower-guarantee-note svg { flex: 0 0 auto; color: #4f8965; }
+.mower-workshop-button { display: flex; min-height: 44px; align-items: center; gap: 8px; margin-top: auto; padding: 9px 11px; border: 0; border-radius: 7px; color: #fff; background: #2e6b50; font-size: 10px; font-weight: 900; }
+.mower-workshop-button span { margin-left: auto; color: #d8edaf; font-size: 8px; }
+
+.mower-v2-overlay { position: absolute; z-index: 900; inset: 62px 0 0; display: grid; place-items: center; padding: 18px; overflow: auto; background: rgba(23,33,28,.72); backdrop-filter: blur(7px); }
+.mower-pause-card,
+.mower-result-card,
+.mower-help-card,
+.mower-universal-card,
+.mower-reset-card { width: min(100%, 430px); padding: 25px; border: 1px solid #d7e0d9; border-radius: 8px; color: #283b31; background: #fff; box-shadow: 0 24px 60px rgba(0,0,0,.28); text-align: center; }
+.mower-pause-card > svg,
+.mower-reset-card > svg { color: #397357; }
+.mower-pause-card h2,
+.mower-result-card h2,
+.mower-reset-card h2 { margin: 10px 0 6px; font-size: 22px; }
+.mower-pause-card p,
+.mower-result-card p,
+.mower-reset-card p { margin: 0 0 18px; color: #68776f; font-size: 11px; line-height: 1.6; }
+.mower-result-icon { display: grid; width: 68px; height: 68px; margin: 0 auto 12px; place-items: center; border-radius: 50%; color: #fff; background: #3f8764; box-shadow: 0 0 0 8px #e7f2eb; }
+.mower-result-card.is-lost .mower-result-icon { background: #b76052; box-shadow: 0 0 0 8px #f6eae7; }
+.mower-reward-row { justify-content: center; gap: 10px; margin: 16px 0; }
+.mower-reward-row span { display: flex; min-width: 86px; align-items: center; justify-content: center; gap: 6px; padding: 9px; border: 1px solid #d7dfd9; border-radius: 6px; color: #37483f; background: #f7f9f6; font-size: 12px; font-weight: 900; }
+.mower-result-actions { justify-content: center; gap: 8px; }
+
+.mower-workshop-overlay { align-items: stretch; }
+.mower-workshop { display: grid; width: min(100%, 900px); max-height: 100%; justify-self: center; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 12px; padding: 18px; overflow: auto; border: 1px solid #d5ded7; border-radius: 8px; color: #2a3c32; background: #f8faf7; box-shadow: 0 24px 60px rgba(0,0,0,.3); }
+.mower-workshop header,
+.mower-help-card header,
+.mower-universal-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; text-align: left; }
+.mower-workshop header h2,
+.mower-help-card header h2,
+.mower-universal-card header h2 { margin: 3px 0; font-size: 22px; }
+.mower-workshop header p { margin: 0; color: #697970; font-size: 10px; }
+.mower-wallet { gap: 8px; }
+.mower-wallet span { display: flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid #d7e0d9; border-radius: 6px; background: #fff; font-size: 10px; }
+.mower-wallet strong { font-size: 12px; }
+.mower-upgrade-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mower-upgrade-card { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px; border: 1px solid #d6dfd8; border-radius: 7px; background: #fff; }
+.mower-upgrade-icon { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 7px; color: #fff; background: #3e7a5c; }
+.mower-upgrade-card > div { display: grid; min-width: 0; gap: 2px; }
+.mower-upgrade-card strong { font-size: 11px; }
+.mower-upgrade-card small { color: #748178; font-size: 8px; }
+.mower-upgrade-card i { height: 4px; margin-top: 3px; overflow: hidden; border-radius: 99px; background: #dce3dd; }
+.mower-upgrade-card i b { display: block; height: 100%; background: #5d9d78; }
+.mower-upgrade-level { align-self: start; color: #6c7b72; font-size: 8px; font-weight: 900; }
+.mower-upgrade-card button { display: flex; min-height: 28px; grid-column: 3; align-items: center; justify-content: center; gap: 3px; padding: 4px 7px; border: 0; border-radius: 5px; color: #fff; background: #336d52; font-size: 8px; font-weight: 900; }
+.mower-upgrade-card button:disabled { color: #7c8981; background: #dfe5e0; }
+.mower-shop-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mower-shop-row article { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; padding: 10px; border: 1px solid #d6dfd8; border-radius: 7px; background: #eef3ef; }
+.mower-shop-row article > div { display: grid; gap: 2px; }
+.mower-shop-row article strong { font-size: 10px; }
+.mower-shop-row article small,
+.mower-shop-row article > span { color: #738179; font-size: 8px; }
+.mower-shop-row article button { display: flex; align-items: center; gap: 3px; padding: 6px 8px; border: 0; border-radius: 5px; color: #fff; background: #7a6640; font-size: 8px; font-weight: 900; }
+.mower-shop-row article button:disabled { opacity: .45; }
+.mower-workshop footer { display: flex; justify-content: space-between; gap: 8px; }
+
+.mower-help-card,
+.mower-universal-card { width: min(100%, 620px); text-align: left; }
+.mower-help-card ol { display: grid; gap: 9px; margin: 18px 0; padding: 0; list-style: none; }
+.mower-help-card li { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-left: 3px solid #679577; background: #f1f5f1; }
+.mower-help-card li > span { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #fff; background: #3d795a; font-size: 10px; font-weight: 900; }
+.mower-help-card li strong { font-size: 11px; }
+.mower-help-card li p { margin: 2px 0 0; color: #68766e; font-size: 9px; line-height: 1.5; }
+.mower-help-tip { margin: 0 0 15px; padding: 9px; color: #5e685f; background: #fff8dc; font-size: 9px; line-height: 1.5; }
+.mower-help-card > .button { margin-left: auto; }
+.mower-universal-card > p { color: #6a786f; font-size: 10px; }
+.mower-universal-card > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 12px; }
+.mower-universal-card > div button { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; padding: 9px; border: 1px solid #d3ddd5; border-radius: 7px; color: #32443a; background: #f8faf7; text-align: left; }
+.mower-universal-card > div button:hover,
+.mower-universal-card > div button:focus-visible { border-color: #3d795a; outline: 3px solid rgba(61,121,90,.2); }
+.mower-universal-card > div strong { font-size: 10px; }
+.mower-universal-card > div small { grid-column: 2; color: #748279; font-size: 8px; }
+.mower-mini-block { position: relative; display: block; width: 30px; aspect-ratio: 1; grid-row: 1 / 3; border: 1px solid var(--mower-dark); border-radius: 7px; background: linear-gradient(145deg, rgba(255,255,255,.5), transparent), var(--mower-color); box-shadow: inset -3px -3px 3px rgba(0,0,0,.14), 0 3px 0 var(--mower-dark); }
+.mower-mini-block.shape-round { border-radius: 50%; }
+.mower-mini-block.shape-diamond { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.mower-reset-card > div { display: flex; justify-content: center; gap: 8px; }
+
+.tv-mode .mower-v2-shell { grid-template-rows: 78px minmax(0, 1fr); }
+.tv-mode .mower-v2-overlay { inset-block-start: 78px; }
+.tv-mode .mower-v2-header { padding-inline: 28px; }
+.tv-mode .mower-v2-brand strong { font-size: 20px; }
+.tv-mode .mower-v2-brand span { font-size: 11px; }
+.tv-mode .mower-v2-header-actions button { width: 48px; height: 48px; }
+.tv-mode .mower-reserve-card { min-height: 70px; }
+.tv-mode .mower-v2-shell button:focus { outline: 4px solid #dff06d; outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .mower-v2-shell { grid-template-rows: 56px minmax(0, 1fr); }
+  .mower-v2-header { grid-template-columns: 1fr auto; padding: 6px 7px 6px 10px; }
+  .mower-v2-hud { display: none; }
+  .mower-v2-header-actions { gap: 3px; }
+  .mower-v2-header-actions button { width: 36px; height: 36px; }
+  .mower-v2-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(330px, 58%) minmax(0, 42%); overflow: auto; }
+  .mower-v2-stage { min-height: 410px; padding: 6px 7px 3px; }
+  .mower-v2-field { min-height: 345px; }
+  .mower-v2-arsenal { overflow: visible; border-top: 1px solid #c8d2ca; border-left: 0; }
+  .mower-v2-panel-title { display: none; }
+  .mower-v2-guide { font-size: 8px; }
+  .mower-reserve-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mower-reserve-card { min-height: 72px; grid-template-columns: 1fr; justify-items: center; gap: 3px; padding: 8px 4px; text-align: center; }
+  .mower-reserve-card .mower-launcher-copy { text-align: center; }
+  .mower-reserve-card .mower-install-arrow { position: absolute; right: 4px; bottom: 4px; }
+  .mower-v2-overlay { inset-block-start: 56px; }
+}
+
+@media (max-width: 600px) {
+  .mower-v2-brand span { display: none; }
+  .mower-v2-brand strong { font-size: 14px; }
+  .mower-v2-logo { width: 34px; height: 34px; }
+  .mower-v2-header-actions button:first-child { display: none; }
+  .mower-v2-main { grid-template-rows: minmax(390px, 61%) auto; }
+  .mower-v2-stage { min-height: 455px; }
+  .mower-v2-stage-status { gap: 7px; padding-inline: 1px; }
+  .mower-v2-goal { width: 48%; }
+  .mower-v2-depth { font-size: 8px; }
+  .mower-v2-field { min-height: 382px; border-radius: 5px; }
+  .mower-v2-block { width: min(42px, calc(88% / var(--mower-lanes))); }
+  .mower-v2-active-row { min-height: 62px; gap: 4px; }
+  .mower-active-slot { gap: 3px; padding: 5px 3px 5px 25px; }
+  .mower-active-slot .mower-launcher-core { width: 31px; }
+  .mower-active-slot .mower-launcher-copy strong { font-size: 9px; }
+  .mower-v2-arsenal { gap: 7px; padding: 9px; }
+  .mower-reserve-grid { gap: 5px; }
+  .mower-reserve-card { min-height: 66px; }
+  .mower-reserve-card .mower-launcher-core { width: 30px; }
+  .mower-reserve-card .mower-launcher-copy strong { font-size: 8px; }
+  .mower-guarantee-note { display: none; }
+  .mower-workshop-button { margin-top: 2px; }
+  .mower-v2-overlay { padding: 9px; }
+  .mower-workshop { padding: 12px; }
+  .mower-upgrade-grid { grid-template-columns: 1fr; }
+  .mower-shop-row { grid-template-columns: 1fr; }
+  .mower-workshop header h2,
+  .mower-help-card header h2,
+  .mower-universal-card header h2 { font-size: 18px; }
+  .mower-universal-card > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 1000px) {
+  .mower-v2-shell { grid-template-rows: 50px minmax(0, 1fr); }
+  .mower-v2-main { grid-template-columns: minmax(0, 1fr) 250px; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .mower-v2-stage { min-height: 0; }
+  .mower-v2-field { min-height: 250px; }
+  .mower-v2-arsenal { overflow: auto; border-top: 0; border-left: 1px solid #c8d2ca; }
+  .mower-v2-guide,
+  .mower-guarantee-note { display: none; }
+  .mower-reserve-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mower-v2-overlay { inset-block-start: 50px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mower-v2-block,
+  .mower-v2-shot::before,
+  .mower-v2-shot i,
+  .mower-v2-shot b,
+  .mower-charge-mask svg { animation: none !important; transition: none !important; }
+}
+
+/* 彩块防线 3D 重制：高密度立体战场与底部发射器队列 */
+.mower-v2-backdrop {
+  color: #edf4f7;
+  background: #101318;
+}
+
+.mower-v2-shell {
+  grid-template-rows: 58px minmax(0, 1fr);
+  background: #171b21;
+}
+
+.mower-v2-header {
+  grid-template-columns: minmax(210px, 1fr) auto minmax(210px, 1fr);
+  gap: 12px;
+  padding: 7px 14px;
+  border-color: #343b46;
+  color: #f7fafc;
+  background: rgba(23,27,33,.97);
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+}
+
+.mower-v2-logo {
+  border-radius: 7px;
+  color: #131821;
+  background: #eaf26d;
+  box-shadow: inset 0 -4px 0 rgba(80,91,21,.26), 0 0 18px rgba(224,239,92,.14);
+}
+
+.mower-v2-brand span { color: #99a5b2; }
+.mower-v2-hud > span {
+  border-color: #3b4450;
+  color: #dce5ed;
+  background: #242a32;
+}
+
+.mower-v2-header-actions button,
+.mower-workshop header > button,
+.mower-help-card header > button,
+.mower-universal-card header > button {
+  border-color: #46505e;
+  color: #dfe8ef;
+  background: #282f39;
+}
+
+.mower-v2-header-actions button:hover,
+.mower-v2-header-actions button:focus-visible,
+.mower-workshop header > button:focus-visible,
+.mower-help-card header > button:focus-visible,
+.mower-universal-card header > button:focus-visible {
+  border-color: #dbe96c;
+  outline-color: rgba(219,233,108,.32);
+}
+
+.mower-v2-main {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 136px;
+  overflow: hidden;
+  background: #15191f;
+}
+
+.mower-v2-stage {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  grid-template-rows: 36px minmax(0, 1fr) 27px;
+  padding: 8px 12px 3px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(75,100,130,.18), transparent 45%),
+    #15191f;
+}
+
+.mower-v2-stage-status {
+  position: relative;
+  z-index: 12;
+  min-height: 36px;
+  padding: 0 6px 6px;
+}
+
+.mower-v2-shields { color: #46515d; }
+.mower-v2-shields .is-on { color: #ff6077; filter: drop-shadow(0 0 6px rgba(255,87,113,.42)); }
+.mower-v2-goal { color: #a6b2bd; }
+.mower-v2-goal strong { color: #f1f5f8; }
+.mower-v2-goal i { background: #313944; }
+.mower-v2-goal b { background: linear-gradient(90deg, #21c6e8, #a85de7, #f25398); box-shadow: 0 0 10px rgba(41,198,231,.36); }
+.mower-v2-depth { color: #b2bec8; }
+
+.mower-v2-field {
+  width: min(100%, 1180px);
+  min-height: 390px;
+  border: 1px solid #424b58;
+  border-radius: 7px;
+  background: #20262b;
+  box-shadow: inset 0 0 80px rgba(0,0,0,.32), 0 12px 28px rgba(0,0,0,.28);
+}
+
+.mower-v2-field::before {
+  z-index: 8;
+  opacity: .18;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), transparent 15%, transparent 76%, rgba(0,0,0,.5)),
+    radial-gradient(circle at 50% 45%, transparent 35%, rgba(0,0,0,.48) 100%);
+  mask-image: none;
+  transform: none;
+  pointer-events: none;
+}
+
+.mower-v2-horizon,
+.mower-v2-grid-plane { display: none; }
+
+.mower-v3-scene {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  background: #20262b;
+}
+
+.mower-v3-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.mower-v3-scene[data-state='unavailable']::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  content: '当前设备无法启动 3D 战场';
+  color: #dbe4ea;
+  background: #20262b;
+  font-size: 13px;
+}
+
+.mower-v2-block-plane {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mower-v2-defense-line {
+  z-index: 20;
+  right: 5%;
+  bottom: 86px;
+  left: 5%;
+  height: 22px;
+  border-top: 2px solid #ebf572;
+  color: #eef78b;
+  background: linear-gradient(180deg, rgba(235,245,114,.12), transparent);
+  box-shadow: 0 -6px 18px rgba(224,240,82,.18);
+  text-shadow: 0 2px 3px #101318;
+}
+
+.mower-v2-active-row {
+  z-index: 24;
+  right: auto;
+  bottom: 10px;
+  left: 50%;
+  width: min(88%, 620px);
+  height: 72px;
+  min-height: 72px;
+  gap: 12px;
+  transform: translateX(-50%);
+}
+
+.mower-active-slot {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 14px 8px 38px;
+  border: 2px solid #566273;
+  border-radius: 7px;
+  color: #f5f8fb;
+  background: linear-gradient(180deg, rgba(45,53,64,.94), rgba(24,29,36,.96));
+  box-shadow: 0 8px 20px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.08);
+}
+
+.mower-active-slot::after {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  left: 8px;
+  height: 3px;
+  content: '';
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, var(--mower-color, #67dbe7), transparent);
+  opacity: .46;
+}
+
+.mower-active-slot.is-selected {
+  border-color: #edf46d;
+  outline-color: rgba(237,244,109,.24);
+  box-shadow: 0 0 0 3px rgba(237,244,109,.12), 0 8px 22px rgba(0,0,0,.4);
+}
+
+.mower-active-slot.is-idle { border-color: #f0b95e; }
+.mower-slot-number { top: 7px; left: 8px; color: #151a20; background: #e8ef74; }
+.mower-active-slot .mower-launcher-core { width: 44px; }
+.mower-launcher-core {
+  border: 0;
+  border-radius: 28% 28% 34% 34%;
+  box-shadow: inset 3px 3px 5px rgba(255,255,255,.5), inset -5px -6px 7px rgba(0,0,0,.22), 0 6px 0 var(--mower-dark), 0 10px 14px rgba(0,0,0,.35);
+}
+.mower-launcher-copy strong { color: #f7fafc; font-size: 12px; }
+.mower-launcher-copy small { color: #cbd5de; }
+.mower-charge-mask { border-radius: 5px; background: rgba(17,22,28,.88); }
+.mower-idle-label { color: #ffe09c; background: rgba(97,61,7,.92); }
+
+.mower-v2-message {
+  min-height: 27px;
+  padding: 5px 8px 0;
+  color: #b7c3cc;
+}
+.mower-v2-message svg { color: #f3cd5e; }
+
+.mower-v2-arsenal {
+  display: grid;
+  min-height: 136px;
+  grid-template-columns: 156px minmax(320px, 1fr) 250px 170px;
+  grid-template-rows: 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  overflow: hidden;
+  border-top: 1px solid #3a424e;
+  border-left: 0;
+  color: #e7edf2;
+  background: #1c2128;
+  box-shadow: 0 -8px 24px rgba(0,0,0,.22);
+}
+
+.mower-v2-panel-title { display: block; }
+.mower-v2-panel-title .soft-badge { display: inline-flex; margin-top: 7px; color: #1a2027; background: #eaf06d; }
+.mower-v2-panel-title h2 { margin-top: 3px; color: #f3f6f8; }
+.mower-v2-panel-title .eyebrow { color: #73dcee; }
+.mower-v2-guide,
+.mower-guarantee-note { display: none; }
+
+.mower-reserve-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mower-reserve-card {
+  min-height: 82px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px 24px 10px 10px;
+  border-color: #46505d;
+  border-radius: 7px;
+  color: #edf3f7;
+  background: linear-gradient(180deg, #2a313a, #222830);
+  box-shadow: 0 6px 14px rgba(0,0,0,.24), inset 0 1px rgba(255,255,255,.06);
+}
+.mower-reserve-card:hover,
+.mower-reserve-card:focus-visible { border-color: #72d9e8; outline-color: rgba(74,206,228,.25); }
+.mower-reserve-card.is-last-used { border-color: #e7ef6a; background: linear-gradient(180deg, #343a35, #252b2b); }
+.mower-reserve-index { color: #aeb9c3; }
+.mower-install-arrow { position: absolute; right: 5px; color: #9daab5; }
+
+.mower-item-bar { align-self: stretch; }
+.mower-item-bar button {
+  min-height: 64px;
+  border-color: #46505d;
+  color: #edf3f7;
+  background: #282f38;
+}
+.mower-item-bar button:not(:disabled):hover,
+.mower-item-bar button:not(:disabled):focus-visible { border-color: #dfe86b; outline-color: rgba(223,232,107,.22); }
+.mower-item-bar small { color: #aebac4; white-space: normal; }
+
+.mower-workshop-button {
+  min-height: 64px;
+  margin: 0;
+  border: 1px solid #737e38;
+  color: #161b20;
+  background: #e5ed6b;
+  box-shadow: inset 0 -4px rgba(93,104,25,.18);
+}
+.mower-workshop-button span { color: #4a521b; }
+
+.mower-v2-overlay {
+  inset-block-start: 58px;
+  background: rgba(8,11,14,.78);
+}
+
+.mower-pause-card,
+.mower-result-card,
+.mower-help-card,
+.mower-universal-card,
+.mower-reset-card,
+.mower-workshop {
+  border-color: #46515d;
+  color: #edf3f7;
+  background: #252b33;
+}
+.mower-pause-card p,
+.mower-result-card p,
+.mower-reset-card p,
+.mower-workshop header p,
+.mower-help-card li p,
+.mower-universal-card > p { color: #b2bdc7; }
+.mower-help-card li { border-color: #6fd3e2; background: #2c333d; }
+.mower-help-tip { color: #e8dfad; background: #3c3928; }
+.mower-upgrade-card,
+.mower-shop-row article,
+.mower-wallet span,
+.mower-universal-card > div button,
+.mower-reward-row span { border-color: #46505c; color: #eaf0f4; background: #303741; }
+.mower-upgrade-card small,
+.mower-shop-row article small,
+.mower-shop-row article > span,
+.mower-universal-card > div small { color: #aeb9c2; }
+
+@media (max-width: 900px) {
+  .mower-v2-shell { grid-template-rows: 54px minmax(0, 1fr); }
+  .mower-v2-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .mower-v2-main { grid-template-rows: minmax(0, 1fr) 174px; overflow: hidden; }
+  .mower-v2-stage { min-height: 0; padding: 6px 7px 2px; }
+  .mower-v2-field { min-height: 330px; }
+  .mower-v2-arsenal {
+    min-height: 174px;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    grid-template-rows: auto auto;
+    gap: 7px;
+    padding: 8px;
+    overflow: hidden;
+    border-top: 1px solid #3a424e;
+  }
+  .mower-v2-panel-title { display: none; }
+  .mower-reserve-grid { grid-column: 1; grid-row: 1 / 3; }
+  .mower-reserve-card { min-height: 72px; justify-items: center; padding: 7px 4px; text-align: center; }
+  .mower-reserve-card .mower-launcher-copy { text-align: center; }
+  .mower-reserve-card .mower-install-arrow { display: none; }
+  .mower-item-bar { grid-column: 2; grid-row: 1; }
+  .mower-item-bar button { min-height: 55px; }
+  .mower-workshop-button { grid-column: 2; grid-row: 2; min-height: 48px; }
+  .mower-v2-overlay { inset-block-start: 54px; }
+}
+
+@media (max-width: 600px) {
+  .mower-v2-main { grid-template-rows: minmax(0, 1fr) 160px; }
+  .mower-v2-stage { grid-template-rows: 32px minmax(0, 1fr) 25px; min-height: 0; }
+  .mower-v2-stage-status { min-height: 32px; }
+  .mower-v2-field { min-height: 350px; }
+  .mower-v2-depth { display: none; }
+  .mower-v2-goal { width: 60%; }
+  .mower-v2-active-row { bottom: 7px; width: 94%; height: 64px; min-height: 64px; gap: 5px; }
+  .mower-active-slot { gap: 4px; padding: 5px 4px 5px 28px; }
+  .mower-active-slot .mower-launcher-core { width: 32px; }
+  .mower-active-slot .mower-launcher-copy strong { font-size: 9px; }
+  .mower-v2-defense-line { bottom: 75px; }
+  .mower-v2-arsenal { min-height: 160px; grid-template-columns: minmax(0, 1fr) 128px; }
+  .mower-reserve-card { min-height: 65px; }
+  .mower-item-bar { gap: 4px; }
+  .mower-item-bar button { min-height: 50px; padding: 5px; }
+  .mower-item-bar button > svg { display: none; }
+  .mower-item-bar strong { font-size: 8px; }
+  .mower-workshop-button { min-height: 43px; justify-content: center; padding: 6px; font-size: 9px; }
+  .mower-workshop-button span { display: none; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 1000px) {
+  .mower-v2-shell { grid-template-rows: 48px minmax(0, 1fr); }
+  .mower-v2-main { grid-template-columns: minmax(0, 1fr) 248px; grid-template-rows: minmax(0, 1fr); }
+  .mower-v2-stage { min-height: 0; }
+  .mower-v2-field { min-height: 245px; }
+  .mower-v2-arsenal {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    overflow: auto;
+    border-top: 0;
+    border-left: 1px solid #3a424e;
+  }
+  .mower-reserve-grid { grid-column: 1; grid-row: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mower-item-bar { grid-column: 1; grid-row: 2; }
+  .mower-workshop-button { grid-column: 1; grid-row: 3; }
+  .mower-v2-overlay { inset-block-start: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mower-v3-scene canvas { animation: none !important; }
+}
+
+/* 深岩淘金：扩大矿洞比例，并补充高关卡机关与垃圾物件 */
+.miner-character,
+.miner-cart,
+.miner-winch {
+  scale: .7;
+}
+
+.miner-character { transform-origin: 75% 78%; }
+.miner-cart,
+.miner-winch { transform: none; transform-origin: center; }
+.gold-miner-rope { stroke-width: 3; }
+
+.treasure-barrel {
+  border: clamp(2px, .28vw, 4px) solid #321b1b;
+  border-radius: 22% 22% 18% 18%;
+  color: #fff1a4;
+  background:
+    linear-gradient(90deg, transparent 0 16%, rgba(255,255,255,.18) 17% 25%, transparent 26%),
+    repeating-linear-gradient(135deg, transparent 0 8px, rgba(49,25,21,.32) 8px 13px),
+    linear-gradient(180deg, #e85846, #a7282d 72%, #6f1d25);
+  box-shadow: inset 0 5px rgba(255,255,255,.16), inset 0 -6px rgba(37,13,17,.28);
+  font-size: clamp(10px, 1.7vw, 20px);
+  font-weight: 950;
+}
+
+.treasure-barrel::before,
+.treasure-barrel::after {
+  position: absolute;
+  right: -5%;
+  left: -5%;
+  height: 12%;
+  content: '';
+  border-radius: 4px;
+  background: #3e4243;
+  box-shadow: inset 0 2px rgba(255,255,255,.22);
+}
+.treasure-barrel::before { top: 8%; }
+.treasure-barrel::after { bottom: 8%; }
+.treasure-barrel.caught-overlay { filter: grayscale(.9) brightness(.55) drop-shadow(0 4px 3px rgba(0,0,0,.5)); }
+
+.treasure-trash-ball {
+  border: clamp(2px, .25vw, 4px) solid #4b2418;
+  border-radius: 50%;
+  background:
+    linear-gradient(26deg, transparent 46%, #49241b 47% 53%, transparent 54%),
+    linear-gradient(154deg, transparent 46%, #49241b 47% 53%, transparent 54%),
+    radial-gradient(circle, #d47a31, #9c4726 72%);
+}
+.treasure-trash-ball::after { position: absolute; inset: 36% -3%; content: ''; border-block: 2px solid #49241b; border-radius: 50%; transform: rotate(90deg); }
+
+.treasure-trash-bottle {
+  width: 58% !important;
+  border: clamp(1px, .2vw, 3px) solid #315d59;
+  border-radius: 18% 18% 28% 28%;
+  background: linear-gradient(90deg, rgba(255,255,255,.42), transparent 28% 70%, rgba(12,74,67,.25)), #69c6b4;
+  clip-path: polygon(34% 0, 66% 0, 67% 22%, 82% 35%, 84% 100%, 16% 100%, 18% 35%, 33% 22%);
+  opacity: .88;
+}
+
+.treasure-trash-tire {
+  border: clamp(5px, .7vw, 10px) solid #25292c;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 0 31%, #596068 33% 45%, #25292c 47% 100%);
+  box-shadow: inset 0 0 0 3px #0f1214, 0 5px 4px rgba(0,0,0,.34);
+}
+
+.gold-miner-explosion.is-barrel-blast {
+  width: var(--blast-size, 30%);
+  height: auto;
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle, #ffffff 0 4%, #fff59a 5% 13%, #ffad2f 14% 28%, #ef493c 29% 45%, rgba(122,37,47,.42) 46% 66%, transparent 67%),
+    repeating-conic-gradient(from 10deg, rgba(255,211,72,.7) 0 5deg, transparent 5deg 18deg);
+  font-size: clamp(38px, 8vw, 92px);
+  animation-duration: .76s;
 }

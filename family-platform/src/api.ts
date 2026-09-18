@@ -61,6 +61,7 @@ export interface LumiAndroidBridge {
   setScreenBrightnessPercent?: (percent: number) => void
   resetScreenBrightness?: () => void
   openExternalUrl?: (url: string) => boolean
+  openInAppOfficialPage?: (url: string) => boolean
 }
 
 export function isAndroidNative(): boolean {
@@ -99,6 +100,26 @@ export async function openExternalPage(url: string): Promise<void> {
   }
   const opened = window.open(destination.href, '_blank', 'noopener,noreferrer')
   if (!opened) throw new Error('浏览器阻止了新窗口，请允许 Lumi 打开官方游戏')
+}
+
+export async function openOfficialGame(url: string): Promise<void> {
+  const destination = new URL(url)
+  const host = destination.hostname.toLowerCase()
+  if (destination.protocol !== 'https:' || (host !== 'drawastickman.com' && !host.endsWith('.drawastickman.com'))) {
+    throw new Error('仅允许在 Lumi 中打开 Draw a Stickman 官方页面')
+  }
+  if (isAndroidNative()) {
+    const opened = getAndroidBridge()?.openInAppOfficialPage?.(destination.href)
+    if (!opened) throw new Error('手机内置浏览视图启动失败')
+    return
+  }
+  if (isNativeShell()) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_official_game', { url: destination.href })
+    return
+  }
+  const opened = window.open(destination.href, '_blank', 'noopener,noreferrer')
+  if (!opened) throw new Error('浏览器阻止了官方游戏预览窗口')
 }
 
 function defaultApiBase(): string {

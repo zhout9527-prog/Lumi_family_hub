@@ -1,14 +1,25 @@
 package cn.lumi.familyhub
 
+import android.annotation.SuppressLint
+import android.app.Dialog
 import android.graphics.Color
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -18,6 +29,95 @@ import androidx.core.view.WindowCompat
 class MainActivity : TauriActivity() {
   private var backDispatchInFlight = false
   private var originalWindowBrightness: Float? = null
+
+  private fun densityPixels(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+  private fun isAllowedOfficialGamePage(destination: Uri): Boolean {
+    val host = destination.host?.lowercase() ?: return false
+    return destination.scheme == "https" && (host == "drawastickman.com" || host.endsWith(".drawastickman.com"))
+  }
+
+  @SuppressLint("SetJavaScriptEnabled")
+  private fun showOfficialGame(url: String) {
+    val dialog = Dialog(this, android.R.style.Theme_Material_Light_NoActionBar)
+    val root = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setBackgroundColor(Color.WHITE)
+    }
+    val toolbar = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = android.view.Gravity.CENTER_VERTICAL
+      setPadding(densityPixels(10), densityPixels(6), densityPixels(12), densityPixels(6))
+      setBackgroundColor(Color.rgb(35, 44, 45))
+    }
+    val backButton = Button(this).apply {
+      text = "返回 Lumi"
+      isAllCaps = false
+      setTextColor(Color.rgb(255, 229, 151))
+      setBackgroundColor(Color.TRANSPARENT)
+    }
+    val title = TextView(this).apply {
+      text = "画线人冒险 · 官方原版"
+      textSize = 16f
+      setTextColor(Color.WHITE)
+      setPadding(densityPixels(8), 0, 0, 0)
+    }
+    toolbar.addView(backButton, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.WRAP_CONTENT,
+      densityPixels(46),
+    ))
+    toolbar.addView(title, LinearLayout.LayoutParams(
+      0,
+      LinearLayout.LayoutParams.WRAP_CONTENT,
+      1f,
+    ))
+
+    val gameView = WebView(this).apply {
+      setBackgroundColor(Color.WHITE)
+      settings.javaScriptEnabled = true
+      settings.domStorageEnabled = true
+      settings.allowFileAccess = false
+      settings.allowContentAccess = false
+      settings.mediaPlaybackRequiresUserGesture = true
+      settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+      webChromeClient = WebChromeClient()
+      webViewClient = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+          if (isAllowedOfficialGamePage(request.url)) return false
+          Toast.makeText(this@MainActivity, "Lumi 已阻止离开官方游戏页面", Toast.LENGTH_SHORT).show()
+          return true
+        }
+      }
+    }
+    root.addView(toolbar, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT,
+    ))
+    root.addView(gameView, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      0,
+      1f,
+    ))
+    backButton.setOnClickListener { dialog.dismiss() }
+    dialog.setOnKeyListener { _, keyCode, event ->
+      if (keyCode != KeyEvent.KEYCODE_BACK || event.action != KeyEvent.ACTION_UP) return@setOnKeyListener false
+      if (gameView.canGoBack()) gameView.goBack() else dialog.dismiss()
+      true
+    }
+    dialog.setOnDismissListener {
+      gameView.stopLoading()
+      gameView.removeAllViews()
+      gameView.destroy()
+    }
+    dialog.setContentView(root)
+    dialog.show()
+    dialog.window?.apply {
+      setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+      statusBarColor = Color.rgb(35, 44, 45)
+      navigationBarColor = Color.rgb(35, 44, 45)
+    }
+    gameView.loadUrl(url)
+  }
 
   private inner class LumiNativeBridge {
     @JavascriptInterface
@@ -90,6 +190,18 @@ class MainActivity : TauriActivity() {
       val intent = Intent(Intent.ACTION_VIEW, destination)
       if (intent.resolveActivity(packageManager) == null) return false
       runOnUiThread { startActivity(intent) }
+      return true
+    }
+
+    @JavascriptInterface
+    fun openInAppOfficialPage(url: String): Boolean {
+      val destination = try {
+        Uri.parse(url)
+      } catch (_: Exception) {
+        return false
+      }
+      if (!isAllowedOfficialGamePage(destination)) return false
+      runOnUiThread { showOfficialGame(destination.toString()) }
       return true
     }
   }

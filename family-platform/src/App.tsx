@@ -73,8 +73,9 @@ import { GamesView, TetrisGame } from './TetrisGame'
 import { BlockMowerGame } from './BlockMowerGame'
 import { GoldMinerGame } from './GoldMinerGame'
 import { SnakeGame } from './SnakeGame'
+import { KidsArtStudio } from './KidsArtStudio'
 import { PetView } from './PetView'
-import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin, openExternalPage } from './api'
+import { contentCollectionApi, contentInteractionsApi, isNativeShell, openBilibiliLogin, openOfficialGame } from './api'
 import './styles.css'
 
 type NoticeTone = 'success' | 'info' | 'warning'
@@ -2797,6 +2798,7 @@ export default function App() {
   const [blockMowerOpen, setBlockMowerOpen] = useState(false)
   const [goldMinerOpen, setGoldMinerOpen] = useState(false)
   const [snakeOpen, setSnakeOpen] = useState(false)
+  const [artStudioOpen, setArtStudioOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: NoticeTone } | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
@@ -2818,6 +2820,7 @@ export default function App() {
     setBlockMowerOpen(false)
     setGoldMinerOpen(false)
     setSnakeOpen(false)
+    setArtStudioOpen(false)
     setMobileOpen(false)
   }, [closePlayback, state.role, store.user?.id])
 
@@ -2848,6 +2851,11 @@ export default function App() {
         setSnakeOpen(false)
         return
       }
+      if (artStudioOpen) {
+        event.preventDefault()
+        setArtStudioOpen(false)
+        return
+      }
       if (selectedItem) {
         event.preventDefault()
         setSelectedItem(null)
@@ -2872,7 +2880,7 @@ export default function App() {
     }
     window.addEventListener('lumi:native-back', handleNativeBack)
     return () => window.removeEventListener('lumi:native-back', handleNativeBack)
-  }, [activeNav, blockMowerOpen, closePlayback, goldMinerOpen, mobileOpen, playback, query, selectedItem, snakeOpen, state.role, tetrisOpen, videoOnly])
+  }, [activeNav, artStudioOpen, blockMowerOpen, closePlayback, goldMinerOpen, mobileOpen, playback, query, selectedItem, snakeOpen, state.role, tetrisOpen, videoOnly])
 
   const items = store.catalog
 
@@ -3068,7 +3076,7 @@ export default function App() {
       return <PetView user={currentUser} pet={store.pet} species={store.petSpecies} canAdopt={store.petCanAdopt} connection={store.connection} busy={store.busy} onAdopt={store.adoptPet} onAction={(petId, action: PetAction) => store.performPetAction(petId, action)} />
     }
     if (activeNav === 'games' && (state.role === 'child' || state.role === 'guardian')) {
-      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} onPlayGoldMiner={() => { setSelectedItem(null); setPlayback(null); setGoldMinerOpen(true) }} onPlaySnake={() => { setSelectedItem(null); setPlayback(null); setSnakeOpen(true) }} onOpenStickman={() => { void openExternalPage('https://drawastickman.com/?m=1').catch(reportError) }} />
+      return <GamesView onPlayTetris={() => { setSelectedItem(null); setPlayback(null); setTetrisOpen(true) }} onPlayBlockMower={() => { setSelectedItem(null); setPlayback(null); setBlockMowerOpen(true) }} onPlayGoldMiner={() => { setSelectedItem(null); setPlayback(null); setGoldMinerOpen(true) }} onPlaySnake={() => { setSelectedItem(null); setPlayback(null); setSnakeOpen(true) }} onOpenArtStudio={() => { setSelectedItem(null); setPlayback(null); setArtStudioOpen(true) }} onOpenStickman={() => { void openOfficialGame('https://drawastickman.com/?m=1').catch(reportError) }} />
     }
     if (activeNav === 'poster-wall' && state.role === 'guardian') {
       return <PosterWall items={items} favoriteIds={state.favorites} onOpen={handleOpenItem} onFavorite={handleFavorite} />
@@ -3141,6 +3149,7 @@ export default function App() {
       {blockMowerOpen && <BlockMowerGame onClose={() => setBlockMowerOpen(false)} />}
       {goldMinerOpen && <GoldMinerGame onClose={() => setGoldMinerOpen(false)} />}
       {snakeOpen && <SnakeGame onClose={() => setSnakeOpen(false)} />}
+      {artStudioOpen && <KidsArtStudio onClose={() => setArtStudioOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   )

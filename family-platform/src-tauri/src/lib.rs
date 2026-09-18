@@ -164,6 +164,44 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[cfg(desktop)]
+fn is_allowed_official_game_url(url: &tauri::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some_and(|host| {
+            let host = host.to_ascii_lowercase();
+            host == "drawastickman.com" || host.ends_with(".drawastickman.com")
+        })
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+async fn open_official_game(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let destination: tauri::Url = url.parse().map_err(|_| "官方游戏地址无效".to_string())?;
+    if !is_allowed_official_game_url(&destination) {
+        return Err("仅允许在 Lumi 中打开 Draw a Stickman 官方页面".to_string());
+    }
+    if let Some(window) = app.get_webview_window("stickman-official") {
+        window.navigate(destination).map_err(|error| error.to_string())?;
+        let _ = window.unminimize();
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "stickman-official",
+        tauri::WebviewUrl::External(destination),
+    )
+    .title("Lumi · 画线人冒险（官方原版）")
+    .inner_size(1280.0, 820.0)
+    .min_inner_size(720.0, 540.0)
+    .center()
+    .on_navigation(is_allowed_official_game_url)
+    .build()
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[cfg(desktop)]
 fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::{
         menu::MenuBuilder,
@@ -312,8 +350,13 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![respond_to_close, open_bilibili_login, open_external_url])
+        .invoke_handler(tauri::generate_handler![respond_to_close, open_bilibili_login, open_external_url, open_official_game])
         .on_window_event(|window, event| {
+            // 退出确认和托盘策略只属于主窗口。官方游戏等子窗口应保留
+            // 系统原生的关闭、最小化行为，不能误触发 Server 隐藏逻辑。
+            if window.label() != "main" {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let can_exit = app

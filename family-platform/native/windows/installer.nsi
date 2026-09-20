@@ -15,7 +15,7 @@ ManifestDPIAware true
   !error "OUTPUT_FILE is required"
 !endif
 !ifndef APP_VERSION
-  !define APP_VERSION "1.4.12"
+  !define APP_VERSION "1.4.13"
 !endif
 
 !ifndef PRODUCT_NAME

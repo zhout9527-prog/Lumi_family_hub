@@ -108,52 +108,52 @@ const TREASURE_META: Record<TreasureKind, { label: string; value: number; pullSp
 
 const LEVELS: LevelConfig[] = [
   {
-    name: '闪光入门', goal: 300, seconds: 75, swingSpeed: 30, aimAssist: true,
-    tip: '跟着虚线瞄准。抓到一个大金块或钻石，就能完成第一关！',
+    name: '闪光入门', goal: 600, seconds: 75, swingSpeed: 30, aimAssist: true,
+    tip: '跟着虚线瞄准。抓到一颗钻石，或大金块再加一块小金块，就能完成第一关！',
     counts: { 'gold-large': 2, 'gold-medium': 5, 'gold-small': 7, diamond: 3, mystery: 2, rock: 1 },
   },
   {
-    name: '黄金浅层', goal: 900, seconds: 75, swingSpeed: 31, aimAssist: true,
+    name: '黄金浅层', goal: 1800, seconds: 75, swingSpeed: 31, aimAssist: true,
     tip: '小金块回收快，大金块分数高。先抓近处，再挑战远处。',
     counts: { 'gold-large': 3, 'gold-medium': 5, 'gold-small': 7, diamond: 4, mystery: 2, rock: 1 },
   },
   {
-    name: '钻石小径', goal: 1700, seconds: 72, swingSpeed: 32, aimAssist: true,
+    name: '钻石小径', goal: 3400, seconds: 72, swingSpeed: 32, aimAssist: true,
     tip: '钻石最轻、回收最快。虚线经过钻石时再放钩，会更容易命中。',
     counts: { 'gold-large': 3, 'gold-medium': 5, 'gold-small': 6, diamond: 5, mystery: 2, rock: 2 },
   },
   {
-    name: '回声矿洞', goal: 2700, seconds: 72, swingSpeed: 34, aimAssist: false,
+    name: '回声矿洞', goal: 5400, seconds: 72, swingSpeed: 34, aimAssist: false,
     tip: '开始独立判断时机吧。福袋一定给积分，还可能送道具。',
     counts: { 'gold-large': 3, 'gold-medium': 5, 'gold-small': 6, diamond: 4, mystery: 3, rock: 3 },
   },
   {
-    name: '交错岩层', goal: 3900, seconds: 70, swingSpeed: 35, aimAssist: false,
+    name: '交错岩层', goal: 7800, seconds: 70, swingSpeed: 35, aimAssist: false,
     tip: '石头多起来了。抓到不想要的目标时，可以使用炸药。',
     counts: { 'gold-large': 4, 'gold-medium': 5, 'gold-small': 6, diamond: 4, mystery: 3, rock: 3 },
   },
   {
-    name: '星光竖井', goal: 5400, seconds: 70, swingSpeed: 36, aimAssist: false,
+    name: '星光竖井', goal: 10800, seconds: 70, swingSpeed: 36, aimAssist: false,
     tip: '试试大力手套和幸运书籍，它们能让这一关轻松很多。',
     counts: { 'gold-large': 4, 'gold-medium': 5, 'gold-small': 6, diamond: 4, mystery: 3, rock: 4 },
   },
   {
-    name: '熔金深层', goal: 7100, seconds: 68, swingSpeed: 37, aimAssist: false,
+    name: '熔金深层', goal: 14200, seconds: 68, swingSpeed: 37, aimAssist: false,
     tip: '先拿轻而值钱的钻石，再用剩余时间搬运大金块。',
     counts: { 'gold-large': 4, 'gold-medium': 6, 'gold-small': 6, diamond: 5, mystery: 3, rock: 4 },
   },
   {
-    name: '宝石迷宫', goal: 9000, seconds: 68, swingSpeed: 38, aimAssist: false,
+    name: '宝石迷宫', goal: 18000, seconds: 68, swingSpeed: 38, aimAssist: false,
     tip: '恭喜来到第八关！合理使用积攒的道具，比一味追求速度更重要。',
     counts: { 'gold-large': 5, 'gold-medium': 5, 'gold-small': 6, diamond: 5, mystery: 3, rock: 4 },
   },
   {
-    name: '远古矿脉', goal: 11100, seconds: 68, swingSpeed: 39, aimAssist: false,
+    name: '远古矿脉', goal: 22200, seconds: 68, swingSpeed: 39, aimAssist: false,
     tip: '观察完整摆动周期，选择目标密集的一侧连续出钩。',
     counts: { 'gold-large': 5, 'gold-medium': 6, 'gold-small': 6, diamond: 5, mystery: 3, rock: 5 },
   },
   {
-    name: '彩虹宝库', goal: 13500, seconds: 70, swingSpeed: 40, aimAssist: false,
+    name: '彩虹宝库', goal: 27000, seconds: 70, swingSpeed: 40, aimAssist: false,
     tip: '最后的主题关卡！把背包里的宝贝用起来，完成十关挑战。',
     counts: { 'gold-large': 5, 'gold-medium': 6, 'gold-small': 7, diamond: 6, mystery: 4, rock: 5 },
   },
@@ -193,7 +193,7 @@ function levelConfig(level: number): LevelConfig {
   return {
     ...LEVELS.at(-1)!,
     name: `无尽矿层 ${depth}`,
-    goal: 13500 + depth * 2600 + Math.floor(depth / 3) * 450,
+    goal: 27000 + depth * 5200 + Math.floor(depth / 3) * 900,
     seconds: 70,
     swingSpeed: Math.min(46, 40 + depth * 0.5),
     tip: '这里是无尽矿层。继续搭配背包道具，刷新自己的最高关卡！',

@@ -4,6 +4,7 @@ import { chromium } from 'playwright-core'
 
 const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const baseUrl = process.env.FAMILYHUB_GAME_E2E_URL ?? 'http://127.0.0.1:4183'
+const apiBaseUrl = process.env.FAMILYHUB_GAME_E2E_API ?? 'http://127.0.0.1:2521/api/v1'
 const artifactsPath = fileURLToPath(new URL('./artifacts/', import.meta.url))
 const runId = Date.now().toString(36)
 
@@ -14,14 +15,18 @@ function check(condition, message) {
 function collectFailures(page, failures, label) {
   page.on('pageerror', (error) => failures.push(`${label} page: ${error.message}`))
   page.on('console', (message) => {
-    if (message.type() === 'error') failures.push(`${label} console: ${message.text()}`)
+    if (message.type() !== 'error') return
+    const text = message.text()
+    // 浏览器偶尔会在页面/iframe 关闭的瞬间取消资源请求；没有异常和功能断言失败时不视为产品错误。
+    if (/Failed to load resource: net::ERR_(?:ABORTED|CONNECTION_REFUSED)$/.test(text)) return
+    failures.push(`${label} console: ${text}`)
   })
 }
 
 async function login(page, username, password, role) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem('lumi-family-platform-api-base-v1', 'http://127.0.0.1:2521/api/v1')
-  })
+  await page.addInitScript((apiBase) => {
+    window.localStorage.setItem('lumi-family-platform-api-base-v1', apiBase)
+  }, apiBaseUrl)
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
   await page.getByLabel('账号').fill(username)
   await page.getByLabel('密码', { exact: true }).fill(password)
@@ -35,6 +40,89 @@ async function boardState(page) {
       .map((cell, index) => cell.classList.contains('block-empty') ? null : index)
       .filter((index) => index !== null),
   )
+}
+
+async function isolateBlockDefenseProfile(page) {
+  await page.route('**/api/v1/games/block-defense/profile', async (route) => {
+    const request = route.request()
+    const payload = request.method() === 'PUT' ? request.postDataJSON() : { progress: {}, score: 0 }
+    const timestamp = payload.client_updated_at ?? null
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        game_id: 'block-defense',
+        user_id: 'child-demo',
+        progress: payload.progress ?? {},
+        best_score: payload.score ?? 0,
+        best_score_at: null,
+        client_updated_at: timestamp,
+        updated_at: timestamp,
+      }),
+    })
+  })
+}
+
+async function pointerDrag(page, source, target) {
+  const sourceBox = await source.boundingBox()
+  const targetBox = await target.boundingBox()
+  check(sourceBox && targetBox, '拖拽目标没有出现在屏幕中')
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 })
+  await page.mouse.up()
+}
+
+async function seedBlockDefenseProgress(page, level = 1, difficulty = 'normal', patch = {}) {
+  await page.evaluate(({ currentLevel, currentDifficulty, progressPatch }) => {
+    const now = new Date().toISOString()
+    const progress = {
+      unlockedLevel: 60,
+      currentLevel,
+      completedLevels: [],
+      levelBestScores: {},
+      coins: 2_000,
+      gears: 60,
+      slowLevel: 0,
+      chargeLevel: 0,
+      slotLevel: 0,
+      reserveLevel: 0,
+      rerolls: 1,
+      universalLaunchers: 0,
+      currentDifficulty,
+      completedVariants: [],
+      energyUnlockedLevels: Array.from({ length: 60 }, (_, index) => index + 1),
+      energy: 50,
+      energyUpdatedAt: now,
+      bestScore: 0,
+      ...progressPatch,
+    }
+    localStorage.setItem('lumi:block-defense-progress:v4:child-demo', JSON.stringify({ progress, updatedAt: now }))
+  }, { currentLevel: level, currentDifficulty: difficulty, progressPatch: patch })
+}
+
+async function chooseBlockDefenseLevel(page, level, difficultyLabel) {
+  await page.getByRole('button', { name: '选择关卡' }).click()
+  await page.getByRole('dialog', { name: '彩块防线选关' }).waitFor()
+  await page.getByRole('tab', { name: new RegExp(difficultyLabel) }).click()
+  await page.getByRole('button', { name: new RegExp(`第 ${level} 关${difficultyLabel}模式`) }).click()
+  await page.locator(`.mower-v2-backdrop[data-level="${level}"]`).waitFor()
+}
+
+async function loadedSnakeFrame(page, errorMessage) {
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.snake-game-frame')
+    try {
+      return frame?.contentWindow?.location.pathname.endsWith('/games/snake/index.html')
+        && frame.contentDocument?.readyState === 'complete'
+        && Boolean(frame.contentWindow.__snakeGame)
+    } catch {
+      return false
+    }
+  })
+  const frame = page.frames().find((candidate) => candidate.url().includes('/games/snake/index.html'))
+  check(Boolean(frame), errorMessage)
+  return frame
 }
 
 async function aimAtTutorialTreasure(page, kind = 'diamond') {
@@ -86,6 +174,7 @@ try {
   const childContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'zh-CN' })
   const child = await childContext.newPage()
   collectFailures(child, failures, 'desktop')
+  await isolateBlockDefenseProfile(child)
   await login(child, 'child-demo', 'ChildDemo2026', 'child')
   check(await child.getByRole('button', { name: '家庭海报墙' }).count() === 0, '儿童端不应出现家长海报墙')
   await child.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
@@ -112,31 +201,86 @@ try {
   check(await child.getByRole('dialog', { name: '俄罗斯方块' }).count() === 0, '电脑端没有退出游戏')
   await child.getByRole('button', { name: /彩块防线/ }).click()
   await child.getByRole('dialog', { name: '彩块防线' }).waitFor()
-  check(await child.locator('.mower-v2-block').count() >= 55, '彩块防线没有生成密集方块阵列')
+  check(await child.locator('.mower-v2-block').count() === 30, '彩块防线第一关应生成 30 个教学色块')
+  check(await child.locator('.mower-v2-field').getAttribute('data-lanes') === '3', '彩块防线第一关应从三列开始')
   check(await child.locator('.mower-active-slot').count() === 2, '彩块防线初始发射槽位不是两个')
-  check(await child.locator('.mower-reserve-card').count() === 3, '彩块防线初始备用池不是三格')
+  check(await child.locator('.mower-reserve-card').count() === 5, '彩块防线初始备用池不是五格')
+  check(await child.locator('.mower-active-slot').first().getAttribute('data-capacity') === '9', '普通难度发射器弹量不是 9 发')
   check(await child.locator('.mower-v2-block.is-targetable').count() > 0 && await child.locator('.mower-v2-block.is-covered').count() > 0, '彩块防线没有区分可攻击前层与被遮挡后层')
   const targetableLanes = await child.locator('.mower-v2-block.is-targetable').evaluateAll((blocks) => blocks.map((block) => block.getAttribute('data-lane')))
   check(new Set(targetableLanes).size === targetableLanes.length, '彩块防线同一投影列暴露了多个未穿透目标')
   await child.getByRole('button', { name: '选择关卡' }).click()
   await child.getByRole('dialog', { name: '彩块防线选关' }).waitFor()
+  check(await child.getByRole('tab').count() === 3, '选关页没有简单、普通、困难三档')
   check(await child.locator('.mower-level-grid button').count() === 60, '彩块防线没有生成 60 个固定关卡')
   check(await child.locator('.mower-level-grid button:not([disabled])').count() === 1, '新账户应只解锁第 1 关')
+  await child.getByRole('tab', { name: /困难/ }).click()
+  await child.getByRole('button', { name: /第 1 关困难模式/ }).click()
+  check(await child.locator('.mower-v2-backdrop').getAttribute('data-difficulty') === 'hard', '关卡没有切换到困难模式')
+  check(await child.locator('.mower-active-slot').first().getAttribute('data-capacity') === '12', '困难难度发射器弹量不是 12 发')
+  await child.getByRole('button', { name: '选择关卡' }).click()
+  await child.getByRole('tab', { name: /简单/ }).click()
+  await child.getByRole('button', { name: /第 1 关简单模式/ }).click()
+  check(await child.locator('.mower-active-slot').first().getAttribute('data-capacity') === '7', '简单难度发射器弹量不是 7 发')
+  await child.getByRole('button', { name: '选择关卡' }).click()
+  await child.getByRole('tab', { name: /普通/ }).click()
+  await child.getByRole('button', { name: /第 1 关普通模式/ }).click()
   await child.screenshot({ path: `${artifactsPath}block-defense-levels-desktop-${runId}.png` })
-  await child.getByRole('button', { name: '关闭选关' }).click()
-  await child.locator('.mower-reserve-card').first().click()
+  await pointerDrag(child, child.locator('.mower-reserve-card').first(), child.locator('.mower-active-slot').first())
   await child.getByText(/已装入，正在充能/).waitFor()
   check(await child.locator('.mower-active-slot.is-charging').count() > 0, '备用发射器换装后没有充能等待')
   await child.getByRole('button', { name: '成长工坊', exact: true }).click()
   await child.getByRole('heading', { name: '成长工坊' }).waitFor()
-  check(await child.locator('.mower-upgrade-card').count() === 5, '成长工坊没有展示完整五类升级')
+  check(await child.locator('.mower-upgrade-card').count() === 4, '成长工坊应只保留缓速、充能、槽位和备用池四类升级')
   await child.getByRole('button', { name: '回到战场' }).click()
   await child.screenshot({ path: `${artifactsPath}block-defense-desktop-${runId}.png` })
   await child.getByRole('button', { name: '退出彩块防线' }).click()
+
+  await seedBlockDefenseProgress(child, 1, 'normal')
+  await child.getByRole('button', { name: /彩块防线/ }).click()
+  const field = child.locator('.mower-v2-field')
+  for (const [level, lanes] of [[1, 3], [2, 5], [3, 7], [4, 9], [5, 11]]) {
+    if (level > 1) await chooseBlockDefenseLevel(child, level, '普通')
+    check(await field.getAttribute('data-lanes') === String(lanes), `彩块防线第 ${level} 关列数不是 ${lanes}`)
+  }
+  for (const [level, total] of [[20, 150], [30, 200], [40, 300], [50, 400]]) {
+    await chooseBlockDefenseLevel(child, level, '普通')
+    check(await field.getAttribute('data-block-total') === String(total), `彩块防线第 ${level} 关色块总量不是 ${total}`)
+  }
+  await chooseBlockDefenseLevel(child, 14, '困难')
+  check(await field.getAttribute('data-pattern-types') === '0', '困难模式在第 15 关之前提前出现了花纹')
+  await chooseBlockDefenseLevel(child, 15, '困难')
+  check(Number(await field.getAttribute('data-pattern-types')) > 0, '困难模式第 15 关没有解锁花纹')
+  const hardSpeed = Number(await field.getAttribute('data-advance-speed'))
+  await chooseBlockDefenseLevel(child, 24, '普通')
+  check(await field.getAttribute('data-pattern-types') === '0', '普通模式在第 25 关之前提前出现了花纹')
+  await chooseBlockDefenseLevel(child, 25, '普通')
+  check(Number(await field.getAttribute('data-pattern-types')) > 0, '普通模式第 25 关没有解锁花纹')
+  await chooseBlockDefenseLevel(child, 34, '简单')
+  check(await field.getAttribute('data-pattern-types') === '0', '简单模式在第 35 关之前提前出现了花纹')
+  await chooseBlockDefenseLevel(child, 35, '简单')
+  check(Number(await field.getAttribute('data-pattern-types')) > 0, '简单模式第 35 关没有解锁花纹')
+  await chooseBlockDefenseLevel(child, 15, '普通')
+  const normalSpeed = Number(await field.getAttribute('data-advance-speed'))
+  await chooseBlockDefenseLevel(child, 15, '简单')
+  const easySpeed = Number(await field.getAttribute('data-advance-speed'))
+  check(hardSpeed > normalSpeed && normalSpeed > easySpeed, '三档难度没有按简单、普通、困难逐级加快')
+  await child.getByRole('button', { name: '退出彩块防线' }).click()
+
+  await seedBlockDefenseProgress(child, 1, 'easy', { completedLevels: [1], completedVariants: ['easy:1'] })
+  await child.getByRole('button', { name: /彩块防线/ }).click()
+  await child.getByRole('button', { name: '选择关卡' }).click()
+  await child.getByRole('tab', { name: /简单/ }).click()
+  check(await child.getByRole('button', { name: /第 1 关简单模式，已通关/ }).count() === 1, '简单模式通关记录没有保留')
+  await child.getByRole('tab', { name: /普通/ }).click()
+  check(await child.getByRole('button', { name: /第 1 关普通模式，可挑战/ }).count() === 1, '简单模式通关被错误迁移成普通模式通关')
+  await child.getByRole('button', { name: '关闭选关' }).click()
+  await child.getByRole('button', { name: '退出彩块防线' }).click()
+
   await child.getByRole('button', { name: /深岩淘金/ }).click()
   await child.getByRole('dialog', { name: '深岩淘金' }).waitFor()
   check(await child.locator('.gold-treasure[data-kind]').count() === 20, '深岩淘金第一关没有生成完整的新手宝藏')
-  await child.getByText('300', { exact: true }).first().waitFor()
+  await child.getByText('600', { exact: true }).first().waitFor()
   await aimAtTutorialTreasure(child)
   await child.keyboard.press('ArrowDown')
   await child.waitForFunction(() => Number((document.querySelector('[data-testid="gold-score"]')?.textContent ?? '0').replace(/\D/g, '')) >= 600, undefined, { timeout: 12_000 })
@@ -186,7 +330,7 @@ try {
   await child.getByRole('button', { name: '从第1关重新开始' }).click()
   await child.getByRole('button', { name: '清空进度并重开' }).click()
   await child.getByText('炸药 × 0', { exact: true }).waitFor()
-  await child.getByText('300', { exact: true }).first().waitFor()
+  await child.getByText('600', { exact: true }).first().waitFor()
   await child.waitForFunction(() => {
     const progress = JSON.parse(localStorage.getItem('lumi:deep-mine-progress:v2:child-demo') ?? '{}')
     return progress.level === 1 && progress.highestLevel === 1 && progress.score === 0 && progress.inventory?.dynamite === 0
@@ -216,9 +360,7 @@ try {
 
   await child.getByRole('button', { name: /贪吃蛇/ }).click()
   await child.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
-  await child.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
-  const desktopSnakeFrame = child.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
-  check(Boolean(desktopSnakeFrame), '贪吃蛇内置页面没有加载')
+  const desktopSnakeFrame = await loadedSnakeFrame(child, '贪吃蛇内置页面没有加载')
   const guideButton = desktopSnakeFrame.getByRole('button', { name: '明白了，开始游戏' })
   if (await guideButton.isVisible()) await guideButton.click()
   else await desktopSnakeFrame.getByRole('button', { name: '开始游戏' }).click()
@@ -260,6 +402,7 @@ try {
   })
   const mobile = await mobileContext.newPage()
   collectFailures(mobile, failures, 'mobile')
+  await isolateBlockDefenseProfile(mobile)
   await login(mobile, 'child-demo', 'ChildDemo2026', 'child')
   await mobile.getByRole('button', { name: '打开导航' }).click()
   await mobile.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
@@ -275,7 +418,9 @@ try {
   await mobile.getByRole('button', { name: /彩块防线/ }).click()
   await mobile.getByRole('dialog', { name: '彩块防线' }).waitFor()
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机彩块防线横向溢出')
-  check(await mobile.locator('.mower-reserve-card').count() === 3, '手机彩块防线备用池不完整')
+  check(await mobile.locator('.mower-reserve-card').count() === 5, '手机彩块防线备用池不完整')
+  await pointerDrag(mobile, mobile.locator('.mower-reserve-card').first(), mobile.locator('.mower-active-slot').first())
+  await mobile.getByText(/已装入，正在充能/).waitFor()
   await mobile.screenshot({ path: `${artifactsPath}block-defense-mobile-${runId}.png` })
   await mobile.getByRole('button', { name: '退出彩块防线' }).click()
   await mobile.getByRole('button', { name: /深岩淘金/ }).click()
@@ -297,10 +442,8 @@ try {
   await mobile.getByRole('button', { name: '退出深岩淘金' }).click()
   await mobile.getByRole('button', { name: /贪吃蛇/ }).click()
   await mobile.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
-  await mobile.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
+  const mobileSnakeFrame = await loadedSnakeFrame(mobile, '手机贪吃蛇内置页面没有加载')
   check(!await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), '手机贪吃蛇横向溢出')
-  const mobileSnakeFrame = mobile.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
-  check(Boolean(mobileSnakeFrame), '手机贪吃蛇内置页面没有加载')
   await mobileSnakeFrame.getByRole('button', { name: '明白了，开始游戏' }).click()
   await mobileSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')
   await mobileSnakeFrame.getByRole('button', { name: '向下' }).click()
@@ -342,6 +485,7 @@ try {
   })
   const tv = await tvContext.newPage()
   collectFailures(tv, failures, 'tv')
+  await isolateBlockDefenseProfile(tv)
   await login(tv, 'child-demo', 'ChildDemo2026', 'child')
   await tv.getByLabel('主导航').getByRole('button', { name: '小游戏', exact: true }).click()
   check(await tv.locator('.game-launch-card').count() === 5, '电视端游戏入口数量不正确')
@@ -365,7 +509,13 @@ try {
   const initialSlot = tv.locator('.mower-active-slot').first()
   await initialSlot.focus()
   await tv.keyboard.press('ArrowRight')
-  check(await tv.evaluate(() => document.activeElement?.classList.contains('mower-active-slot')) === true, '电视彩块防线没有按发射槽位移动焦点')
+  check(await tv.evaluate(() => document.activeElement?.closest('.mower-active-unit') !== null) === true, '电视彩块防线焦点离开了当前发射单元')
+  await tv.locator('.mower-reserve-card').first().focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByRole('dialog', { name: '选择换装槽位' }).waitFor()
+  await tv.locator('.mower-slot-picker > div > button').first().focus()
+  await tv.keyboard.press('Enter')
+  await tv.getByText(/已装入，正在充能/).waitFor()
   await tv.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true })))
   check(await tv.getByRole('dialog', { name: '彩块防线' }).count() === 0, '电视返回键没有退出彩块防线')
   await tv.getByRole('button', { name: /深岩淘金/ }).focus()
@@ -394,9 +544,7 @@ try {
   await tv.getByRole('button', { name: /贪吃蛇/ }).focus()
   await tv.keyboard.press('Enter')
   await tv.getByRole('dialog', { name: '贪吃蛇' }).waitFor()
-  await tv.waitForFunction(() => document.querySelector('.snake-game-frame')?.contentDocument?.readyState === 'complete')
-  const tvSnakeFrame = tv.frames().find((frame) => frame.url().includes('/games/snake/index.html'))
-  check(Boolean(tvSnakeFrame), '电视贪吃蛇内置页面没有加载')
+  const tvSnakeFrame = await loadedSnakeFrame(tv, '电视贪吃蛇内置页面没有加载')
   await tvSnakeFrame.locator('#overlayButton').focus()
   await tv.keyboard.press('Enter')
   await tvSnakeFrame.waitForFunction(() => window.__snakeGame?.getState().state === 'running')

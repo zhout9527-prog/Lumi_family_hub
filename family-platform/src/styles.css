@@ -8059,7 +8059,7 @@ html.mobile-mode:fullscreen .player-community {
 .art-close:hover,
 .art-close:focus-visible { border-color: #a9506e; outline: 3px solid rgba(169,80,110,.2); outline-offset: 2px; }
 
-.art-studio-main { display: grid; min-height: 0; grid-template-columns: 104px minmax(0, 1fr) 278px; overflow: hidden; }
+.art-studio-main { display: grid; min-height: 0; grid-template-columns: 112px minmax(0, 1fr) 320px; overflow: hidden; }
 .art-toolbox { display: flex; min-height: 0; flex-direction: column; gap: 15px; padding: 14px 10px; overflow: auto; border-right: 1px solid #d1d9d3; background: #f9faf8; }
 .art-tool-group { display: grid; gap: 7px; }
 .art-tool-group > span,
@@ -8081,7 +8081,9 @@ html.mobile-mode:fullscreen .player-community {
 .art-toolbox button:not(:disabled):focus-visible { outline: 3px solid rgba(169,80,110,.22); outline-offset: 2px; }
 
 .art-canvas-section { position: relative; display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; gap: 9px; padding: 16px; overflow: auto; background: #dde4df; }
-.art-canvas-frame { position: relative; width: min(100%, 1080px); max-height: 100%; aspect-ratio: 3 / 2; align-self: center; justify-self: center; overflow: hidden; border: 1px solid #c7c3bb; border-radius: 6px; background: #fffdf8; box-shadow: 0 17px 35px rgba(60,66,62,.17); }
+.art-canvas-viewport { display: grid; min-width: 0; min-height: 0; place-items: center; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.art-canvas-viewport.is-zoomed { place-items: start; }
+.art-canvas-frame { position: relative; width: min(100%, 1080px); aspect-ratio: 3 / 2; flex: 0 0 auto; overflow: hidden; border: 1px solid #c7c3bb; border-radius: 6px; background: #fffdf8; box-shadow: 0 17px 35px rgba(60,66,62,.17); }
 .art-canvas-frame::after { position: absolute; z-index: 5; inset: 0; content: ''; pointer-events: none; box-shadow: inset 0 0 28px rgba(99,83,63,.04); }
 .art-guide-canvas,
 .art-drawing-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
@@ -8095,18 +8097,42 @@ html.mobile-mode:fullscreen .player-community {
 .art-tv-cursor { position: absolute; z-index: 8; width: 17px; height: 17px; border: 3px solid #fff; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 2px #2d3e35, 0 3px 8px rgba(0,0,0,.3); transform: translate(-50%, -50%); }
 .art-tv-cursor.is-drawing { width: 23px; height: 23px; box-shadow: 0 0 0 3px #f1c84c, 0 3px 8px rgba(0,0,0,.3); }
 .art-canvas-actions { display: flex; min-height: 39px; align-items: center; justify-content: center; gap: 7px; }
+.art-zoom-control { display: grid; height: 34px; grid-template-columns: 32px 48px 32px; align-items: center; overflow: hidden; border: 1px solid #cbd4ce; border-radius: 6px; background: #fff; }
+.art-zoom-control button { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 0; color: #4f5e55; background: transparent; }
+.art-zoom-control button:not(:disabled):hover,
+.art-zoom-control button:not(:disabled):focus-visible { color: #913e5b; background: #f8e7ed; outline: 0; }
+.art-zoom-control button:disabled { opacity: .3; }
+.art-zoom-control span { color: #5e6a63; font-size: 8px; font-weight: 900; text-align: center; }
 .art-save-message { position: absolute; z-index: 10; right: 18px; bottom: 66px; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 6px; color: #fff; background: #397657; box-shadow: 0 9px 20px rgba(30,70,48,.25); font-size: 9px; font-weight: 800; }
 
 .art-reference-panel { display: flex; min-height: 0; flex-direction: column; gap: 11px; padding: 15px; overflow: auto; border-left: 1px solid #d0d8d2; background: #fbfaf7; }
 .art-reference-heading h2 { margin: 3px 0; font-size: 18px; }
 .art-reference-heading p { margin: 0; color: #758078; font-size: 9px; line-height: 1.45; }
+.art-difficulty-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border: 1px solid #d9ded9; border-radius: 7px; background: #eef1ed; }
+.art-difficulty-switch button { display: grid; min-width: 0; gap: 1px; padding: 6px 3px; border: 0; border-radius: 5px; color: #68736c; background: transparent; text-align: center; }
+.art-difficulty-switch button strong { font-size: 9px; }
+.art-difficulty-switch button span { overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.art-difficulty-switch button.is-active { color: #813c55; background: #fff; box-shadow: 0 2px 8px rgba(70,46,55,.12); }
 .art-reference-image { display: grid; aspect-ratio: 3 / 2; place-items: center; border: 1px solid #ddd8cf; border-radius: 6px; background: #fff; }
 .art-reference-image svg { width: 92%; height: 92%; }
+.art-reference-image .is-construction { opacity: .42; }
+.art-reference-image .is-shade { opacity: .68; }
+.art-reference-image .is-highlight { opacity: .5; }
+.art-guide-opacity { display: grid; grid-template-columns: auto minmax(80px, 1fr); align-items: center; gap: 9px; color: #69766f; font-size: 8px; font-weight: 900; }
+.art-guide-opacity input { width: 100%; accent-color: #a84e6d; }
+.art-lesson-card { display: grid; gap: 8px; padding: 10px; border-left: 3px solid #b25373; border-radius: 5px; background: #f6f1ed; }
+.art-lesson-card > strong { color: #47564e; font-size: 9px; line-height: 1.5; }
+.art-lesson-card ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.art-lesson-card li { display: flex; align-items: center; gap: 6px; color: #68746d; font-size: 8px; }
+.art-lesson-card li > span { display: grid; width: 17px; height: 17px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #fff; background: #9f4e6a; font-size: 7px; font-weight: 900; }
+.art-lesson-card > div { display: flex; flex-wrap: wrap; gap: 4px; }
+.art-lesson-card > div span { padding: 3px 6px; border: 1px solid #d8d0c9; border-radius: 99px; color: #6f625b; background: #fff; font-size: 7px; font-weight: 800; }
 .art-template-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .art-template-picker button { display: grid; gap: 3px; padding: 4px; border: 1px solid #d8ded9; border-radius: 6px; color: #536158; background: #fff; }
 .art-template-picker button.is-active { border-color: #ad4e6e; outline: 2px solid rgba(173,78,110,.15); color: #8d3a57; }
 .art-template-picker svg { width: 100%; aspect-ratio: 3 / 2; }
 .art-template-picker span { padding-bottom: 3px; font-size: 8px; font-weight: 900; }
+.art-template-picker small { margin-top: -4px; padding-bottom: 3px; color: #8a948e; font-size: 6px; }
 .art-free-prompt { display: grid; place-items: center; padding: 25px 13px; border: 1px solid #dfd7c9; border-radius: 7px; color: #745564; background: #fff8e9; text-align: center; }
 .art-free-prompt > svg { margin-bottom: 8px; color: #d58a36; }
 .art-free-prompt h2 { margin: 5px 0; font-size: 19px; }
@@ -8126,7 +8152,7 @@ html.mobile-mode:fullscreen .player-community {
 .tv-mode .art-studio-backdrop { grid-template-rows: 78px minmax(0, 1fr); }
 .tv-mode .art-studio-header { padding-inline: 28px; }
 .tv-mode .art-studio-header strong { font-size: 20px; }
-.tv-mode .art-studio-main { grid-template-columns: 125px minmax(0, 1fr) 320px; }
+.tv-mode .art-studio-main { grid-template-columns: 125px minmax(0, 1fr) 350px; }
 .tv-mode .art-studio-backdrop button:focus,
 .tv-mode .art-drawing-canvas:focus { outline: 4px solid #e5ed62; outline-offset: 3px; }
 
@@ -8143,7 +8169,7 @@ html.mobile-mode:fullscreen .player-community {
   .art-tool-group { gap: 3px; }
   .art-tool-group > span,
   .art-size-control > span { display: none; }
-  .art-tool-segment { grid-template-columns: repeat(3, 36px); }
+  .art-tool-segment { grid-template-columns: repeat(4, 36px); }
   .art-tool-segment button { width: 36px; height: 36px; }
   .art-color-group > div { display: flex; max-width: 270px; gap: 5px; overflow-x: auto; padding: 3px; }
   .art-color-group button { flex: 0 0 21px; width: 21px; height: 21px; }
@@ -8153,8 +8179,8 @@ html.mobile-mode:fullscreen .player-community {
   .art-canvas-section { flex: 0 0 auto; padding: 9px; }
   .art-canvas-frame { width: 100%; max-height: none; }
   .art-reference-panel { min-height: 230px; border-top: 1px solid #d0d8d2; border-left: 0; }
-  .art-reference-panel:has(.art-reference-heading) { display: grid; grid-template-columns: 160px minmax(0, 1fr); grid-template-rows: auto auto; }
-  .art-reference-image { grid-row: 1 / 3; }
+  .art-reference-panel:has(.art-reference-heading) { display: flex; }
+  .art-reference-image { width: min(100%, 420px); align-self: center; }
   .art-template-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .art-score-panel { grid-column: 1 / -1; }
 }
@@ -8895,12 +8921,6 @@ html.mobile-mode:fullscreen .player-community {
 }
 .mower-v2-block.shape-round { border-radius: 45%; }
 .mower-v2-block.shape-diamond { border-radius: 17%; clip-path: polygon(50% 0, 100% 37%, 82% 100%, 18% 100%, 0 37%); }
-.mower-v2-block.pattern-stripe::after,
-.mower-launcher-core.pattern-stripe::after,
-.mower-mini-block.pattern-stripe::after { position: absolute; inset: 16%; content: ''; opacity: .56; border-radius: inherit; background: repeating-linear-gradient(135deg, rgba(255,255,255,.72) 0 3px, transparent 3px 7px); }
-.mower-v2-block.pattern-dot::after,
-.mower-launcher-core.pattern-dot::after,
-.mower-mini-block.pattern-dot::after { position: absolute; inset: 14%; content: ''; opacity: .62; border-radius: inherit; background: radial-gradient(circle, rgba(255,255,255,.9) 0 2px, transparent 2.5px) 0 0 / 8px 8px; }
 .mower-v2-block.is-covered { filter: saturate(.7) brightness(.8); }
 .mower-v2-block.is-targetable { filter: saturate(1.16) brightness(1.06); }
 .mower-v2-eyes { position: absolute; z-index: 2; top: 28%; left: 50%; display: flex; gap: 17%; width: 55%; justify-content: center; transform: translateX(-50%); }
@@ -8916,7 +8936,7 @@ html.mobile-mode:fullscreen .player-community {
 @keyframes mower-impact { to { opacity: 0; transform: scale(3.3); } }
 
 .mower-v2-defense-line { position: absolute; z-index: 410; right: 0; bottom: 9.7%; left: 0; display: flex; height: 20px; align-items: center; justify-content: center; gap: 6px; border-top: 2px solid #d7e596; color: #f1f6d5; background: rgba(31,53,43,.75); font-size: 9px; font-weight: 900; box-shadow: 0 -5px 16px rgba(211,232,142,.2); }
-.mower-v2-active-row { position: absolute; z-index: 420; right: 2%; bottom: 1.4%; left: 2%; display: grid; height: 11%; min-height: 68px; grid-template-columns: repeat(var(--active-count), minmax(0, 1fr)); gap: 8px; }
+.mower-v2-active-row { position: absolute; z-index: 420; right: 2%; bottom: 1.4%; left: 2%; display: grid; height: 11%; min-height: 68px; grid-template-columns: repeat(var(--active-columns), minmax(0, 1fr)); gap: 8px; }
 .mower-active-slot { position: relative; display: grid; min-width: 0; grid-template-columns: auto 1fr; align-items: center; gap: 8px; padding: 6px 10px 6px 32px; overflow: hidden; border: 2px solid rgba(230,238,231,.5); border-radius: 7px; color: #fff; background: rgba(27,42,35,.88); box-shadow: 0 6px 14px rgba(0,0,0,.24); }
 .mower-active-slot.is-selected { border-color: #e7f07f; outline: 3px solid rgba(231,240,127,.23); }
 .mower-active-slot.is-empty { background: rgba(39,47,43,.92); }
@@ -9695,23 +9715,26 @@ html.mobile-mode:fullscreen .player-community {
   animation-duration: .76s;
 }
 
-/* 彩块防线 1.4.13：三难度、拖放换装、体力与局内战术工具 */
+/* 彩块防线 1.4.14：纯颜色形状、十槽位、三难度与局内战术工具 */
 .mower-launcher-core.shape-triangle,
 .mower-mini-block.shape-triangle { clip-path: polygon(50% 3%, 97% 94%, 3% 94%); border-radius: 4px; }
 .mower-launcher-core.shape-star,
 .mower-mini-block.shape-star { clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 56%, 79% 94%, 50% 71%, 21% 94%, 32% 56%, 2% 35%, 39% 35%); border-radius: 0; }
 .mower-launcher-core.shape-cylinder,
 .mower-mini-block.shape-cylinder { border-radius: 50% / 22%; }
-.mower-launcher-core.pattern-black,
-.mower-mini-block.pattern-black { background: repeating-linear-gradient(135deg, transparent 0 7px, rgba(9,12,15,.82) 7px 11px), linear-gradient(145deg, rgba(255,255,255,.5), transparent 43%), var(--mower-color); }
-.mower-launcher-core.pattern-white,
-.mower-mini-block.pattern-white { background: repeating-linear-gradient(135deg, transparent 0 7px, rgba(255,255,255,.9) 7px 11px), linear-gradient(145deg, rgba(255,255,255,.36), transparent 43%), var(--mower-color); }
 .mower-active-slot,
 .mower-reserve-card { touch-action: none; user-select: none; cursor: grab; }
 .mower-active-slot:active,
 .mower-reserve-card:active { cursor: grabbing; }
 .mower-active-unit { position: relative; height: 100%; min-width: 0; min-height: 0; }
 .mower-active-unit > .mower-active-slot { width: 100%; height: 100%; }
+.mower-v2-active-row.is-multirow { height: var(--active-row-height); min-height: var(--active-row-height); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 5px 8px; }
+.mower-v2-active-row.is-multirow .mower-active-slot { gap: 4px; padding: 4px 4px 4px 27px; }
+.mower-v2-active-row.is-multirow .mower-launcher-core { width: 29px; }
+.mower-v2-active-row.is-multirow .mower-launcher-copy strong { font-size: 8px; }
+.mower-v2-active-row.is-multirow .mower-slot-penetrate { right: 3px; top: 3px; min-width: 22px; padding-inline: 3px; }
+.mower-v2-active-row.is-multirow .mower-slot-penetrate span { display: none; }
+.mower-v2-field.has-multirow .mower-v2-defense-line { bottom: calc(var(--active-row-height) + 13px); }
 .mower-slot-penetrate { position: absolute; z-index: 8; right: 5px; top: 5px; display: flex; min-width: 43px; height: 21px; align-items: center; justify-content: center; gap: 2px; padding: 2px 4px; border: 1px solid #657181; border-radius: 4px; color: #ced8df; background: rgba(27,33,41,.94); font-size: 7px; font-weight: 900; }
 .mower-slot-penetrate:not(:disabled):hover,
 .mower-slot-penetrate:not(:disabled):focus-visible { border-color: #72dbe9; outline: 2px solid rgba(114,219,233,.25); }

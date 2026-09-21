@@ -1,11 +1,11 @@
 {
   "app_id": "cn.lumi.familyhub",
   "channel": "stable",
-  "version": "1.4.13",
+  "version": "1.4.14",
   "min_supported_version": "0.1.0",
   "host_api_min_version": "0.4.0",
-  "published_at": "2026-09-20T00:00:00Z",
-  "notes": "彩块防线新增简单、普通、困难三档，重做弹量、推进速度、花纹解锁、五格备用池、拖拽换装、局内穿透与丢弃、体力恢复及指数成长规则，并校准 60 关列数和色块数量；深岩淘金全部关卡及无尽矿层的通关目标在上一版基础上翻倍。",
+  "published_at": "2026-09-21T00:00:00Z",
+  "notes": "彩块防线移除全部黑白花纹目标，只保留颜色与五种形状组合；发射器槽位可由 2 个升级至最多 10 个。小小画室扩展为 12 个简单、中等、复杂课题，加入动物植物认知、结构线、光影素描、铅笔、参考线深浅和精细缩放。",
   "platforms": {},
   "tauri_platforms": {},
   "android_store_url": null

@@ -35,7 +35,6 @@ import { DEVICE_PROFILE } from './device'
 
 type BlockHue = 'coral' | 'cyan' | 'blue' | 'violet' | 'lime' | 'amber'
 type BlockShape = 'cube' | 'round' | 'triangle' | 'star' | 'cylinder'
-type BlockPattern = 'plain' | 'black' | 'white'
 type Difficulty = 'easy' | 'normal' | 'hard'
 type GamePhase = 'playing' | 'won' | 'lost'
 
@@ -43,7 +42,6 @@ interface SignatureDefinition {
   id: string
   hue: BlockHue
   shape: BlockShape
-  pattern: BlockPattern
   label: string
   shortLabel: string
   color: string
@@ -175,10 +173,10 @@ const MAX_ENERGY = 50
 const LEVEL_ENERGY_COST = 10
 const ENERGY_POINT_INTERVAL_MS = 15 * 60 * 1000
 
-const DIFFICULTIES: Record<Difficulty, { label: string; ammo: number; speed: number; patternLevel: number }> = {
-  easy: { label: '简单', ammo: 7, speed: 0.82, patternLevel: 35 },
-  normal: { label: '普通', ammo: 9, speed: 1, patternLevel: 25 },
-  hard: { label: '困难', ammo: 12, speed: 1.24, patternLevel: 15 },
+const DIFFICULTIES: Record<Difficulty, { label: string; ammo: number; speed: number }> = {
+  easy: { label: '简单', ammo: 7, speed: 0.82 },
+  normal: { label: '普通', ammo: 9, speed: 1 },
+  hard: { label: '困难', ammo: 12, speed: 1.24 },
 }
 const DIFFICULTY_ORDER: Difficulty[] = ['easy', 'normal', 'hard']
 
@@ -198,20 +196,10 @@ const SHAPES: Array<{ shape: BlockShape; name: string; short: string }> = [
   { shape: 'cylinder', name: '圆柱块', short: '柱' },
 ]
 
-const PLAIN_SIGNATURES: SignatureDefinition[] = SHAPES.flatMap((shape) => HUES.map((hue) => ({
-  id: `${hue.hue}-${shape.shape}-plain`, hue: hue.hue, shape: shape.shape, pattern: 'plain',
+const SIGNATURES: SignatureDefinition[] = SHAPES.flatMap((shape) => HUES.map((hue) => ({
+  id: `${hue.hue}-${shape.shape}`, hue: hue.hue, shape: shape.shape,
   label: `${hue.name}${shape.name}`, shortLabel: `${hue.short}${shape.short}`, color: hue.color, darkColor: hue.darkColor,
 })))
-const PATTERN_SIGNATURES: SignatureDefinition[] = HUES.flatMap((hue, index) => (['black', 'white'] as const).map((pattern, patternIndex) => {
-  const shape = SHAPES[(index + patternIndex * 2) % SHAPES.length]
-  const patternName = pattern === 'black' ? '黑纹' : '白纹'
-  return {
-    id: `${hue.hue}-${shape.shape}-${pattern}`, hue: hue.hue, shape: shape.shape, pattern,
-    label: `${hue.name}${patternName}${shape.name}`, shortLabel: `${hue.short}${pattern === 'black' ? '黑' : '白'}${shape.short}`,
-    color: hue.color, darkColor: hue.darkColor,
-  }
-}))
-const SIGNATURES: SignatureDefinition[] = [...PLAIN_SIGNATURES, ...PATTERN_SIGNATURES]
 
 const SIGNATURE_MAP = new Map(SIGNATURES.map((signature) => [signature.id, signature]))
 
@@ -239,7 +227,7 @@ const DEFAULT_PROGRESS: ProgressState = {
 const LEVEL_CHAPTERS = [
   { name: '色彩启程', label: '辨认颜色与基础换装' },
   { name: '形状街区', label: '颜色与形状组合' },
-  { name: '花纹工厂', label: '加入花纹和更宽战场' },
+  { name: '形状工厂', label: '更多形状与更宽战场' },
   { name: '纵深峡谷', label: '稀疏前排与逐列遮挡' },
   { name: '高速都市', label: '更快推进与资源取舍' },
   { name: '星际防线', label: '完整类型与终局挑战' },
@@ -278,7 +266,7 @@ export const BLOCK_DEFENSE_LEVELS: LevelDefinition[] = Array.from({ length: MAX_
 const UPGRADES: UpgradeDefinition[] = [
   { id: 'slow', title: '缓速力场', detail: '每级减缓推进 3%，最高减缓 30%', icon: TimerReset, maxLevel: 10, coinBase: 120, gearBase: 1 },
   { id: 'charge', title: '快速充能', detail: '从 2.5 秒逐级缩短到 1 秒', icon: Gauge, maxLevel: 10, coinBase: 130, gearBase: 1 },
-  { id: 'slot', title: '发射槽位', detail: '增加一台同时工作的发射器', icon: Crosshair, maxLevel: 2, coinBase: 420, gearBase: 5 },
+  { id: 'slot', title: '发射槽位', detail: '初始 2 个，每级增加 1 个，最多 10 个', icon: Crosshair, maxLevel: 8, coinBase: 420, gearBase: 5 },
   { id: 'reserve', title: '备用池扩建', detail: '初始 5 格，每级增加 1 格，最多 20 格', icon: Layers3, maxLevel: 15, coinBase: 190, gearBase: 2 },
 ]
 
@@ -357,7 +345,7 @@ function normalizeProgress(value: Partial<ProgressState> | null | undefined): Pr
     gears: Math.max(0, Math.floor(Number(value?.gears) || 0)),
     slowLevel: Math.max(0, Math.min(10, Math.floor(Number(value?.slowLevel) || Math.floor(Number((value as { ammoLevel?: number } | undefined)?.ammoLevel) / 3) || 0))),
     chargeLevel: Math.max(0, Math.min(10, Math.floor(Number(value?.chargeLevel) || 0))),
-    slotLevel: Math.max(0, Math.min(2, Math.floor(Number(value?.slotLevel) || 0))),
+    slotLevel: Math.max(0, Math.min(8, Math.floor(Number(value?.slotLevel) || 0))),
     reserveLevel: Math.max(0, Math.min(15, Math.floor(Number(value?.reserveLevel) || 0))),
     rerolls: Math.max(0, Math.floor(Number(value?.rerolls) || 0)),
     universalLaunchers: Math.max(0, Math.floor(Number(value?.universalLaunchers) || 0)),
@@ -415,21 +403,18 @@ function chargeDuration(progress: ProgressState): number {
 }
 
 function activeSlotCount(progress: ProgressState): number {
-  return 2 + Math.min(2, progress.slotLevel)
+  return 2 + Math.min(8, progress.slotLevel)
 }
 
 function reserveSlotCount(progress: ProgressState): number {
   return 5 + Math.min(15, progress.reserveLevel)
 }
 
-function catalogForLevel(level: number, difficulty: Difficulty): string[] {
+function catalogForLevel(level: number): string[] {
   const unlockedShapeCount = Math.min(SHAPES.length, 1 + Math.floor((level - 1) / 4))
-  const plainCandidates = PLAIN_SIGNATURES.filter((signature) => SHAPES.findIndex((shape) => shape.shape === signature.shape) < unlockedShapeCount)
-  const plainCount = Math.min(plainCandidates.length, 3 + Math.floor((level - 1) / 2))
-  const plain = plainCandidates.slice(0, Math.max(3, plainCount))
-  const patternStart = DIFFICULTIES[difficulty].patternLevel
-  const patternCount = level < patternStart ? 0 : Math.min(PATTERN_SIGNATURES.length, 2 + Math.floor((level - patternStart) / 3))
-  return [...plain, ...PATTERN_SIGNATURES.slice(0, patternCount)].map((signature) => signature.id)
+  const candidates = SIGNATURES.filter((signature) => SHAPES.findIndex((shape) => shape.shape === signature.shape) < unlockedShapeCount)
+  const signatureCount = Math.min(candidates.length, 3 + Math.floor((level - 1) / 2))
+  return candidates.slice(0, Math.max(3, signatureCount)).map((signature) => signature.id)
 }
 
 function createLayers(level: number, lanes: number, catalog: string[]): BlockLayer[] {
@@ -531,7 +516,7 @@ function createLauncher(signatureId: string, id: string, progress: ProgressState
 function createRound(level: number, progress: ProgressState, difficulty: Difficulty = progress.currentDifficulty): RoundState {
   const definition = levelDefinition(level)
   const lanes = definition.lanes
-  const catalog = catalogForLevel(level, difficulty)
+  const catalog = catalogForLevel(level)
   const layers = createLayers(level, lanes, catalog)
   const frontSignatures = Array.from(new Set(exposedTargets(layers, 1).map(({ block }) => block.signatureId)))
   const active: Array<Launcher | null> = Array.from({ length: activeSlotCount(progress) }, (_, index) => {
@@ -842,27 +827,6 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
       cylinder: cylinderGeometry,
     }
     const bodyMeshes = new Map<string, THREE.InstancedMesh>()
-    const patternMeshes = new Map<string, THREE.InstancedMesh>()
-    const patternMask = document.createElement('canvas')
-    patternMask.width = 64
-    patternMask.height = 64
-    const patternContext = patternMask.getContext('2d')
-    if (patternContext) {
-      patternContext.fillStyle = '#000'
-      patternContext.fillRect(0, 0, 64, 64)
-      patternContext.strokeStyle = '#fff'
-      patternContext.lineWidth = 11
-      for (let offset = -64; offset <= 128; offset += 25) {
-        patternContext.beginPath()
-        patternContext.moveTo(offset, 64)
-        patternContext.lineTo(offset + 64, 0)
-        patternContext.stroke()
-      }
-    }
-    const patternTexture = new THREE.CanvasTexture(patternMask)
-    patternTexture.wrapS = THREE.RepeatWrapping
-    patternTexture.wrapT = THREE.RepeatWrapping
-    patternTexture.repeat.set(1.2, 1.2)
     SIGNATURES.forEach((signature) => {
       const material = new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
@@ -879,23 +843,6 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
       mesh.frustumCulled = false
       bodyMeshes.set(signature.id, mesh)
       scene.add(mesh)
-      if (signature.pattern !== 'plain') {
-        const patternMaterial = new THREE.MeshBasicMaterial({
-          color: signature.pattern === 'black' ? 0x11151a : 0xffffff,
-          alphaMap: patternTexture,
-          alphaTest: 0.18,
-          transparent: true,
-          depthWrite: false,
-          polygonOffset: true,
-          polygonOffsetFactor: -2,
-        })
-        const patternMesh = new THREE.InstancedMesh(shapeGeometry[signature.shape], patternMaterial, MAX_SCENE_BLOCKS)
-        patternMesh.count = 0
-        patternMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        patternMesh.frustumCulled = false
-        patternMeshes.set(signature.id, patternMesh)
-        scene.add(patternMesh)
-      }
     })
 
     const darkMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.42, metalness: 0.08, clearcoat: 0.25 })
@@ -989,12 +936,6 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
           dummy.scale.setScalar(current.targetable.has(block.id) ? 1 : 0.965)
           dummy.updateMatrix()
           mesh.setMatrixAt(index, dummy.matrix)
-          const patternMesh = patternMeshes.get(signatureId)
-          if (patternMesh) {
-            dummy.scale.multiplyScalar(1.018)
-            dummy.updateMatrix()
-            patternMesh.setMatrixAt(index, dummy.matrix)
-          }
           const instanceColor = new THREE.Color(signature.color)
           if (!current.targetable.has(block.id)) instanceColor.lerp(coveredTint, 0.22)
           else instanceColor.lerp(white, 0.045)
@@ -1010,11 +951,6 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
         })
         mesh.instanceMatrix.needsUpdate = true
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-        const patternMesh = patternMeshes.get(signatureId)
-        if (patternMesh) {
-          patternMesh.count = mesh.count
-          patternMesh.instanceMatrix.needsUpdate = true
-        }
       })
 
       const frame = framePositions()
@@ -1114,7 +1050,6 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
         materials.forEach((material) => material.dispose())
       })
       renderer.dispose()
-      patternTexture.dispose()
       mount.replaceChildren()
     }
   }, [])
@@ -1126,7 +1061,7 @@ function LauncherFace({ launcher, compact = false }: { launcher: Launcher; compa
   const signature = SIGNATURE_MAP.get(launcher.signatureId) ?? SIGNATURES[0]
   return (
     <>
-      <span className={`mower-launcher-core shape-${signature.shape} pattern-${signature.pattern}`} style={signatureStyle(signature.id)} aria-hidden="true">
+      <span className={`mower-launcher-core shape-${signature.shape}`} style={signatureStyle(signature.id)} aria-hidden="true">
         <span className="mower-launcher-eye" />
       </span>
       <span className="mower-launcher-copy">
@@ -1585,12 +1520,12 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
             </div>
 
             <div
-              className="mower-v2-field"
+              className={`mower-v2-field ${round.active.length > 5 ? 'has-multirow' : ''}`}
               data-block-total={round.total}
               data-lanes={round.lanes}
-              data-pattern-types={round.catalog.filter((signatureId) => (SIGNATURE_MAP.get(signatureId)?.pattern ?? 'plain') !== 'plain').length}
+              data-signature-types={round.catalog.length}
               data-advance-speed={advanceSpeed(round.level, round.difficulty, progress).toFixed(3)}
-              style={{ '--mower-lanes': round.lanes } as CSSProperties}
+              style={{ '--mower-lanes': round.lanes, '--active-columns': Math.min(5, round.active.length), '--active-row-height': round.active.length > 5 ? '132px' : '72px' } as CSSProperties}
             >
               <div className="mower-v2-horizon"><span>方块正在靠近防线</span></div>
               <div className="mower-v2-grid-plane" aria-hidden="true" />
@@ -1606,7 +1541,7 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                       key={block.id}
                       data-lane={block.lane}
                       data-layer={layer.id}
-                      className={`mower-v2-block shape-${signature.shape} pattern-${signature.pattern} ${targetableBlockIds.has(block.id) ? 'is-targetable' : 'is-covered'}`}
+                      className={`mower-v2-block shape-${signature.shape} ${targetableBlockIds.has(block.id) ? 'is-targetable' : 'is-covered'}`}
                       style={{ ...signatureStyle(signature.id), left: `${left}%`, top: `${top}%`, zIndex: Math.round(layer.progress + 100), transform: `translate(-50%, -50%) scale(${scale})` }}
                       title={`${signature.label}${targetableBlockIds.has(block.id) ? '，可攻击' : '，被同列前方色块遮挡'}`}
                     >
@@ -1616,7 +1551,7 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                 }))}
               </div>
               <div className="mower-v2-defense-line"><Shield size={17} /><span>家庭防线</span></div>
-              <div className="mower-v2-active-row" style={{ '--active-count': round.active.length } as CSSProperties}>
+              <div className={`mower-v2-active-row ${round.active.length > 5 ? 'is-multirow' : ''}`} data-active-count={round.active.length}>
                 {round.active.map((launcher, index) => {
                   const charging = Boolean(launcher && launcher.readyMs > 0)
                   const empty = !launcher || launcher.ammo <= 0
@@ -1819,7 +1754,7 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                 <li><span>2</span><div><strong>拖动换装</strong><p>手机用手指、电脑用鼠标把备用发射器拖到目标槽位；电视选中备用格后选择几号槽位。换装后需要 2.5～1 秒充能。</p></div></li>
                 <li><span>3</span><div><strong>局内做取舍</strong><p>穿透一层每局最多三次，依次消耗 200、400、800 积分；把当前发射器拖到丢弃区则从 20 积分起逐次加 10。</p></div></li>
               </ol>
-              <p className="mower-help-tip">共 60 关，每关有三种难度。花纹块在困难第 15 关、普通第 25 关、简单第 35 关开始出现；体力上限 50，每 15 分钟恢复 1 点。</p>
+              <p className="mower-help-tip">共 60 关，每关有三种难度。所有关卡只按颜色和五种形状区分目标；体力上限 50，每 15 分钟恢复 1 点。</p>
               <button type="button" className="button button-primary" autoFocus onClick={() => setHelpOpen(false)}><Play size={17} />明白了</button>
             </section>
           </div>
@@ -1842,7 +1777,7 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
               <p>会替换备用池第 {universalTarget + 1} 格，使用后消耗 1 个万能发射器。</p>
               <div>{presentSignatures.map((signatureId) => {
                 const signature = SIGNATURE_MAP.get(signatureId) ?? SIGNATURES[0]
-                return <button type="button" key={signatureId} onClick={() => installUniversal(signatureId)}><span className={`mower-mini-block shape-${signature.shape} pattern-${signature.pattern}`} style={signatureStyle(signature.id)} /><strong>{signature.shortLabel}</strong><small>{signature.label}</small></button>
+                return <button type="button" key={signatureId} onClick={() => installUniversal(signatureId)}><span className={`mower-mini-block shape-${signature.shape}`} style={signatureStyle(signature.id)} /><strong>{signature.shortLabel}</strong><small>{signature.label}</small></button>
               })}</div>
             </section>
           </div>

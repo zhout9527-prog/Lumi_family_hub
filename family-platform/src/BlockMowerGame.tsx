@@ -172,6 +172,9 @@ const MAX_LEVEL = 60
 const MAX_ENERGY = 50
 const LEVEL_ENERGY_COST = 10
 const ENERGY_POINT_INTERVAL_MS = 15 * 60 * 1000
+const FIELD_END_PROGRESS = 120
+const ADVANCE_SPEED_FACTOR = 0.8
+const INITIAL_SPAWN_FACTOR = 0.8
 
 const DIFFICULTIES: Record<Difficulty, { label: string; ammo: number; speed: number }> = {
   easy: { label: '简单', ammo: 7, speed: 0.82 },
@@ -255,7 +258,7 @@ export const BLOCK_DEFENSE_LEVELS: LevelDefinition[] = Array.from({ length: MAX_
     lanes,
     targetCount,
     layerCount,
-    startProgress: 38 + Math.min(8, chapterIndex * 1.2),
+    startProgress: (38 + Math.min(8, chapterIndex * 1.2)) * INITIAL_SPAWN_FACTOR,
     layerGap: Math.max(2.15, 76 / Math.max(1, layerCount - 1)),
     // 相比早期版本约提升一倍，简单档仍留出观察时间，困难档会明显压迫防线。
     baseSpeed: 0.96 + Math.min(0.58, level * 0.0095),
@@ -298,6 +301,18 @@ function variantKey(level: number, difficulty: Difficulty): string {
   return `${difficulty}:${level}`
 }
 
+function nextChallengeLevel(progress: Pick<ProgressState, 'completedLevels'>): number {
+  const completed = new Set(progress.completedLevels)
+  for (let level = 1; level <= MAX_LEVEL; level += 1) {
+    if (!completed.has(level)) return level
+  }
+  return MAX_LEVEL
+}
+
+function canChooseLevel(progress: Pick<ProgressState, 'completedLevels'>, level: number): boolean {
+  return progress.completedLevels.includes(level) || level === nextChallengeLevel(progress)
+}
+
 function restoreEnergy(value: ProgressState, now = Date.now()): ProgressState {
   if (value.energy >= MAX_ENERGY) {
     return value.energy === MAX_ENERGY ? value : { ...value, energy: MAX_ENERGY, energyUpdatedAt: new Date(now).toISOString() }
@@ -335,10 +350,13 @@ function normalizeProgress(value: Partial<ProgressState> | null | undefined): Pr
     ...(Array.isArray(legacyUnlockedVariants) ? legacyUnlockedVariants.map((item) => typeof item === 'string' ? Number(item.split(':')[1]) : Number.NaN) : []),
     ...completedLevels,
   ].map((level) => Math.floor(Number(level))).filter((level) => level >= 1 && level <= MAX_LEVEL))).sort((left, right) => left - right)
+  const requestedLevel = Math.max(1, Math.min(MAX_LEVEL, Math.floor(Number(value?.currentLevel) || 1)))
+  const sequentialLevel = nextChallengeLevel({ completedLevels })
+  const currentLevel = completedLevels.includes(requestedLevel) || requestedLevel === sequentialLevel ? requestedLevel : sequentialLevel
   const normalized: ProgressState = {
     ...DEFAULT_PROGRESS,
     unlockedLevel,
-    currentLevel: Math.max(1, Math.min(unlockedLevel, Math.floor(Number(value?.currentLevel) || unlockedLevel))),
+    currentLevel,
     completedLevels,
     levelBestScores,
     coins: Math.max(0, Math.floor(Number(value?.coins) || 0)),
@@ -365,6 +383,7 @@ function storageKey(playerId: string): string {
 
 function unlockLevelWithEnergy(progress: ProgressState, level: number): { progress: ProgressState; allowed: boolean; spent: boolean } {
   const restored = restoreEnergy(progress)
+  if (restored.completedLevels.includes(level)) return { progress: restored, allowed: true, spent: false }
   if (restored.energyUnlockedLevels.includes(level)) return { progress: restored, allowed: true, spent: false }
   if (restored.energy < LEVEL_ENERGY_COST) return { progress: restored, allowed: false, spent: false }
   return {
@@ -561,7 +580,7 @@ function createRound(level: number, progress: ProgressState, difficulty: Difficu
 
 function advanceSpeed(level: number, difficulty: Difficulty, progress: ProgressState): number {
   const slowMultiplier = Math.max(0.7, 1 - progress.slowLevel * 0.03)
-  return levelDefinition(level).baseSpeed * DIFFICULTIES[difficulty].speed * slowMultiplier
+  return levelDefinition(level).baseSpeed * DIFFICULTIES[difficulty].speed * slowMultiplier * ADVANCE_SPEED_FACTOR
 }
 
 function blockedSignature(
@@ -602,7 +621,7 @@ function stepRound(previous: RoundState, progress: ProgressState): RoundState {
   let layers = previous.layers.map((layer) => ({ ...layer, progress: layer.progress + speed * (TICK_MS / 1000) }))
   let shields = previous.shields
   let message = previous.message
-  const breached = layers.filter((layer) => layer.progress >= 100 && layer.blocks.length > 0)
+  const breached = layers.filter((layer) => layer.progress >= FIELD_END_PROGRESS && layer.blocks.length > 0)
   if (breached.length > 0) {
     shields = Math.max(0, shields - breached.length)
     const breachedIds = new Set(breached.map((layer) => layer.id))
@@ -723,7 +742,7 @@ function scenePosition(lane: number, lanes: number, progress: number): THREE.Vec
   return new THREE.Vector3(
     (lane - (lanes - 1) / 2) * 0.78,
     0.47,
-    5.25 - (100 - progress) * 0.14,
+    5.25 - (FIELD_END_PROGRESS - progress) * 0.14,
   )
 }
 
@@ -998,7 +1017,7 @@ function BlockDefenseScene({ layers, effects, targetable, lanes }: DefenseSceneS
         dummy.updateMatrix()
         impactMesh.setMatrixAt(index, dummy.matrix)
         impactMesh.setColorAt(index, new THREE.Color(effect.color))
-        const origin = scenePosition(effect.lane, current.lanes, 102)
+        const origin = scenePosition(effect.lane, current.lanes, FIELD_END_PROGRESS + 2)
         origin.y = 0.4
         const color = new THREE.Color(effect.color)
         const offset = index * 6
@@ -1438,7 +1457,10 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
 
   const startLevel = useCallback((level: number, difficulty: Difficulty = selectedDifficulty) => {
     const targetLevel = Math.max(1, Math.min(MAX_LEVEL, Math.floor(level)))
-    if (targetLevel > progressRef.current.unlockedLevel) return
+    if (!canChooseLevel(progressRef.current, targetLevel)) {
+      setLevelNotice(`请先通关第 ${nextChallengeLevel(progressRef.current)} 关，已通关的关卡可以随时重玩。`)
+      return
+    }
     const access = unlockLevelWithEnergy(progressRef.current, targetLevel)
     if (!access.allowed) {
       setLevelNotice(`体力不足：解锁第 ${targetLevel} 关${DIFFICULTIES[difficulty].label}模式需要 ${LEVEL_ENERGY_COST} 体力。`)
@@ -1525,6 +1547,8 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
               data-lanes={round.lanes}
               data-signature-types={round.catalog.length}
               data-advance-speed={advanceSpeed(round.level, round.difficulty, progress).toFixed(3)}
+              data-field-length={FIELD_END_PROGRESS}
+              data-front-progress={Math.max(...round.layers.map((layer) => layer.progress), 0).toFixed(2)}
               style={{ '--mower-lanes': round.lanes, '--active-columns': Math.min(5, round.active.length), '--active-row-height': round.active.length > 5 ? '132px' : '72px' } as CSSProperties}
             >
               <div className="mower-v2-horizon"><span>方块正在靠近防线</span></div>
@@ -1534,8 +1558,9 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                 {sortedLayers.flatMap((layer) => layer.blocks.map((block) => {
                   const signature = SIGNATURE_MAP.get(block.signatureId) ?? SIGNATURES[0]
                   const left = 4 + (block.lane / Math.max(1, round.lanes - 1)) * 92
-                  const top = 9 + layer.progress * 0.82
-                  const scale = Math.max(0.56, Math.min(1.08, 0.65 + layer.progress * 0.0043))
+                  const normalizedProgress = layer.progress / FIELD_END_PROGRESS * 100
+                  const top = 9 + normalizedProgress * 0.82
+                  const scale = Math.max(0.56, Math.min(1.08, 0.65 + normalizedProgress * 0.0043))
                   return (
                     <span
                       key={block.id}
@@ -1675,7 +1700,7 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
         {levelSelectOpen && (
           <div className="mower-v2-overlay mower-level-overlay">
             <section className="mower-level-select" role="dialog" aria-modal="true" aria-label="彩块防线选关">
-              <header><div><span className="eyebrow">60 LEVELS · 3 DIFFICULTIES</span><h2><ListChecks size={22} />选择关卡</h2><p>每关包含简单、普通和困难模式；关卡首次解锁消耗 10 体力，该关首通返还 10 体力。</p></div><button type="button" aria-label="关闭选关" onClick={() => setLevelSelectOpen(false)}><X size={20} /></button></header>
+              <header><div><span className="eyebrow">60 LEVELS · 3 DIFFICULTIES</span><h2><ListChecks size={22} />选择关卡</h2><p>只能挑战下一关或重玩已通关关卡；首次解锁消耗 10 体力，首通返还 10 体力。</p></div><button type="button" aria-label="关闭选关" onClick={() => setLevelSelectOpen(false)}><X size={20} /></button></header>
               <div className="mower-difficulty-bar" role="tablist" aria-label="选择关卡难度">
                 {DIFFICULTY_ORDER.map((difficulty) => <button type="button" role="tab" aria-selected={selectedDifficulty === difficulty} className={selectedDifficulty === difficulty ? 'is-active' : ''} key={difficulty} onClick={() => { setSelectedDifficulty(difficulty); setLevelNotice('') }}><strong>{DIFFICULTIES[difficulty].label}</strong><span>{DIFFICULTIES[difficulty].ammo} 发 · {difficulty === 'easy' ? '慢速' : difficulty === 'normal' ? '标准速度' : '高速'}</span></button>)}
                 <span className="mower-energy-badge"><Heart size={16} fill="currentColor" />体力 {progress.energy}/{MAX_ENERGY}<small>每 15 分钟恢复 1 点</small></span>
@@ -1687,8 +1712,9 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                     <div><strong>{chapterIndex + 1}. {chapter.name}</strong><small>{chapter.label}</small></div>
                     <div className="mower-level-grid">
                       {BLOCK_DEFENSE_LEVELS.slice(chapterIndex * 10, chapterIndex * 10 + 10).map((definition) => {
-                        const unlocked = definition.level <= progress.unlockedLevel
+                        const unlocked = canChooseLevel(progress, definition.level)
                         const completed = progress.completedVariants.includes(variantKey(definition.level, selectedDifficulty))
+                        const completedLevel = progress.completedLevels.includes(definition.level)
                         const paid = progress.energyUnlockedLevels.includes(definition.level)
                         const current = definition.level === round.level && selectedDifficulty === round.difficulty
                         return (
@@ -1697,12 +1723,12 @@ export function BlockMowerGame({ onClose, playerId }: { onClose: () => void; pla
                             key={definition.level}
                             disabled={!unlocked}
                             className={`${completed ? 'is-complete' : ''} ${current ? 'is-current' : ''}`}
-                            aria-label={`第 ${definition.level} 关${DIFFICULTIES[selectedDifficulty].label}模式，${completed ? '已通关' : unlocked ? paid ? '可挑战' : '需要 10 体力解锁' : '未解锁'}`}
+                            aria-label={`第 ${definition.level} 关${DIFFICULTIES[selectedDifficulty].label}模式，${completed ? '本难度已通关' : completedLevel ? '已通关关卡，可重玩' : unlocked ? paid ? '下一关，可挑战' : '下一关，需要 10 体力解锁' : '请先通关前一关'}`}
                             data-tv-initial={current ? true : undefined}
                             onClick={() => startLevel(definition.level, selectedDifficulty)}
                           >
                             <strong>{definition.level}</strong>
-                            <span>{completed ? <><Check size={13} />已通关</> : unlocked ? paid ? '可挑战' : <><Heart size={11} />10</> : '锁定'}</span>
+                            <span>{completed ? <><Check size={13} />已通关</> : completedLevel ? '可重玩' : unlocked ? paid ? '下一关' : <><Heart size={11} />10</> : '锁定'}</span>
                           </button>
                         )
                       })}

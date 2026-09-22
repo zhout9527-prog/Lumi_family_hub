@@ -348,7 +348,7 @@ export function GamesView({
           <span className="game-launch-copy">
             <span className="eyebrow">CREATIVE STUDIO</span>
             <strong>小小画室</strong>
-            <small>自由画 · 分级临摹 · 光影素描</small>
+            <small>自由画 · 开源简笔画 · 每日灵感</small>
             <span className="game-launch-action"><Palette size={17} />开始创作</span>
           </span>
         </button>
